@@ -130,7 +130,7 @@
 /* Begin PBXFileReference section */
 		001753EFE47673C0075BB23A /* PlanViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanViews.swift; sourceTree = "<group>"; };
 		07E5FB27D9CF0231028F34A7 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
-		081C173788EB54C1887C759B /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		081C173788EB54C1887C759B /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		0BC2356A8A6B5CCF643B2EE4 /* recipe-09.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "recipe-09.json"; sourceTree = "<group>"; };
 		0D99477653F956F97223685A /* SmidgenUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SmidgenUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		131B72E0EC3EB6EC5CC0F146 /* DemoFlows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoFlows.swift; sourceTree = "<group>"; };
@@ -156,7 +156,7 @@
 		58C98BED44DCA47F717AD78C /* ShareStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareStore.swift; sourceTree = "<group>"; };
 		5DFAC576FA69697C63244F82 /* SyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncEngine.swift; sourceTree = "<group>"; };
 		64208EF15E7B5BC7A25C6337 /* LibraryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryModels.swift; sourceTree = "<group>"; };
-		65D092DB92EA97B27D1195A9 /* Smidgen.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Smidgen.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		65D092DB92EA97B27D1195A9 /* Smidgen.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Smidgen.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6DDFF21CAE4746CC07BEBBA0 /* LibrarySearchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySearchTests.swift; sourceTree = "<group>"; };
 		78CF752BEB5799714C262738 /* SmidgenApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmidgenApp.swift; sourceTree = "<group>"; };
 		7C25E4C252A28F46E2F7A52E /* WatchViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchViews.swift; sourceTree = "<group>"; };
@@ -544,6 +544,7 @@
 						ProvisioningStyle = Automatic;
 					};
 					66CA8E96D620A6C26E2D74CA = {
+						DevelopmentTeam = YOUR_TEAM_ID;
 						ProvisioningStyle = Automatic;
 					};
 					9FC61F18F2DD7581ED2D729C = {
@@ -749,6 +750,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				CURRENT_testsECT_VERSION = 1;
 				INFOPLIST_FILE = "Config/Info-Tests.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -756,6 +758,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.smidgen.app.tests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -784,6 +787,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = Config/AppGroups.entitlements;
+				CURRENT_shareECT_VERSION = 1;
 				INFOPLIST_FILE = "Config/Info-Share.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -791,6 +795,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.smidgen.app.share;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -862,6 +867,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = Config/AppGroups.entitlements;
+				CURRENT_widgetsECT_VERSION = 1;
 				INFOPLIST_FILE = "Config/Info-Widgets.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -869,6 +875,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.smidgen.app.widgets;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -881,7 +888,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Config/AppGroups.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = KRF39C6NC9;
 				INFOPLIST_FILE = "Config/Info-App.plist";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -899,7 +905,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = Config/AppGroups.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = "Config/Info-Watch.plist";
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.smidgen.app.watch;
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -912,6 +920,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = Config/AppGroups.entitlements;
+				CURRENT_widgetsECT_VERSION = 1;
 				INFOPLIST_FILE = "Config/Info-Widgets.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -919,6 +928,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.smidgen.app.widgets;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -947,7 +957,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = Config/AppGroups.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = "Config/Info-Watch.plist";
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.smidgen.app.watch;
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -962,7 +974,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Config/AppGroups.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = KRF39C6NC9;
 				INFOPLIST_FILE = "Config/Info-App.plist";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -1048,6 +1059,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = Config/AppGroups.entitlements;
+				CURRENT_shareECT_VERSION = 1;
 				INFOPLIST_FILE = "Config/Info-Share.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1055,6 +1067,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.smidgen.app.share;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -1065,6 +1078,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				CURRENT_testsECT_VERSION = 1;
 				INFOPLIST_FILE = "Config/Info-Tests.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1072,6 +1086,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.smidgen.app.tests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
