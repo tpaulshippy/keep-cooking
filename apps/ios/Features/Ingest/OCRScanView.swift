@@ -153,6 +153,8 @@ public struct OCRScanView: View {
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var hasPickedPhoto = false
     @State private var isScanning = false
+    /// Monotonic scan id — a slower earlier OCR must not overwrite a newer pick.
+    @State private var scanGeneration = 0
     @State private var showCamera = false
 
     @FocusState private var focused: Field?
@@ -271,7 +273,7 @@ public struct OCRScanView: View {
                         }
                         Button("Save recipe") { save() }
                             .buttonStyle(.borderedProminent)
-                            .disabled(!canSave || savedMessage != nil)
+                            .disabled(!canSave || savedMessage != nil || isScanning)
                             .accessibilityIdentifier("ocr-save")
                         if !canSave {
                             Text("Add a title to save.")
@@ -305,19 +307,24 @@ public struct OCRScanView: View {
             #if os(iOS)
             .sheet(isPresented: $showCamera) {
                 CameraPicker { data in
-                    Task { await recognize(data: data) }
+                    scanGeneration += 1
+                    let generation = scanGeneration
+                    Task { await recognize(data: data, generation: generation) }
                 }
             }
             #endif
             .onChange(of: selectedPhoto) { _, item in
                 guard let item else { return }
                 hasPickedPhoto = true
+                scanGeneration += 1
+                let generation = scanGeneration
                 Task {
                     // Reset so re-selecting the same photo fires onChange again.
                     defer { selectedPhoto = nil }
                     if let data = try? await item.loadTransferable(type: Data.self) {
-                        await recognize(data: data)
+                        await recognize(data: data, generation: generation)
                     } else {
+                        clearDraft()
                         notice = "Couldn't read that photo. Try another, or paste the text below."
                     }
                 }
@@ -336,12 +343,26 @@ public struct OCRScanView: View {
         focused = nil
     }
 
-    private func recognize(data: Data) async {
+    /// Empties the editable draft (keeps recognizedText — manual pastes and
+    /// successful scans refill it) so Save always requires fresh results.
+    private func clearDraft() {
+        title = ""
+        ingredientLines = ""
+        stepLines = ""
+    }
+
+    private func recognize(data: Data, generation: Int? = nil) async {
         isScanning = true
         savedMessage = nil
-        defer { isScanning = false }
+        clearDraft()
+        defer {
+            // A newer scan may already be running — leave its spinner up.
+            if generation == nil || generation == scanGeneration { isScanning = false }
+        }
         do {
             let res = try await VisionOCR.recognize(data: data)
+            // A slower earlier scan must not overwrite a newer selection.
+            guard generation == nil || generation == scanGeneration else { return }
             if !res.lines.isEmpty {
                 recognizedText = res.lines.joined(separator: "\n")
                 parse()
@@ -349,6 +370,7 @@ public struct OCRScanView: View {
                 notice = "No text found in that photo. Try a closer shot, or paste the text below."
             }
         } catch {
+            guard generation == nil || generation == scanGeneration else { return }
             notice = "Couldn't read that photo. Try again, or paste the text below."
         }
     }
@@ -362,6 +384,10 @@ public struct OCRScanView: View {
         let recipe = Recipe(householdId: "hh-demo", title: title,
                             source: "ocr", deviceId: deviceId)
         context.insert(recipe)
+        // Track this attempt's inserts so a failed save can delete exactly
+        // these objects — rollback() would also discard other views'
+        // unsaved changes in the shared context.
+        var inserted: [any PersistentModel] = [recipe]
         let parsed = IngredientParser.parseLines(ingredientLines)
         for (i, p) in parsed.enumerated() {
             let m = Ingredient(recipeId: recipe.id, name: p.name.isEmpty ? p.display : p.name,
@@ -369,6 +395,7 @@ public struct OCRScanView: View {
                                position: i, updatedAt: Date(), deviceId: deviceId)
             m.recipe = recipe
             context.insert(m)
+            inserted.append(m)
         }
         let steps = stepLines.components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
@@ -377,14 +404,14 @@ public struct OCRScanView: View {
                          updatedAt: Date(), deviceId: deviceId)
             m.recipe = recipe
             context.insert(m)
+            inserted.append(m)
         }
         do {
             try context.save()
             notice = nil
             savedMessage = "Saved “\(recipe.title)”"
         } catch {
-            // Drop this attempt's pending graph so a retry can't persist duplicates.
-            context.rollback()
+            inserted.forEach { context.delete($0) }
             print("OCR save failed: \(error)")
             notice = "Couldn't save that recipe. Try again."
         }

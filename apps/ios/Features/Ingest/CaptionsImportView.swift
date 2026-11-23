@@ -31,6 +31,10 @@ public struct CaptionsImportView: View {
     @State private var report: ClipReport?
     @State private var isLoading = false
     @State private var error: String?
+    @State private var saveError: String?
+    /// True when the visible preview predates a failed refresh — Save stays
+    /// disabled so a stale recipe can't be persisted as if it were fresh.
+    @State private var reportStale = false
 
     @State private var title: String = ""
     @State private var ingredientLines: String = ""
@@ -149,9 +153,17 @@ public struct CaptionsImportView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("3 · Save")
                                 .font(.headline)
+                            if let saveError {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "exclamationmark.circle")
+                                    Text(saveError)
+                                }
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                            }
                             Button("Save recipe") { save() }
                                 .buttonStyle(.borderedProminent)
-                                .disabled(!canSave || savedMessage != nil)
+                                .disabled(!canSave || savedMessage != nil || isLoading || reportStale)
                             if !canSave {
                                 Text("Add a title to save.")
                                     .font(.caption)
@@ -199,7 +211,7 @@ public struct CaptionsImportView: View {
     }
 
     private func runImport() async {
-        isLoading = true; error = nil; savedMessage = nil
+        isLoading = true; error = nil; savedMessage = nil; reportStale = false
         defer { isLoading = false }
         focused = nil
         let url = linkText.trimmingCharacters(in: .whitespaces)
@@ -222,8 +234,9 @@ public struct CaptionsImportView: View {
             stepLines = (rep.recipe.steps ?? []).map { $0.text }.joined(separator: "\n")
         } catch {
             print("Caption import failed: \(error)")
-            // Hide the stale preview so Save can't persist the previous recipe.
-            report = nil
+            // Keep the previous preview (with the user's edits) but mark it
+            // stale so Save stays disabled — a retry must succeed first.
+            reportStale = report != nil
             self.error = clipServerErrorMessage(for: error)
                 ?? "Couldn't import that caption. Check the text and try again."
         }
@@ -243,6 +256,10 @@ public struct CaptionsImportView: View {
             deviceId: deviceId
         )
         context.insert(recipe)
+        // Track this attempt's inserts so a failed save can delete exactly
+        // these objects — rollback() would also discard other views'
+        // unsaved changes in the shared context.
+        var inserted: [any PersistentModel] = [recipe]
         let parsed = IngredientParser.parseLines(ingredientLines)
         for (i, p) in parsed.enumerated() {
             let m = Ingredient(recipeId: recipe.id, name: p.name.isEmpty ? p.display : p.name,
@@ -250,6 +267,7 @@ public struct CaptionsImportView: View {
                                position: i, updatedAt: Date(), deviceId: deviceId)
             m.recipe = recipe
             context.insert(m)
+            inserted.append(m)
         }
         let steps = stepLines.components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
@@ -258,16 +276,16 @@ public struct CaptionsImportView: View {
                          updatedAt: Date(), deviceId: deviceId)
             m.recipe = recipe
             context.insert(m)
+            inserted.append(m)
         }
         do {
             try context.save()
-            self.error = nil
+            saveError = nil
             savedMessage = "Saved “\(recipe.title)” from \(platform.rawValue)"
         } catch {
-            // Drop this attempt's pending graph so a retry can't persist duplicates.
-            context.rollback()
+            inserted.forEach { context.delete($0) }
             print("Caption save failed: \(error)")
-            self.error = "Couldn't save that recipe. Try again."
+            saveError = "Couldn't save that recipe. Try again."
         }
         focused = nil
     }

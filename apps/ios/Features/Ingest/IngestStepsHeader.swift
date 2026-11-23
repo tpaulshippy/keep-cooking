@@ -13,8 +13,9 @@ public struct IngestStepsHeader: View {
     public private(set) var current: Int
     private let steps = ["Add", "Review", "Save"]
     /// Circle diameter; the step connector matches this height so it stays
-    /// centered on the circles at any Dynamic Type size.
-    private let circleSize: CGFloat = 22
+    /// centered on the circles at any Dynamic Type size. Scaled so the
+    /// numerals inside never overflow the circles.
+    @ScaledMetric private var circleSize: CGFloat = 22
 
     public init(current: Int) {
         self.current = max(0, min(current, steps.count - 1))
