@@ -47,6 +47,6 @@ public struct IngestStepsHeader: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Step \(current + 1) of 3: \(steps[current])")
+        .accessibilityLabel("Step \(current + 1) of \(steps.count): \(steps[current])")
     }
 }

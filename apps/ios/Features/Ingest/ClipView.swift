@@ -42,7 +42,7 @@ public struct ClipView: View {
     }
 
     private var canSave: Bool {
-        !title.trimmingCharacters(in: .whitespaces).isEmpty
+        isSavableTitle(title)
     }
 
     public var body: some View {
@@ -63,6 +63,7 @@ public struct ClipView: View {
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .focused($focused, equals: .url)
+                            .disabled(isLoading)
                             #if os(iOS)
                             .keyboardType(.URL)
                             #endif
@@ -191,7 +192,7 @@ public struct ClipView: View {
     // MARK: - Actions
 
     private func runClip() async {
-        isLoading = true; error = nil; savedMessage = nil; reportStale = false
+        isLoading = true; error = nil; saveError = nil; savedMessage = nil; reportStale = false
         defer { isLoading = false }
         focused = nil
         let req = ClipRequest(url: urlText.trimmingCharacters(in: .whitespaces), source: .url)
@@ -218,9 +219,10 @@ public struct ClipView: View {
 
     private func save() {
         let deviceId = currentDeviceId()
+        let trimmed = cleanTitle(title)
         let recipe = Recipe(
             householdId: "hh-demo",
-            title: title.isEmpty ? (report?.recipe.title ?? "Untitled") : title,
+            title: trimmed.isEmpty ? (report?.recipe.title ?? trimmed) : trimmed,
             recipeDescription: report?.recipe.description ?? "",
             servings: report?.recipe.servings ?? 4,
             prepMinutes: report?.recipe.prepMinutes,

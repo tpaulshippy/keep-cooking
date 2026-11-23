@@ -169,7 +169,7 @@ public struct OCRScanView: View {
     }
 
     private var canSave: Bool {
-        !title.trimmingCharacters(in: .whitespaces).isEmpty
+        isSavableTitle(title)
     }
 
     public var body: some View {
@@ -264,6 +264,10 @@ public struct OCRScanView: View {
                             .font(.headline)
                         if let notice {
                             Text(notice)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else if title.isEmpty && ingredientLines.isEmpty {
+                            Text("Add a photo or paste text to begin.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         } else {
@@ -381,7 +385,7 @@ public struct OCRScanView: View {
         #else
         let deviceId = UUID().uuidString
         #endif
-        let recipe = Recipe(householdId: "hh-demo", title: title,
+        let recipe = Recipe(householdId: "hh-demo", title: cleanTitle(title),
                             source: "ocr", deviceId: deviceId)
         context.insert(recipe)
         // Track this attempt's inserts so a failed save can delete exactly

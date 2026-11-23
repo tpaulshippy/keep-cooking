@@ -57,7 +57,7 @@ public struct CaptionsImportView: View {
     }
 
     private var canSave: Bool {
-        !title.trimmingCharacters(in: .whitespaces).isEmpty
+        isSavableTitle(title)
     }
 
     public var body: some View {
@@ -77,11 +77,13 @@ public struct CaptionsImportView: View {
                             ForEach(SocialPlatform.allCases) { Text($0.rawValue).tag($0) }
                         }
                         .pickerStyle(.segmented)
+                        .disabled(isLoading)
                         TextField("Video link (optional)", text: $linkText)
                             .textFieldStyle(.roundedBorder)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .focused($focused, equals: .link)
+                            .disabled(isLoading)
                         Text("Paste or edit text")
                             .font(.subheadline.bold())
                         TextEditor(text: $captionText)
@@ -91,6 +93,7 @@ public struct CaptionsImportView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                             .focused($focused, equals: .caption)
                             .accessibilityLabel("Caption")
+                            .disabled(isLoading)
                         Button(isLoading ? "Importing…" : "Import caption") {
                             Task { await runImport() }
                         }
@@ -211,7 +214,7 @@ public struct CaptionsImportView: View {
     }
 
     private func runImport() async {
-        isLoading = true; error = nil; savedMessage = nil; reportStale = false
+        isLoading = true; error = nil; saveError = nil; savedMessage = nil; reportStale = false
         defer { isLoading = false }
         focused = nil
         let url = linkText.trimmingCharacters(in: .whitespaces)
@@ -248,9 +251,10 @@ public struct CaptionsImportView: View {
         #else
         let deviceId = UUID().uuidString
         #endif
+        let trimmed = cleanTitle(title)
         let recipe = Recipe(
             householdId: "hh-demo",
-            title: title.isEmpty ? (report?.recipe.title ?? "Untitled") : title,
+            title: trimmed.isEmpty ? (report?.recipe.title ?? trimmed) : trimmed,
             source: "caption:\(platform.rawValue.lowercased())",
             sourceUrl: linkText,
             deviceId: deviceId

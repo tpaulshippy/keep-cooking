@@ -82,4 +82,16 @@ final class IngestHumanPolishTests: XCTestCase {
     func testStepsHeaderKeepsValidIndex() {
         XCTAssertEqual(IngestStepsHeader(current: 1).current, 1)
     }
+
+    // MARK: - Title gating
+
+    func testNewlineOnlyTitleIsNotSavable() {
+        XCTAssertFalse(isSavableTitle("\n  \n"))
+        XCTAssertFalse(isSavableTitle("   "))
+        XCTAssertTrue(isSavableTitle("Soup"))
+    }
+
+    func testCleanTitleTrimsWhitespaceAndNewlines() {
+        XCTAssertEqual(cleanTitle("  Soup\n"), "Soup")
+    }
 }

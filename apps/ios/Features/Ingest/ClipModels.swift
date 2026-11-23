@@ -122,6 +122,18 @@ public func clipWarningText(for warning: String) -> String {
     }
 }
 
+/// Title gating shared by the ingest Save buttons: blank-looking titles
+/// (spaces *or* newlines from pastes) can never be saved.
+public func isSavableTitle(_ title: String) -> Bool {
+    !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+}
+
+/// Trims the saved title the same way `isSavableTitle` validates it, so
+/// what is persisted matches what the Save button allowed.
+public func cleanTitle(_ title: String) -> String {
+    title.trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
 // MARK: - ClipClient (POST /clip)
 
 public enum ClipClientError: Error, Sendable {
