@@ -231,6 +231,7 @@ public struct OCRScanView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("2 · Review and save")
                             .font(.headline)
+                            .accessibilityIdentifier("ocr-review-heading")
                         Text("Check the details below — the first line becomes the title.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)

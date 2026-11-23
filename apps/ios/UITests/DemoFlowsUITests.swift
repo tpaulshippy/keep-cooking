@@ -64,7 +64,9 @@ final class DemoFlowsUITests: XCTestCase {
         sleep(1)
 
         // Dismiss the keyboard (also scrolls the form) so lower rows exist.
-        app.staticTexts["Preview (editable)"].tap()
+        // Targets the review heading by identifier (stable across copy edits).
+        wait(id(app, "ocr-review-heading"), "review heading missing")
+        id(app, "ocr-review-heading").tap()
         sleep(1)
 
         // Tap 2: parse into editable preview.
