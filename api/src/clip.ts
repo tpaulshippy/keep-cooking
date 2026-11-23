@@ -155,7 +155,7 @@ const QTY_RE = /^(\d+(?:[./]\d+)?(?:\s+\d+\/\d+)?)\s*([a-zA-Z]*)\s+(.+)$/;
 export function parseCaption(caption: string, sourceUrl?: string): ClipResult {
   const lines = caption
     .split(/\r?\n/)
-    .map((l) => l.trim().replace(/^[-*•\d.)\s]+/, '').trim())
+    .map((l) => l.trim().replace(/^([-*•]\s+|\d+[.)]\s+)/, '').trim())
     .filter(Boolean);
   const warnings: string[] = [];
   if (lines.length === 0) {

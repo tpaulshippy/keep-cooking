@@ -26,6 +26,7 @@ type D1 = {
       first(): Promise<Record<string, unknown> | null>;
       run(): Promise<unknown>;
     };
+    all(): Promise<{ results: Record<string, unknown>[] }>;
   };
   batch?(stmts: unknown[]): Promise<unknown[]>;
 };
@@ -52,13 +53,22 @@ export class D1Store extends MemoryStore implements Store {
     void this.drizzleDb;
   }
 
-  /** Load all rows into the in-memory maps (single-flight per instance). */
+  /** Merge D1 rows into the in-memory maps (LWW per row). Safe to run per
+   * request: D1 wins ties/newer; unpersisted memory rows (D1 unavailable)
+   * are kept. Self-healing — no one-shot flag. */
   async hydrate(): Promise<void> {
-    if (this.hydrated) return;
-    this.hydrated = true;
-    const q = async (sql: string) => (await this.db.prepare(sql).bind().all()).results;
+    const q = async (sql: string) => (await this.db.prepare(sql).all()).results;
+    // Snapshot memory rows so strictly-newer local writes survive the reload.
+    const prev = {
+      recipes: new Map(this.recipes),
+      lists: new Map(this.lists),
+      pantry: new Map(this.pantry),
+      plans: new Map(this.plans),
+      menus: new Map(this.menus),
+    };
     try {
-      for (const h of await q('SELECT id, name FROM households')) {
+      const hh = await q('SELECT id, name FROM households');
+      for (const h of hh) {
         this.households.set(String(h['id']), { id: String(h['id']), name: String(h['name'] ?? '') });
       }
       for (const m of await q('SELECT household_id, user_id, role FROM memberships')) {
@@ -162,8 +172,22 @@ export class D1Store extends MemoryStore implements Store {
           deleted: Number(m['deleted'] ?? 0) === 1,
         });
       }
-    } catch {
+      // LWW merge: restore memory rows strictly newer than what D1 returned.
+      const newer = <K, V extends { updatedAt: string }>(cur: Map<K, V>, old: Map<K, V>) => {
+        for (const [id, row] of old) {
+          const c = cur.get(id);
+          if (!c || row.updatedAt > c.updatedAt) cur.set(id, row);
+        }
+      };
+      newer(this.recipes, prev.recipes);
+      newer(this.lists, prev.lists);
+      newer(this.pantry, prev.pantry);
+      newer(this.plans, prev.plans);
+      newer(this.menus, prev.menus);
+      this.hydrated = true;
+    } catch (e) {
       // Fresh DB (tables may not exist until migration runs): stay empty.
+      console.error('[d1store-hydrate]', e instanceof Error ? e.message : e);
       this.hydrated = true;
     }
   }

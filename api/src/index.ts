@@ -29,15 +29,20 @@ export interface Env {
   BETTER_AUTH_SECRET?: string;
 }
 
-export const VERSION = '0.1.0';
+const VERSION = '0.1.0';
 
 // Singleton memory store for `wrangler dev` without a D1 binding.
 let devMemory: MemoryStore | null = null;
+// Reuse D1Store per binding object so hydrate() runs once.
+const d1Stores = new WeakMap<object, D1Store>();
 
 export function resolveStore(env: Env): Store {
   if (env.DB) {
-    const s = new D1Store(env.DB as never);
-    // Fire-and-forget hydrate; routes await it via ensureReady below.
+    let s = d1Stores.get(env.DB as object);
+    if (!s) {
+      s = new D1Store(env.DB as never);
+      d1Stores.set(env.DB as object, s);
+    }
     void s.hydrate();
     return s;
   }
