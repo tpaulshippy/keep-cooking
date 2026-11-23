@@ -44,6 +44,10 @@ public final class CookSession {
         else { crossedOffSteps.insert(id) }
     }
 
+    /// Idempotent "done": repeat calls never unmark. The Finish button uses
+    /// this; the step card's toggle remains the explicit unmark action.
+    public func markStepDone(id: String) { crossedOffSteps.insert(id) }
+
     public func toggleIngredient(id: String) {
         if crossedOffIngredients.contains(id) { crossedOffIngredients.remove(id) }
         else { crossedOffIngredients.insert(id) }
@@ -79,9 +83,13 @@ public enum CookActivityStub {
     @discardableResult
     public static func schedule(timers: [ParsedTimer]) -> [String] {
         let center = UNUserNotificationCenter.current()
+        // One UUID per schedule call: per-timer starts each pass a
+        // one-element array (index always 0), so index+seconds alone would
+        // collide and equal-duration timers would replace each other.
+        let batch = UUID().uuidString
         var ids: [String] = []
         for (i, timer) in timers.enumerated() {
-            let id = "cook-timer-\(i)-\(timer.seconds)"
+            let id = "cook-timer-\(batch)-\(i)-\(timer.seconds)"
             let content = UNMutableNotificationContent()
             content.title = "Smidgen timer"
             content.body = "\(timer.label) — done!"
