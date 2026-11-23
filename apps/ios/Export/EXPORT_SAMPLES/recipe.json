@@ -1,0 +1,47 @@
+{
+  "categories" : [
+    "dinner",
+    "fish"
+  ],
+  "cookMinutes" : 20,
+  "description" : "Crispy salmon with a sweet-savory miso glaze. Weeknight fast.",
+  "id" : "0190c8a1-7a2e-7b3c-9d1e-000000000001",
+  "ingredients" : [
+    {
+      "display" : "4 salmon fillets (170g each)",
+      "name" : "salmon fillets"
+    },
+    {
+      "display" : "3 tbsp white miso",
+      "name" : "white miso"
+    },
+    {
+      "display" : "1 tbsp mirin",
+      "name" : "mirin"
+    },
+    {
+      "display" : "1 tsp salt",
+      "name" : "salt"
+    }
+  ],
+  "prepMinutes" : 10,
+  "rating" : 4.5,
+  "servings" : 4,
+  "source" : "Seed",
+  "sourceUrl" : "https:\/\/example.com\/r1",
+  "steps" : [
+    {
+      "position" : 0,
+      "text" : "Heat oven to 220C. Line a tray with foil."
+    },
+    {
+      "position" : 1,
+      "text" : "Whisk miso and mirin; glaze the salmon."
+    },
+    {
+      "position" : 2,
+      "text" : "Roast 10 min until just opaque. Rest 2 min and serve."
+    }
+  ],
+  "title" : "Weeknight Miso Salmon"
+}
