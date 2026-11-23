@@ -38,7 +38,9 @@ jobs:
           # schema apply + deploy below target a real DB. Mirrors bots worker.
           DB_ID=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="smidgen") | .uuid // empty')
           if [ -z "$DB_ID" ]; then
-            DB_ID=$(npx wrangler d1 create smidgen --json | jq -r .uuid)
+            # (No --json on `d1 create` in wrangler >= 4.16x: create, then re-list.)
+            npx wrangler d1 create smidgen
+            DB_ID=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="smidgen") | .uuid // empty')
           fi
           sed -i "s/database_id = \".*\"/database_id = \"$DB_ID\"/" wrangler.toml
           # Idempotent: succeeds on first run, no-op (|| true) after that.
