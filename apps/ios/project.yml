@@ -75,6 +75,12 @@ targets:
         includes: ['**/*.swift']
         excludes: ['**/*Tests.swift']
       - path: ShareExtension/ShareStore.swift
+      # Frozen contract seeds → bundle/Seed/*.json so first launch demos
+      # offline (SeedLoader.loadBundledSeeds). Copied from
+      # packages/contracts/seed (read-only source; do not edit JSON here).
+      - path: Seed
+        includes: ['*.json']
+        buildPhase: resources
     dependencies:
       - target: SmidgenWidgets
       - target: SmidgenShare
@@ -159,6 +165,23 @@ targets:
       path: Config/AppGroups.entitlements
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: org.smidgen.app.watch
+
+  # PASS 2 demos: XCUITest bundle driving the three recorded flows
+  # (offline-launch, ingest-save, plan-to-list) deterministically while
+  # `xcrun simctl io booted recordVideo` captures the MP4s.
+  SmidgenUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: '17.0'
+    sources:
+      - path: UITests
+    dependencies:
+      - target: Smidgen
+    info:
+      path: Config/Info-Tests.plist
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.smidgen.app.uitests
+      TARGETED_DEVICE_FAMILY: '1,2'
 
 # NOTE: no explicit `schemes:` — XcodeGen auto-generates one shared scheme
 # per target (Smidgen, SmidgenWidgets, SmidgenShare, SmidgenTests,

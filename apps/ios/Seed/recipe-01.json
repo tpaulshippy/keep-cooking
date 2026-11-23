@@ -1,0 +1,45 @@
+{
+  "id": "0190c8a1-7a2e-7b3c-9d1e-000000000001",
+  "updatedAt": "2026-11-20T12:00:00Z",
+  "deviceId": "seed",
+  "deleted": false,
+  "entity": "recipe",
+  "title": "Weeknight Miso Salmon",
+  "description": "Seed Weeknight Miso Salmon.",
+  "servings": 4,
+  "prepMinutes": 10,
+  "cookMinutes": 20,
+  "rating": 4.0,
+  "source": "Seed",
+  "sourceUrl": "https://example.com/r1",
+  "categories": [
+    "dinner",
+    "fish"
+  ],
+  "householdId": "hh-demo",
+  "photoKeys": {
+    "original": "photos/0190c8a1-7a2e-7b3c-9d1e-000000000001/original.jpg",
+    "large1024": "photos/0190c8a1-7a2e-7b3c-9d1e-000000000001/1024.jpg",
+    "thumb": "photos/0190c8a1-7a2e-7b3c-9d1e-000000000001/thumb.jpg"
+  },
+  "ingredients": [
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000001-ing1",
+      "name": "salt",
+      "quantity": 1,
+      "unit": "tsp",
+      "display": "1 tsp",
+      "position": 0,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000001"
+    }
+  ],
+  "steps": [
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000001-st1",
+      "position": 0,
+      "text": "Cook and serve.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000001"
+    }
+  ]
+}

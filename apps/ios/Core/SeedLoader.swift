@@ -122,6 +122,11 @@ public final class SeedLoader {
         {
             return loadSeeds(from: dir, into: context)
         }
+        // Flat fallback: recipe-*.json copied as individual bundle resources
+        // (XcodeGen adds them at the bundle root, not in a Seed/ subfolder).
+        if let root = Bundle.main.resourceURL {
+            return loadSeeds(from: root, into: context)
+        }
         return SeedLoadResult(loaded: 0, skipped: 0)
     }
 

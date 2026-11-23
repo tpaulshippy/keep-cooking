@@ -71,13 +71,13 @@ struct AdaptiveShell: View {
 struct PhoneTabView: View {
     var body: some View {
         TabView {
-            RecipeListPlaceholder()
+            RecipeLibraryView()
                 .tabItem { Label("Recipes", systemImage: "book.pages") }
-            PlanListPlaceholder()
+            PlanTabView()
                 .tabItem { Label("Plan", systemImage: "calendar") }
-            ListsPlaceholder()
+            ListsTabView()
                 .tabItem { Label("Lists", systemImage: "cart") }
-            MorePlaceholder()
+            MoreTabView()
                 .tabItem { Label("More", systemImage: "ellipsis.circle") }
         }
     }
@@ -289,6 +289,8 @@ final class SyncCoordinator {
             let res = loader.loadBundledSeeds(into: context)
             lastResult = "seeded \(res.loaded) recipes (offline demo)"
         }
+        // Demo week plans (idempotent) so Plan → list records deterministically.
+        DemoSeeds.seedDemoPlans(context: context, deviceId: currentDeviceId())
     }
 
     func sync() async {

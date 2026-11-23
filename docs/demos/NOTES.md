@@ -1,0 +1,101 @@
+# PASS 2 — Screen recordings of the real Smidgen app
+
+Three MP4s of the REAL running app (no mockups), driven deterministically by
+a new XCUITest target while `simctl recordVideo` captures the simulator.
+Branch: `xcode-full`. Only `apps/ios/**` + `docs/demos/**` touched.
+
+## Device & OS
+
+- Simulator device for recordings: **Smidgen26** (created for this pass),
+  iPhone 16 Pro, **iOS 26.5** (`D54DE10D-E9FD-4E87-87C5-CCA9AF0BFB67`).
+- Build destination (per brief): `platform=iOS Simulator,OS=18.5,name=iPhone 16 Pro`
+  — `xcodebuild … -scheme Smidgen build` → **exit 0**.
+- Host: Xcode 27.2 (27B52), xcodegen 2.48.0, macOS 25G342.
+
+### Why not 18.5 for the recording (honest deviation)
+
+The app **builds** for 18.5 but **does not install** on any iOS 18.x simulator:
+`installd` rejects the SDK-27-built widget appex —
+`com.apple.widgetkit … does not correspond to a known extension point`.
+Reproduced on two 18.5 devices (iPhone 16 Pro `A1836DF7…` and iPhone 16 Pro
+Max `18946963…`). The full bundle (app + share + widgets extensions) installs
+and launches cleanly on iOS 26.5, so all three videos were recorded there.
+Genuine project fixes committed along the way (needed on every runtime):
+
+- `Config/Info-Share.plist`: added missing `NSExtension`
+  (`com.apple.share-services` + URL/text activation rule) and
+  `CFBundleDisplayName` — without these, install fails everywhere.
+- `Config/Info-Widgets.plist`: added `NSExtension` (`com.apple.widgetkit`)
+  + `CFBundleDisplayName` (same reason).
+
+## Driving decision
+
+**XCUITest, not scripted taps.** New `SmidgenUITests` target
+(`type: bundle.ui-testing`, in `project.yml`, generated via
+`xcodegen generate — no hand-edited pbxproj`) with
+`apps/ios/UITests/DemoFlowsUITests.swift`: three tests, one per video, with
+~1s pauses at key beats so the MP4 is watchable. Accessibility identifiers
+added in `apps/ios/App/DemoFlows.swift` (+ 4 `ocr-*` ids in OCRScanView).
+To record: start `simctl io recordVideo` in the background, run the single
+test, then `kill -INT <simctl-pid>` (SIGINT finalizes the file; plain `kill`
+leaves a 0-byte mp4 + `.sb-*` temp).
+
+## Exact commands (all exit 0 unless noted)
+
+```sh
+git checkout xcode-full
+cd apps/ios && xcodegen generate          # picks up Seed resources + UITests target
+
+# build (OS=18.5 per brief)
+xcodebuild -project apps/ios/Smidgen.xcodeproj -scheme Smidgen \
+  -destination 'platform=iOS Simulator,OS=18.5,name=iPhone 16 Pro' build   # exit 0
+
+# recording device (iOS 26.5 — see deviation note above)
+xcrun simctl create "Smidgen26" com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro \
+  com.apple.CoreSimulator.SimRuntime.iOS-26-5
+xcrun simctl boot D54DE10D-E9FD-4E87-87C5-CCA9AF0BFB67   # exit 0
+
+# video 1 (fresh install first)
+xcrun simctl uninstall D54DE10D-… org.smidgen.app        # exit 0
+nohup xcrun simctl io D54DE10D-… recordVideo docs/demos/offline-launch.mp4 &
+xcodebuild test -project apps/ios/Smidgen.xcodeproj -scheme SmidgenUITests \
+  -destination 'platform=iOS Simulator,name=Smidgen26' \
+  -only-testing:SmidgenUITests/DemoFlowsUITests/testOfflineLaunch   # passed (18.2s)
+kill -INT <recordVideo pid>
+
+# videos 2, 3 — same pattern with testIngestSave / testPlanToList (both passed)
+# post-process for compatibility + size:
+ffmpeg -i IN.mp4 -c:v libx264 -crf 23 -preset medium -pix_fmt yuv420p \
+  -c:a aac -movflags +faststart OUT.mp4
+```
+
+Unit suite (touched files it compiles): `xcodebuild test -scheme SmidgenTests
+-destination 'platform=iOS Simulator,name=Smidgen26'` → **all passed**.
+
+## What each video shows
+
+| File | Dur / size | Beats |
+|---|---|---|
+| `offline-launch.mp4` | 31.8s / 1.7MB | Fresh install → Recipes lists 15 seeded recipes (Avocado Toast, Banana Bread, …) with zero backend; kill + relaunch → list persists (SwiftData offline-first). |
+| `ingest-save.mp4` | 39.3s / 1.9MB | More → Scan cookbook (OCR) → type “Cream of Mushroom / 8 oz mushrooms / 2 cups cream / Simmer 20 minutes.” → **Parse text** → editable preview (`strategy=ocr confidence=0.70`) → **Save recipe** → green “Saved OCR recipe” confirmation. 3 taps, fully local. |
+| `plan-to-list.mp4` | 49.2s / 1.5MB | Plan tab week view (Mon/Wed/Fri dinners seeded offline) → **Add week to list** → “Added 1 items to Weekly shop” → Lists tab: Weekly shop aisle-sorted (“salt · 3 tsp · spices”) → check-off → recipe detail → **Cook** → cook-mode step pager + Next. |
+
+## Gaps / stubs (nothing faked)
+
+- **URL/clipboard ingest is a stub without a backend.** `ClipView` /
+  `CaptionsImportView` POST to `/clip`, which isn't configured, so they fail
+  gracefully offline. The recorded ingest uses the OCR path, which is 100%
+  local (paste → `OCR blockadeSplitter` → save into SwiftData). Wired into the
+  app via More tab; both dead-end views remain reachable for when the backend
+  exists.
+- **Seeds are minimal stubs.** Every `packages/contracts/seed/recipe-*.json`
+  carries a single `salt 1 tsp` ingredient, so the week aggregation correctly
+  merges 3 plans into one “salt · 3 tsp” line (summed quantities + aisle guess
+  `spices` prove the real `aggregateWeekToList` ran). Richer seeds will make
+  this video prettier; the pipeline is honest.
+- **Cook timers not exercised.** Seeds contain no timed steps, so the Timers
+  section shows “No timers found”; the video reaches cook mode, pages steps,
+  and the scaler UI is present. Pantry/barcode and webcal subscribe are not
+  recorded (stub sheets / no Calendar in sim).
+- iOS 18.5 recording was impossible (installd/widgetkit, above); 18.5 build
+  verified green. The stray `Smidgen26` simulator is intentional test infra.

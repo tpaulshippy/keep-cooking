@@ -110,7 +110,9 @@ public struct OCRScanView: View {
                     #endif
                     Text("Recognized / pasted text (first line = title)").font(.caption).foregroundStyle(.secondary)
                     TextEditor(text: $recognizedText).frame(minHeight: 140)
+                        .accessibilityIdentifier("ocr-text")
                     Button("Parse text") { parse() }
+                        .accessibilityIdentifier("ocr-parse")
                 }
                 Section("Preview (editable)") {
                     TextField("Title", text: $title)
@@ -125,9 +127,11 @@ public struct OCRScanView: View {
                     }
                     Button("Save recipe") { save() }
                         .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .accessibilityIdentifier("ocr-save")
                 }
                 if let notice { Section { Text(notice).font(.caption) } }
-                if let savedMessage { Section { Text(savedMessage).foregroundStyle(.green) } }
+                if let savedMessage { Section { Text(savedMessage).foregroundStyle(.green)
+                    .accessibilityIdentifier("ocr-saved") } }
             }
             .navigationTitle("OCR scan")
         }
