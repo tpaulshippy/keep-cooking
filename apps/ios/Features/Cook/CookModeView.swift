@@ -182,19 +182,22 @@ public struct CookModeView: View {
                     .progressViewStyle(.linear)
                     .frame(minHeight: 8)
                     .accessibilityLabel("Cooking progress \(Int(round(progress * 100))) percent")
-                // Dots double as large jump targets.
-                HStack(spacing: 8) {
-                    ForEach(steps.indices, id: \.self) { idx in
-                        Button { session.go(to: idx) } label: {
-                            Capsule()
-                                .fill(idx == session.stepIndex ? Color.accentColor
-                                      : (crossed(idx) ? Color.green.opacity(0.7) : Color.secondary.opacity(0.3)))
-                                .frame(width: idx == session.stepIndex ? 28 : 16, height: 8)
-                                .frame(minWidth: 44, minHeight: 44)
-                                .contentShape(Rectangle())
+                // Dots double as large jump targets; scrolls when the
+                // recipe has more steps than fit on screen.
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(steps.indices, id: \.self) { idx in
+                            Button { session.go(to: idx) } label: {
+                                Capsule()
+                                    .fill(idx == session.stepIndex ? Color.accentColor
+                                          : (crossed(idx) ? Color.green.opacity(0.7) : Color.secondary.opacity(0.3)))
+                                    .frame(width: idx == session.stepIndex ? 28 : 16, height: 8)
+                                    .frame(minWidth: 44, minHeight: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Go to step \(idx + 1)")
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Go to step \(idx + 1)")
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -273,8 +276,9 @@ public struct CookModeView: View {
             .disabled(session.stepIndex == 0 || steps.isEmpty)
             Button {
                 if session.stepIndex >= steps.count - 1 {
-                    // Last step: mark done instead of dead-ending.
-                    if let last = steps.last { session.toggleStep(id: last.id) }
+                    // Last step: idempotently mark done (repeat taps must
+                    // not unmark); the card control is the unmark action.
+                    if let last = steps.last { session.markStepDone(id: last.id) }
                 } else {
                     session.next()
                 }
@@ -323,7 +327,7 @@ public struct CookModeView: View {
                         }
                         .buttonStyle(.plain)
                         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                        .accessibilityLabel("\(ing.name), \(done ? "gathered" : "not gathered")")
+                        .accessibilityLabel("\(scaledDisplay(name: ing.name, quantity: ing.quantity, unit: ing.unit, factor: factor)), \(done ? "gathered" : "not gathered")")
                         if ing.id != ingredients.last?.id { Divider() }
                     }
                     if ingredients.isEmpty {
