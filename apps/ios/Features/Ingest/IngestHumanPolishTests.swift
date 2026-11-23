@@ -40,9 +40,10 @@ final class IngestHumanPolishTests: XCTestCase {
     // MARK: - Warning copy
 
     func testJsonldMissingWarningIsHumanized() {
-        let text = clipWarningText(for: "jsonld-missing")
-        XCTAssertFalse(text.contains("jsonld-missing"))
-        XCTAssertFalse(text.isEmpty)
+        XCTAssertEqual(
+            clipWarningText(for: "jsonld-missing"),
+            "No recipe card found on the page — details were read from the page text instead."
+        )
     }
 
     func testUnknownWarningPassesThrough() {
@@ -66,5 +67,19 @@ final class IngestHumanPolishTests: XCTestCase {
         """.data(using: .utf8)!
         let report = try JSONDecoder().decode(ClipReport.self, from: json)
         XCTAssertNil(report.warnings)
+    }
+
+    // MARK: - Steps header bounds
+
+    func testStepsHeaderClampsHighIndex() {
+        XCTAssertEqual(IngestStepsHeader(current: 99).current, 2)
+    }
+
+    func testStepsHeaderClampsNegativeIndex() {
+        XCTAssertEqual(IngestStepsHeader(current: -1).current, 0)
+    }
+
+    func testStepsHeaderKeepsValidIndex() {
+        XCTAssertEqual(IngestStepsHeader(current: 1).current, 1)
     }
 }

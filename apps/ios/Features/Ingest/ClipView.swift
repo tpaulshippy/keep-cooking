@@ -118,6 +118,7 @@ public struct ClipView: View {
                                 .background(Color(.tertiarySystemBackground))
                                 .clipShape(RoundedRectangle(cornerRadius: 10))
                                 .focused($focused, equals: .ings)
+                                .accessibilityLabel("Ingredients")
                             Text("Steps")
                                 .font(.caption).foregroundStyle(.secondary)
                             TextEditor(text: $stepLines)
@@ -126,6 +127,7 @@ public struct ClipView: View {
                                 .background(Color(.tertiarySystemBackground))
                                 .clipShape(RoundedRectangle(cornerRadius: 10))
                                 .focused($focused, equals: .steps)
+                                .accessibilityLabel("Steps")
                         }
                         .padding(14)
                         .background(Color(.secondarySystemBackground))
@@ -194,6 +196,8 @@ public struct ClipView: View {
             stepLines = (rep.recipe.steps ?? []).map { $0.text }.joined(separator: "\n")
         } catch {
             print("Clip failed: \(error)")
+            // Hide the stale preview so Save can't persist the previous recipe.
+            report = nil
             self.error = clipServerErrorMessage(for: error)
                 ?? "Couldn't clip that link. Check the address and try again."
         }
@@ -233,8 +237,11 @@ public struct ClipView: View {
         }
         do {
             try context.save()
+            self.error = nil
             savedMessage = "Saved “\(recipe.title)” (\(parsed.count) ingredients, \(steps.count) steps)"
         } catch {
+            // Drop this attempt's pending graph so a retry can't persist duplicates.
+            context.rollback()
             print("Clip save failed: \(error)")
             self.error = "Couldn't save that recipe. Try again."
         }

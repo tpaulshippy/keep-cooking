@@ -38,8 +38,32 @@ public enum VisionOCR {
             }
             req.recognitionLevel = .accurate
             req.usesLanguageCorrection = true
-            let handler = VNImageRequestHandler(cgImage: cg, options: [:])
+            // The CGImage drops the UIImage orientation, so pass it
+            // explicitly — otherwise portrait pages can OCR rotated/empty.
+            let handler = VNImageRequestHandler(
+                cgImage: cg,
+                orientation: CGImagePropertyOrientation(imageOrientation: image.imageOrientation),
+                options: [:]
+            )
             do { try handler.perform([req]) } catch { cont.resume(throwing: error) }
+        }
+    }
+}
+
+private extension CGImagePropertyOrientation {
+    /// ImageIO uses EXIF numbering, which differs from UIImage.Orientation
+    /// raw values — map explicitly instead of casting.
+    init(imageOrientation: UIImage.Orientation) {
+        switch imageOrientation {
+        case .up: self = .up
+        case .down: self = .down
+        case .left: self = .left
+        case .right: self = .right
+        case .upMirrored: self = .upMirrored
+        case .downMirrored: self = .downMirrored
+        case .leftMirrored: self = .leftMirrored
+        case .rightMirrored: self = .rightMirrored
+        @unknown default: self = .up
         }
     }
 }
@@ -190,6 +214,7 @@ public struct OCRScanView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                             .focused($focused, equals: .paste)
                             .accessibilityIdentifier("ocr-text")
+                            .accessibilityLabel("Recognized text")
                         Button("Parse text") { parse() }
                             .buttonStyle(.borderedProminent)
                             .accessibilityIdentifier("ocr-parse")
@@ -216,6 +241,7 @@ public struct OCRScanView: View {
                             .background(Color(.tertiarySystemBackground))
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                             .focused($focused, equals: .ings)
+                            .accessibilityLabel("Ingredients")
                         Text("Steps")
                             .font(.caption).foregroundStyle(.secondary)
                         TextEditor(text: $stepLines)
@@ -224,6 +250,7 @@ public struct OCRScanView: View {
                             .background(Color(.tertiarySystemBackground))
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                             .focused($focused, equals: .steps)
+                            .accessibilityLabel("Steps")
                     }
                     .padding(14)
                     .background(Color(.secondarySystemBackground))
@@ -301,6 +328,7 @@ public struct OCRScanView: View {
     private func parse() {
         let lines = recognizedText.components(separatedBy: .newlines)
         let draft = OCRSplitter.split(lines)
+        savedMessage = nil
         title = draft.title
         ingredientLines = draft.ingredientLines.joined(separator: "\n")
         stepLines = draft.stepLines.joined(separator: "\n")
@@ -310,6 +338,7 @@ public struct OCRScanView: View {
 
     private func recognize(data: Data) async {
         isScanning = true
+        savedMessage = nil
         defer { isScanning = false }
         do {
             let res = try await VisionOCR.recognize(data: data)
@@ -351,8 +380,11 @@ public struct OCRScanView: View {
         }
         do {
             try context.save()
+            notice = nil
             savedMessage = "Saved “\(recipe.title)”"
         } catch {
+            // Drop this attempt's pending graph so a retry can't persist duplicates.
+            context.rollback()
             print("OCR save failed: \(error)")
             notice = "Couldn't save that recipe. Try again."
         }
