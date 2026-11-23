@@ -223,9 +223,29 @@ targets:
       PRODUCT_BUNDLE_IDENTIFIER: org.smidgen.app.uitests
       TARGETED_DEVICE_FAMILY: '1,2'
 
-# NOTE: no explicit `schemes:` — XcodeGen auto-generates one shared scheme
-# per target (Smidgen, SmidgenWidgets, SmidgenShare, SmidgenTests,
-# SmidgenWatch). `xcodebuild -scheme Smidgen` and
-# `xcodebuild -scheme SmidgenTests` resolve to those. Explicit scheme
-# blocks were attempted and rejected by the spec decoder; autogen keeps
-# `xcodegen generate` reproducible with zero hand-maintained scheme XML.
+# Schemes are explicit and shared (committed under
+# Smidgen.xcodeproj/xcshareddata/xcschemes/) so every clone and Xcode Cloud
+# resolves `-scheme Smidgen` identically. Keep this list in sync with targets.
+schemes:
+  Smidgen:
+    build:
+      targets:
+        Smidgen: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+  SmidgenTests:
+    build:
+      targets:
+        SmidgenTests: all
+    test:
+      config: Debug
+      targets:
+        - SmidgenTests
+  SmidgenWatch:
+    build:
+      targets:
+        SmidgenWatch: all
+    run:
+      config: Debug
