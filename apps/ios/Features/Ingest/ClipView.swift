@@ -3,11 +3,43 @@
 //
 // Paprika-parity ingest: URL → preview → save in <3 taps.
 // Tap 1: paste URL + "Clip". Tap 2: review editable preview. Tap 3: "Save".
-// POST /clip (ClipClient); strategies jsonld/reader/caption logged PII-safe.
-// Saves into Lane 2 SwiftData models (Recipe + Ingredient + Step).
+// POST /clip (ClipClient); saves into Lane 2 SwiftData models (Recipe + Ingredient + Step).
 
 import SwiftUI
 import SwiftData
+
+private struct ClipStepsHeader: View {
+    var current: Int
+    private let steps = ["Add", "Review", "Save"]
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(steps.indices, id: \.self) { i in
+                VStack(spacing: 4) {
+                    Circle()
+                        .fill(i <= current ? Color.accentColor : Color.secondary.opacity(0.25))
+                        .frame(width: 22, height: 22)
+                        .overlay(
+                            Text("\(i + 1)")
+                                .font(.caption2.bold())
+                                .foregroundStyle(i <= current ? .white : .secondary)
+                        )
+                    Text(steps[i])
+                        .font(.caption2)
+                        .foregroundStyle(i == current ? .primary : .secondary)
+                }
+                if i < steps.count - 1 {
+                    Rectangle()
+                        .fill(Color.secondary.opacity(0.25))
+                        .frame(height: 1)
+                        .padding(.horizontal, 6)
+                        .padding(.bottom, 16)
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Step \(current + 1) of 3: \(steps[current])")
+    }
+}
 
 public struct ClipView: View {
     @Environment(\.modelContext) private var context
@@ -23,53 +55,143 @@ public struct ClipView: View {
     @State private var ingredientLines: String = ""
     @State private var stepLines: String = ""
 
+    @FocusState private var focused: Field?
+    private enum Field { case url, title, ings, steps }
+
     var baseURL: URL
 
     public init(baseURL: URL = URL(string: "https://api.smidgen.local")!) {
         self.baseURL = baseURL
     }
 
+    private var stepIndex: Int {
+        if savedMessage != nil { return 2 }
+        if report != nil { return 1 }
+        return 0
+    }
+
+    private var canSave: Bool {
+        !title.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
     public var body: some View {
         NavigationStack {
-            Form {
-                Section("Recipe URL") {
-                    TextField("https://…", text: $urlText)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        #if os(iOS)
-                        .keyboardType(.URL)
-                        #endif
-                    Button(isLoading ? "Clipping…" : "Clip recipe") {
-                        Task { await runClip() }
-                    }
-                    .disabled(isLoading || urlText.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
+            ScrollView {
+                VStack(spacing: 14) {
+                    ClipStepsHeader(current: stepIndex)
+                        .padding(.top, 8)
 
-                if let error {
-                    Section { Text(error).foregroundStyle(.red) }
-                }
-
-                if let report {
-                    Section("Preview · \(report.strategy.rawValue) · confidence \(confidenceText(report))") {
-                        TextField("Title", text: $title)
-                        Text("Ingredients (one per line)").font(.caption).foregroundStyle(.secondary)
-                        TextEditor(text: $ingredientLines).frame(minHeight: 120)
-                        Text("Steps (one per line)").font(.caption).foregroundStyle(.secondary)
-                        TextEditor(text: $stepLines).frame(minHeight: 120)
-                        if let warnings = report.warnings, !warnings.isEmpty {
-                            ForEach(warnings, id: \.self) { Text("⚠︎ \($0)").font(.caption) }
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("1 · Add a link")
+                            .font(.headline)
+                        Text("Paste a recipe link below and we'll pull in the details.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        TextField("Recipe link", text: $urlText)
+                            .textFieldStyle(.roundedBorder)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .focused($focused, equals: .url)
+                            #if os(iOS)
+                            .keyboardType(.URL)
+                            #endif
+                        Button(isLoading ? "Clipping…" : "Clip recipe") {
+                            Task { await runClip() }
                         }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isLoading || urlText.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
-                    Section {
-                        Button("Save recipe") { save() }
+                    .padding(14)
+                    .background(Color(.secondarySystemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+
+                    if let error {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.circle")
+                            Text(error)
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                        .background(Color(.secondarySystemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                    }
+
+                    if report != nil {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("2 · Review and save")
+                                .font(.headline)
+                            Text("Check the details — edit anything before saving.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Text("Checked on this device.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            TextField("Title", text: $title)
+                                .textFieldStyle(.roundedBorder)
+                                .focused($focused, equals: .title)
+                            Text("Ingredients")
+                                .font(.caption).foregroundStyle(.secondary)
+                            TextEditor(text: $ingredientLines)
+                                .frame(minHeight: 80, maxHeight: 130)
+                                .padding(6)
+                                .background(Color(.tertiarySystemBackground))
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                .focused($focused, equals: .ings)
+                            Text("Steps")
+                                .font(.caption).foregroundStyle(.secondary)
+                            TextEditor(text: $stepLines)
+                                .frame(minHeight: 80, maxHeight: 130)
+                                .padding(6)
+                                .background(Color(.tertiarySystemBackground))
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                .focused($focused, equals: .steps)
+                        }
+                        .padding(14)
+                        .background(Color(.secondarySystemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("3 · Save")
+                                .font(.headline)
+                            Button("Save recipe") { save() }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(!canSave)
+                            if !canSave {
+                                Text("Add a title to save.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(14)
+                        .background(Color(.secondarySystemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                    }
+
+                    if let savedMessage {
+                        HStack(spacing: 6) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                            Text(savedMessage)
+                                .foregroundStyle(.green)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                        .background(Color(.secondarySystemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
                     }
                 }
-
-                if let savedMessage {
-                    Section { Text(savedMessage).foregroundStyle(.green) }
+                .padding()
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .navigationTitle("Save a recipe link")
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { focused = nil }
                 }
             }
-            .navigationTitle("Clip URL")
         }
     }
 
@@ -78,6 +200,7 @@ public struct ClipView: View {
     private func runClip() async {
         isLoading = true; error = nil; savedMessage = nil
         defer { isLoading = false }
+        focused = nil
         let req = ClipRequest(url: urlText.trimmingCharacters(in: .whitespaces), source: .url)
         do {
             let client = ClipClient(baseURL: baseURL)
@@ -91,7 +214,7 @@ public struct ClipView: View {
             }.joined(separator: "\n")
             stepLines = (rep.recipe.steps ?? []).map { $0.text }.joined(separator: "\n")
         } catch {
-            self.error = "Clip failed: \(error.localizedDescription)"
+            self.error = "Couldn't clip that link. Check the address and try again."
         }
     }
 
@@ -129,10 +252,7 @@ public struct ClipView: View {
         }
         try? context.save()
         savedMessage = "Saved “\(recipe.title)” (\(parsed.count) ingredients, \(steps.count) steps)"
-    }
-
-    private func confidenceText(_ r: ClipReport) -> String {
-        String(format: "%.2f", r.confidence ?? 0)
+        focused = nil
     }
 
     private func currentDeviceId() -> String {
