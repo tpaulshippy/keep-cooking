@@ -173,4 +173,12 @@ public enum SnapshotWriter {
         #endif
     }
 }
+
+@main
+struct SmidgenWidgetsBundle: WidgetBundle {
+    var body: some Widget {
+        TodayPlanWidget()
+        ListProgressWidget()
+    }
+}
 #endif
