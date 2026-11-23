@@ -61,6 +61,12 @@ final class LibrarySearchTests: XCTestCase {
         XCTAssertEqual(out.map { $0.recipeId }, ["r1"])
     }
 
+    func testCapitalizedQueryFoldsCase() {
+        // Query-side case folding: mixed-case input matches the same as lower.
+        let out = filterRecipes(recipes(), filter: AdvancedFilter(query: "MISO Salmon"))
+        XCTAssertEqual(out.map { $0.recipeId }, ["r1"])
+    }
+
     func testSingleCategoryChipNarrowsCaseInsensitively() {
         // Chip titles come from stored categories; matching is case-insensitive.
         let out = filterRecipes(recipes(), filter: AdvancedFilter(categories: ["dinner"]))
