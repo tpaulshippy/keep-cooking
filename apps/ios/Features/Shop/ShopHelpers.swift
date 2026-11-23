@@ -21,9 +21,22 @@ public func aisleSortKey(aisle: String, name: String) -> (Int, String, String) {
     return (canonicalAisles.count, a, name.lowercased())
 }
 
+/// Normalized aisle key: trimmed + lowercased, so values that differ only
+/// by case or surrounding whitespace group into one section.
+public func normalizedAisleKey(_ aisle: String) -> String {
+    aisle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+}
+
 public func aisleGroupedNames<T>(items: [T], aisleOf: (T) -> String, nameOf: (T) -> String) -> [String] {
-    let aisles = Set(items.map { aisleOf($0) })
-    return aisles.sorted { l, r in
+    // Dedupe on the normalized key; keep the first-seen raw value as the
+    // section representative so identical inputs render byte-identically.
+    var seen: [String: String] = [:]
+    for item in items {
+        let raw = aisleOf(item)
+        let key = normalizedAisleKey(raw)
+        if seen[key] == nil { seen[key] = raw }
+    }
+    return seen.values.sorted { l, r in
         let kl = aisleSortKey(aisle: l, name: "")
         let kr = aisleSortKey(aisle: r, name: "")
         if kl.0 != kr.0 { return kl.0 < kr.0 }

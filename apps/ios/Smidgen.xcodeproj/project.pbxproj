@@ -25,17 +25,21 @@
 		41637B0E1053163C90E1450D /* ClipboardBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E048AEAE306958C06CF0B8AD /* ClipboardBanner.swift */; };
 		4260F2818B66978FCBE653B3 /* recipe-02.json in Resources */ = {isa = PBXBuildFile; fileRef = EAAEC2770664BE6E156485AA /* recipe-02.json */; };
 		4568A05235233561F22480F0 /* DuplicateFinder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33E81FAB33D10D4F00FABAF2 /* DuplicateFinder.swift */; };
+		4A034B31D588FBD94661FABD /* IngestStepsHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8153F56D9470B193FABE198B /* IngestStepsHeader.swift */; };
 		4DA966B164F334775D3C11B3 /* recipe-15-dupe.json in Resources */ = {isa = PBXBuildFile; fileRef = C50FC20F1C0416184CEE34E1 /* recipe-15-dupe.json */; };
 		52D74B01AC0FC879994D257D /* RecipeScaler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A40A587E766B41D3A54B7F6 /* RecipeScaler.swift */; };
 		53892542916A3E727C80880B /* ExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35FF7DE46DB032DF903CE4C6 /* ExportView.swift */; };
 		59AD5FCA53C0D51F19530E5B /* recipe-08.json in Resources */ = {isa = PBXBuildFile; fileRef = 8A95B932452D60B41B6C20C4 /* recipe-08.json */; };
+		5CBB976656FD84F211C61808 /* IngestHumanPolishTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD2D2E5F94BD0192C7510A5D /* IngestHumanPolishTests.swift */; };
 		5DABC4216DA350D44D7573AE /* recipe-11.json in Resources */ = {isa = PBXBuildFile; fileRef = AF0D65674E4F4F8E8F8177F5 /* recipe-11.json */; };
 		5F9CCD36213494A18AABD4B9 /* PlanAggregation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23789FAAD89E65816EC079FC /* PlanAggregation.swift */; };
 		6240CEA7264FE38CB4E6D33B /* SmidgenApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78CF752BEB5799714C262738 /* SmidgenApp.swift */; };
+		64424C80936377DDF3ABB378 /* LibrarySearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DDFF21CAE4746CC07BEBBA0 /* LibrarySearchTests.swift */; };
 		6ED184ED02D444C21775EF2E /* DuplicateFinder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33E81FAB33D10D4F00FABAF2 /* DuplicateFinder.swift */; };
 		6F3FAE4AB0811C1A26F9172D /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = C29A1009A84B444254CD7415 /* Models.swift */; };
 		6FE57C1CFCD71EEE8F3F5588 /* SyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DFAC576FA69697C63244F82 /* SyncEngine.swift */; };
 		723BC5F8FED26ECCD3C508AA /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = C29A1009A84B444254CD7415 /* Models.swift */; };
+		72CA7C1D0663A5B300E5267B /* IngestStepsHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8153F56D9470B193FABE198B /* IngestStepsHeader.swift */; };
 		74B95D4285DA26EE819EB998 /* recipe-09.json in Resources */ = {isa = PBXBuildFile; fileRef = 0BC2356A8A6B5CCF643B2EE4 /* recipe-09.json */; };
 		750149833151AC518E782B34 /* recipe-05.json in Resources */ = {isa = PBXBuildFile; fileRef = D0EF6E12864FACB70E57AC71 /* recipe-05.json */; };
 		7553C5DF1D37390EB1269795 /* recipe-12.json in Resources */ = {isa = PBXBuildFile; fileRef = 92B2640C9446D486B82020C3 /* recipe-12.json */; };
@@ -76,10 +80,8 @@
 		F9ED426AE428745C2D331DF3 /* LibrarySearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 387AFE136C2733428BD24526 /* LibrarySearch.swift */; };
 		FB245E8234405CC7638D4FA4 /* ClipModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFEB426C01662481C2053D24 /* ClipModels.swift */; };
 		FBA16517DDF786AAA7D6584E /* recipe-06.json in Resources */ = {isa = PBXBuildFile; fileRef = 3443B06D3E6738C396B640C3 /* recipe-06.json */; };
+		FC1C53B008E7D4B24E0C2900 /* LibrarySearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 387AFE136C2733428BD24526 /* LibrarySearch.swift */; };
 		FC8E8046FA88377EB78E834E /* OCRScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2A8C22786FA68F1E6CC4BC9 /* OCRScanView.swift */; };
-		1B83BFC61A0A4F72A11BA381 /* IngestHumanPolishTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADE2D691DF35494B85F1E0F7 /* IngestHumanPolishTests.swift */; };
-		4C55C5745C11435093646024 /* IngestStepsHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1712B02BD0BE47C3B9F771A5 /* IngestStepsHeader.swift */; };
-		1B06736B600B43E39464E5C7 /* IngestStepsHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1712B02BD0BE47C3B9F771A5 /* IngestStepsHeader.swift */; };
 		FEE67F59609EDF7A3D0520CB /* recipe-14-dupe.json in Resources */ = {isa = PBXBuildFile; fileRef = A5C9C6D250C6D1A9CA3C5206 /* recipe-14-dupe.json */; };
 /* End PBXBuildFile section */
 
@@ -151,9 +153,11 @@
 		5DFAC576FA69697C63244F82 /* SyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncEngine.swift; sourceTree = "<group>"; };
 		64208EF15E7B5BC7A25C6337 /* LibraryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryModels.swift; sourceTree = "<group>"; };
 		65D092DB92EA97B27D1195A9 /* Smidgen.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Smidgen.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		6DDFF21CAE4746CC07BEBBA0 /* LibrarySearchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySearchTests.swift; sourceTree = "<group>"; };
 		78CF752BEB5799714C262738 /* SmidgenApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmidgenApp.swift; sourceTree = "<group>"; };
 		7C25E4C252A28F46E2F7A52E /* WatchViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchViews.swift; sourceTree = "<group>"; };
 		7F6210C0ADC1C8C59178469B /* IngredientParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngredientParser.swift; sourceTree = "<group>"; };
+		8153F56D9470B193FABE198B /* IngestStepsHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngestStepsHeader.swift; sourceTree = "<group>"; };
 		8A95B932452D60B41B6C20C4 /* recipe-08.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "recipe-08.json"; sourceTree = "<group>"; };
 		8BFCDD47F7C8B01DA19454C4 /* WidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSnapshot.swift; sourceTree = "<group>"; };
 		8EF78B647256803BE6FD1BEB /* SmidgenWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SmidgenWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -162,6 +166,7 @@
 		A5C9C6D250C6D1A9CA3C5206 /* recipe-14-dupe.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "recipe-14-dupe.json"; sourceTree = "<group>"; };
 		A9C3A3E566A0A70144AE964C /* SyncEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncEngineTests.swift; sourceTree = "<group>"; };
 		ACD36CEE15F0BF13B0F9EF70 /* IngredientParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngredientParserTests.swift; sourceTree = "<group>"; };
+		AD2D2E5F94BD0192C7510A5D /* IngestHumanPolishTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngestHumanPolishTests.swift; sourceTree = "<group>"; };
 		AF0D65674E4F4F8E8F8177F5 /* recipe-11.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "recipe-11.json"; sourceTree = "<group>"; };
 		B34CAECDF306797D51B7B2E7 /* RecipeExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecipeExporter.swift; sourceTree = "<group>"; };
 		B399F5950B23BA7D5BCE68A9 /* StepTimerParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StepTimerParser.swift; sourceTree = "<group>"; };
@@ -181,8 +186,6 @@
 		EAAEC2770664BE6E156485AA /* recipe-02.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "recipe-02.json"; sourceTree = "<group>"; };
 		EACF5E755C544FFBD1793665 /* ShareViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViews.swift; sourceTree = "<group>"; };
 		FB072D7F5ECACC2922F3EBD6 /* SeedLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeedLoader.swift; sourceTree = "<group>"; };
-		1712B02BD0BE47C3B9F771A5 /* IngestStepsHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngestStepsHeader.swift; sourceTree = "<group>"; };
-		ADE2D691DF35494B85F1E0F7 /* IngestHumanPolishTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngestHumanPolishTests.swift; sourceTree = "<group>"; };
 		FFEB426C01662481C2053D24 /* ClipModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipModels.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -337,6 +340,7 @@
 				1E5DB7DC50200281903A3EA0 /* DuplicateFinderTests.swift */,
 				64208EF15E7B5BC7A25C6337 /* LibraryModels.swift */,
 				387AFE136C2733428BD24526 /* LibrarySearch.swift */,
+				6DDFF21CAE4746CC07BEBBA0 /* LibrarySearchTests.swift */,
 				CC78DD635279CA0FA78B51CD /* LibraryViews.swift */,
 				EACF5E755C544FFBD1793665 /* ShareViews.swift */,
 			);
@@ -350,8 +354,8 @@
 				E048AEAE306958C06CF0B8AD /* ClipboardBanner.swift */,
 				FFEB426C01662481C2053D24 /* ClipModels.swift */,
 				4BA8BDFC24A02DDF34A670BF /* ClipView.swift */,
-				ADE2D691DF35494B85F1E0F7 /* IngestHumanPolishTests.swift */,
-				1712B02BD0BE47C3B9F771A5 /* IngestStepsHeader.swift */,
+				AD2D2E5F94BD0192C7510A5D /* IngestHumanPolishTests.swift */,
+				8153F56D9470B193FABE198B /* IngestStepsHeader.swift */,
 				7F6210C0ADC1C8C59178469B /* IngredientParser.swift */,
 				ACD36CEE15F0BF13B0F9EF70 /* IngredientParserTests.swift */,
 				E2A8C22786FA68F1E6CC4BC9 /* OCRScanView.swift */,
@@ -591,10 +595,12 @@
 				AF6EAE9A96B3786B457342CD /* CookTests.swift in Sources */,
 				6ED184ED02D444C21775EF2E /* DuplicateFinder.swift in Sources */,
 				3543E32D27FE72EE997DE03F /* DuplicateFinderTests.swift in Sources */,
+				5CBB976656FD84F211C61808 /* IngestHumanPolishTests.swift in Sources */,
+				72CA7C1D0663A5B300E5267B /* IngestStepsHeader.swift in Sources */,
 				2C0D011F754277317BDC8262 /* IngredientParser.swift in Sources */,
 				A29DDD2522297EC01BE779E3 /* IngredientParserTests.swift in Sources */,
-				1B83BFC61A0A4F72A11BA381 /* IngestHumanPolishTests.swift in Sources */,
-				1B06736B600B43E39464E5C7 /* IngestStepsHeader.swift in Sources */,
+				FC1C53B008E7D4B24E0C2900 /* LibrarySearch.swift in Sources */,
+				64424C80936377DDF3ABB378 /* LibrarySearchTests.swift in Sources */,
 				6F3FAE4AB0811C1A26F9172D /* Models.swift in Sources */,
 				FC8E8046FA88377EB78E834E /* OCRScanView.swift in Sources */,
 				5F9CCD36213494A18AABD4B9 /* PlanAggregation.swift in Sources */,
@@ -630,7 +636,7 @@
 				DA47E527D252EA31D02388F6 /* DemoFlows.swift in Sources */,
 				4568A05235233561F22480F0 /* DuplicateFinder.swift in Sources */,
 				53892542916A3E727C80880B /* ExportView.swift in Sources */,
-				4C55C5745C11435093646024 /* IngestStepsHeader.swift in Sources */,
+				4A034B31D588FBD94661FABD /* IngestStepsHeader.swift in Sources */,
 				EFBA33FAABB8583B8F213106 /* IngredientParser.swift in Sources */,
 				29C96541DCCC06E1DF27E2BB /* LibraryModels.swift in Sources */,
 				F9ED426AE428745C2D331DF3 /* LibrarySearch.swift in Sources */,

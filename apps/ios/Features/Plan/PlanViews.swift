@@ -50,105 +50,141 @@ public struct PlanView: View {
     @State private var anchor: Date = Date()
     var onAddWeekToList: ((Date) -> Void)?
     var onApplyMenu: ((String, Date) -> Void)? // (menuId, weekStart)
+    var onAddDay: ((Date) -> Void)? // empty-day "Add" affordance target
 
     public init(entries: [PlanEntrySnapshot], menus: [MenuSnapshot] = [], feedURL: URL? = nil,
                 onAddWeekToList: ((Date) -> Void)? = nil,
-                onApplyMenu: ((String, Date) -> Void)? = nil) {
+                onApplyMenu: ((String, Date) -> Void)? = nil,
+                onAddDay: ((Date) -> Void)? = nil) {
         self.entries = entries; self.menus = menus; self.feedURL = feedURL
         self.onAddWeekToList = onAddWeekToList; self.onApplyMenu = onApplyMenu
+        self.onAddDay = onAddDay
     }
 
     public var body: some View {
-        List {
-            Section {
+        VStack(spacing: 0) {
+            // Sticky header: span switcher + prominent week title + primary CTA.
+            // Lives outside the List so it never scrolls away (and never hides
+            // behind the floating pill tab bar as a toolbar bubble did).
+            VStack(alignment: .leading, spacing: 10) {
                 Picker("Span", selection: $span) {
                     ForEach(PlanSpan.allCases, id: \.self) { Text($0.rawValue.capitalized) }
                 }
                 .pickerStyle(.segmented)
-            }
-            switch span {
-            case .day: daySection(for: anchor)
-            case .week: weekSections(weekStart: Self.weekStart(containing: anchor))
-            case .month: monthSection(containing: anchor)
-            }
-            if !menus.isEmpty {
-                Section("Reusable menus") {
-                    ForEach(menus) { menu in
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text(menu.name).font(.headline)
-                                Text("\(menu.entryCount) entries").font(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Button("Apply to week") {
-                                onApplyMenu?(menu.id, Self.weekStart(containing: anchor))
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                    }
-                }
-            }
-            if let feedURL {
-                Section("Calendar") {
-                    SubscribeRow(feedURL: feedURL)
-                }
-            }
-        }
-        .navigationTitle("Plan")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+                Text(spanTitle)
+                    .font(.title2.bold())
                 Button("Add week to list") {
                     onAddWeekToList?(Self.weekStart(containing: anchor))
                 }
+                .buttonStyle(.borderedProminent)
             }
+            .padding()
+            .background(.background)
+            Divider()
+            List {
+                switch span {
+                case .day: daySection(for: anchor)
+                case .week: weekSections(weekStart: Self.weekStart(containing: anchor))
+                case .month: monthSection(containing: anchor)
+                }
+                if !menus.isEmpty {
+                    Section("Reusable menus") {
+                        ForEach(menus) { menu in
+                            HStack {
+                                VStack(alignment: .leading) {
+                                    Text(menu.name).font(.headline)
+                                    Text("\(menu.entryCount) entries").font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Button("Apply to week") {
+                                    onApplyMenu?(menu.id, Self.weekStart(containing: anchor))
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
+                    }
+                }
+                if let feedURL {
+                    Section("Calendar") {
+                        SubscribeRow(feedURL: feedURL)
+                    }
+                }
+            }
+            // Bottom scroll inset so the last rows clear the floating tab bar.
+            .contentMargins(.bottom, 48, for: .scrollContent)
+        }
+        .navigationTitle("Plan")
+        .safeAreaPadding(.bottom, 8)
+    }
+
+    // MARK: Title
+
+    private var spanTitle: String {
+        switch span {
+        case .day: Self.dayTitle(anchor)
+        case .week: "Week of \(Self.dayTitle(Self.weekStart(containing: anchor)))"
+        case .month: Self.monthTitle(anchor)
         }
     }
 
     // MARK: Sections
 
     private func daySection(for date: Date) -> some View {
-        Section(Self.dayTitle(date)) {
-            rows(for: Self.days(in: date, count: 1))
+        Section {
+            dayRows(for: date)
         }
     }
 
     private func weekSections(weekStart: Date) -> some View {
-        Section("Week of \(Self.dayTitle(weekStart))") {
-            rows(for: Self.days(in: weekStart, count: 7))
+        ForEach(Self.days(in: weekStart, count: 7), id: \.self) { day in
+            Section(Self.dayTitle(day)) {
+                dayRows(for: day)
+            }
         }
     }
 
     private func monthSection(containing date: Date) -> some View {
         let days = Self.daysInMonth(containing: date)
-        return Section(Self.monthTitle(date)) {
+        return Section {
             ForEach(days, id: \.self) { day in
-                VStack(alignment: .leading) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(Self.dayTitle(day)).font(.subheadline.bold())
-                    rows(for: [day])
+                    dayRows(for: day)
                 }
+                .padding(.vertical, 8)
             }
         }
     }
 
-    private func rows(for days: [Date]) -> some View {
-        ForEach(days, id: \.self) { day in
+    private func dayRows(for day: Date) -> some View {
+        Group {
             let dayEntries = entries.filter { Calendar.current.isDate($0.date, inSameDayAs: day) }
             if dayEntries.isEmpty {
                 HStack {
-                    Text(Self.dayTitle(day)).foregroundStyle(.secondary)
+                    Text("No meals planned").foregroundStyle(.secondary)
                     Spacer()
-                    Text("—").foregroundStyle(.tertiary)
+                    if let onAddDay = onAddDay {
+                        Button {
+                            onAddDay(day)
+                        } label: {
+                            Label("Add", systemImage: "plus")
+                        }
+                        .buttonStyle(.bordered)
+                    }
                 }
             } else {
                 ForEach(dayEntries) { entry in
                     HStack {
-                        Text(entry.meal.capitalized).font(.headline)
-                        Spacer()
-                        VStack(alignment: .trailing) {
-                            Text(entry.recipeTitle ?? entry.note).foregroundStyle(.secondary)
-                            if let s = entry.servings {
-                                Text("\(fractionDisplayString(for: s)) servings").font(.caption).foregroundStyle(.tertiary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(entry.meal.capitalized).font(.headline)
+                            let detail = entry.recipeTitle ?? entry.note
+                            if !detail.isEmpty {
+                                Text(detail).font(.subheadline).foregroundStyle(.secondary)
                             }
+                        }
+                        Spacer()
+                        if let s = entry.servings {
+                            Text("\(fractionDisplayString(for: s)) servings").font(.caption).foregroundStyle(.tertiary)
                         }
                     }
                 }
