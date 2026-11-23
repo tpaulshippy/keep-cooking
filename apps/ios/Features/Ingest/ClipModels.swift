@@ -98,6 +98,42 @@ public func clipHost(from urlString: String?) -> String {
     return h
 }
 
+// MARK: - Friendly error + warning copy (human polish)
+
+/// Server-error message for `.httpStatus`, else nil so callers keep their
+/// context-specific generic copy ("check the address" vs "check the text").
+/// Callers should still `print` the original error for diagnostics
+/// (PII-safe: ClipClientError carries status codes, never content).
+public func clipServerErrorMessage(for error: Error) -> String? {
+    if case ClipClientError.httpStatus(let code) = error {
+        return "The recipe service returned an error (\(code)). Try again later."
+    }
+    return nil
+}
+
+/// Human-readable text for a `ClipReport` warning code.
+/// Unknown codes pass through unchanged so new server warnings stay visible.
+public func clipWarningText(for warning: String) -> String {
+    switch warning {
+    case "jsonld-missing":
+        return "No recipe card found on the page — details were read from the page text instead."
+    default:
+        return warning
+    }
+}
+
+/// Title gating shared by the ingest Save buttons: blank-looking titles
+/// (spaces *or* newlines from pastes) can never be saved.
+public func isSavableTitle(_ title: String) -> Bool {
+    !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+}
+
+/// Trims the saved title the same way `isSavableTitle` validates it, so
+/// what is persisted matches what the Save button allowed.
+public func cleanTitle(_ title: String) -> String {
+    title.trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
 // MARK: - ClipClient (POST /clip)
 
 public enum ClipClientError: Error, Sendable {

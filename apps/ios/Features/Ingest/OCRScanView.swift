@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import PhotosUI
 
 #if canImport(Vision)
 import Vision
@@ -37,8 +38,32 @@ public enum VisionOCR {
             }
             req.recognitionLevel = .accurate
             req.usesLanguageCorrection = true
-            let handler = VNImageRequestHandler(cgImage: cg, options: [:])
+            // The CGImage drops the UIImage orientation, so pass it
+            // explicitly — otherwise portrait pages can OCR rotated/empty.
+            let handler = VNImageRequestHandler(
+                cgImage: cg,
+                orientation: CGImagePropertyOrientation(imageOrientation: image.imageOrientation),
+                options: [:]
+            )
             do { try handler.perform([req]) } catch { cont.resume(throwing: error) }
+        }
+    }
+}
+
+private extension CGImagePropertyOrientation {
+    /// ImageIO uses EXIF numbering, which differs from UIImage.Orientation
+    /// raw values — map explicitly instead of casting.
+    init(imageOrientation: UIImage.Orientation) {
+        switch imageOrientation {
+        case .up: self = .up
+        case .down: self = .down
+        case .left: self = .left
+        case .right: self = .right
+        case .upMirrored: self = .upMirrored
+        case .downMirrored: self = .downMirrored
+        case .leftMirrored: self = .leftMirrored
+        case .rightMirrored: self = .rightMirrored
+        @unknown default: self = .up
         }
     }
 }
@@ -83,6 +108,37 @@ public enum OCRSplitter {
     }
 }
 
+// MARK: - Progress header (shared IngestStepsHeader; see IngestStepsHeader.swift)
+
+#if os(iOS)
+private struct CameraPicker: UIViewControllerRepresentable {
+    var onImage: (Data) -> Void
+    @Environment(\.dismiss) private var dismiss
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let p = UIImagePickerController()
+        p.sourceType = .camera
+        p.delegate = context.coordinator
+        return p
+    }
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+    func makeCoordinator() -> Coord { Coord(parent: self) }
+    final class Coord: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: CameraPicker
+        init(parent: CameraPicker) { self.parent = parent }
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            if let img = info[.originalImage] as? UIImage,
+               let data = img.jpegData(compressionQuality: 0.85) {
+                parent.onImage(data)
+            }
+            parent.dismiss()
+        }
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            parent.dismiss()
+        }
+    }
+}
+#endif
+
 // MARK: - View
 
 public struct OCRScanView: View {
@@ -94,71 +150,238 @@ public struct OCRScanView: View {
     @State private var stepLines: String = ""
     @State private var notice: String?
     @State private var savedMessage: String?
+    @State private var selectedPhoto: PhotosPickerItem?
+    @State private var hasPickedPhoto = false
+    @State private var isScanning = false
+    /// Monotonic scan id — a slower earlier OCR must not overwrite a newer pick.
+    @State private var scanGeneration = 0
+    @State private var showCamera = false
+
+    @FocusState private var focused: Field?
+    private enum Field { case paste, title, ings, steps }
 
     public init() {}
 
+    private var stepIndex: Int {
+        if savedMessage != nil { return 2 }
+        if !title.isEmpty || !ingredientLines.isEmpty { return 1 }
+        return 0
+    }
+
+    private var canSave: Bool {
+        isSavableTitle(title)
+    }
+
     public var body: some View {
         NavigationStack {
-            Form {
-                Section("Cookbook photo") {
-                    #if canImport(Vision)
-                    Text("Pick a photo via the Photos picker in a full build; paste OCR text below to simulate.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    #else
-                    Text("Vision unavailable — stub mode. Paste transcribed text below.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    #endif
-                    Text("Recognized / pasted text (first line = title)").font(.caption).foregroundStyle(.secondary)
-                    TextEditor(text: $recognizedText).frame(minHeight: 140)
-                        .accessibilityIdentifier("ocr-text")
-                    Button("Parse text") { parse() }
-                        .accessibilityIdentifier("ocr-parse")
-                }
-                Section("Preview (editable)") {
-                    TextField("Title", text: $title)
-                    Text("Ingredients").font(.caption).foregroundStyle(.secondary)
-                    TextEditor(text: $ingredientLines).frame(minHeight: 120)
-                    Text("Steps").font(.caption).foregroundStyle(.secondary)
-                    TextEditor(text: $stepLines).frame(minHeight: 120)
-                }
-                Section {
-                    Button("Scan image data") {
-                        Task { await scanPlaceholder() }
+            ScrollView {
+                VStack(spacing: 14) {
+                    IngestStepsHeader(current: stepIndex)
+                        .padding(.top, 8)
+
+                    // Step 1 — Add
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("1 · Add a photo")
+                            .font(.headline)
+                        Text("Take a photo of a cookbook page, or choose one from your library.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        HStack(spacing: 10) {
+                            PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                                Label(hasPickedPhoto ? "Choose a different photo" : "Choose photo", systemImage: "photo")
+                            }
+                            .buttonStyle(.bordered)
+                            #if os(iOS)
+                            if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                                Button {
+                                    showCamera = true
+                                } label: {
+                                    Label("Camera", systemImage: "camera")
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                            #endif
+                        }
+                        if isScanning {
+                            ProgressView("Reading text…")
+                                .font(.caption)
+                        }
+                        Divider()
+                        Text("Or paste or edit text")
+                            .font(.subheadline.bold())
+                        TextEditor(text: $recognizedText)
+                            .frame(minHeight: 90, maxHeight: 140)
+                            .padding(6)
+                            .background(Color(.tertiarySystemBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .focused($focused, equals: .paste)
+                            .accessibilityIdentifier("ocr-text")
+                            .accessibilityLabel("Recognized text")
+                            .disabled(isScanning)
+                        Button("Parse text") { parse() }
+                            .buttonStyle(.borderedProminent)
+                            .accessibilityIdentifier("ocr-parse")
+                            .disabled(isScanning)
                     }
-                    Button("Save recipe") { save() }
-                        .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
-                        .accessibilityIdentifier("ocr-save")
+                    .padding(14)
+                    .background(Color(.secondarySystemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+
+                    // Step 2 — Review
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("2 · Review and save")
+                            .font(.headline)
+                            .accessibilityIdentifier("ocr-review-heading")
+                        Text("Check the details below — the first line becomes the title.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        TextField("Title", text: $title)
+                            .textFieldStyle(.roundedBorder)
+                            .focused($focused, equals: .title)
+                            .disabled(isScanning)
+                        Text("Ingredients")
+                            .font(.caption).foregroundStyle(.secondary)
+                        TextEditor(text: $ingredientLines)
+                            .frame(minHeight: 80, maxHeight: 130)
+                            .padding(6)
+                            .background(Color(.tertiarySystemBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .focused($focused, equals: .ings)
+                            .accessibilityLabel("Ingredients")
+                            .disabled(isScanning)
+                        Text("Steps")
+                            .font(.caption).foregroundStyle(.secondary)
+                        TextEditor(text: $stepLines)
+                            .frame(minHeight: 80, maxHeight: 130)
+                            .padding(6)
+                            .background(Color(.tertiarySystemBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .focused($focused, equals: .steps)
+                            .accessibilityLabel("Steps")
+                            .disabled(isScanning)
+                    }
+                    .padding(14)
+                    .background(Color(.secondarySystemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+
+                    // Step 3 — Save
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("3 · Save")
+                            .font(.headline)
+                        if let notice {
+                            Text(notice)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else if title.isEmpty && ingredientLines.isEmpty {
+                            Text("Add a photo or paste text to begin.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("Checked on this device.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Button("Save recipe") { save() }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(!canSave || savedMessage != nil || isScanning)
+                            .accessibilityIdentifier("ocr-save")
+                        if !canSave {
+                            Text("Add a title to save.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let savedMessage {
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                Text(savedMessage)
+                                    .foregroundStyle(.green)
+                            }
+                            .accessibilityIdentifier("ocr-saved")
+                        }
+                    }
+                    .padding(14)
+                    .background(Color(.secondarySystemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
                 }
-                if let notice { Section { Text(notice).font(.caption) } }
-                if let savedMessage { Section { Text(savedMessage).foregroundStyle(.green)
-                    .accessibilityIdentifier("ocr-saved") } }
+                .padding()
             }
-            .navigationTitle("OCR scan")
+            .scrollDismissesKeyboard(.interactively)
+            .navigationTitle("Scan a cookbook page")
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { focused = nil }
+                }
+            }
+            #if os(iOS)
+            .sheet(isPresented: $showCamera) {
+                CameraPicker { data in
+                    scanGeneration += 1
+                    let generation = scanGeneration
+                    Task { await recognize(data: data, generation: generation) }
+                }
+            }
+            #endif
+            .onChange(of: selectedPhoto) { _, item in
+                guard let item else { return }
+                hasPickedPhoto = true
+                scanGeneration += 1
+                let generation = scanGeneration
+                Task {
+                    // Reset so re-selecting the same photo fires onChange again.
+                    defer { selectedPhoto = nil }
+                    if let data = try? await item.loadTransferable(type: Data.self) {
+                        await recognize(data: data, generation: generation)
+                    } else {
+                        clearDraft()
+                        notice = "Couldn't read that photo. Try another, or paste the text below."
+                    }
+                }
+            }
         }
     }
 
     private func parse() {
         let lines = recognizedText.components(separatedBy: .newlines)
         let draft = OCRSplitter.split(lines)
+        savedMessage = nil
         title = draft.title
         ingredientLines = draft.ingredientLines.joined(separator: "\n")
         stepLines = draft.stepLines.joined(separator: "\n")
-        notice = "strategy=ocr confidence=0.70 (local heuristic; server ocr upgrade later)"
+        notice = "Checked on this device."
+        focused = nil
     }
 
-    private func scanPlaceholder() async {
-        // Placeholder for UIImagePicker data path: VisionOCR.recognize(data:)
-        // then OCRSplitter.split → same editable preview. Stub returns empty.
+    /// Empties the editable draft (keeps recognizedText — manual pastes and
+    /// successful scans refill it) so Save always requires fresh results.
+    private func clearDraft() {
+        title = ""
+        ingredientLines = ""
+        stepLines = ""
+    }
+
+    private func recognize(data: Data, generation: Int? = nil) async {
+        isScanning = true
+        savedMessage = nil
+        clearDraft()
+        defer {
+            // A newer scan may already be running — leave its spinner up.
+            if generation == nil || generation == scanGeneration { isScanning = false }
+        }
         do {
-            let res = try await VisionOCR.recognize(data: Data())
+            let res = try await VisionOCR.recognize(data: data)
+            // A slower earlier scan must not overwrite a newer selection.
+            guard generation == nil || generation == scanGeneration else { return }
             if !res.lines.isEmpty {
                 recognizedText = res.lines.joined(separator: "\n")
                 parse()
             } else {
-                notice = "No text recognized (stub/empty image). Paste text above."
+                notice = "No text found in that photo. Try a closer shot, or paste the text below."
             }
         } catch {
-            notice = "OCR failed: \(error.localizedDescription)"
+            guard generation == nil || generation == scanGeneration else { return }
+            notice = "Couldn't read that photo. Try again, or paste the text below."
         }
     }
 
@@ -168,9 +391,13 @@ public struct OCRScanView: View {
         #else
         let deviceId = UUID().uuidString
         #endif
-        let recipe = Recipe(householdId: "hh-demo", title: title,
+        let recipe = Recipe(householdId: "hh-demo", title: cleanTitle(title),
                             source: "ocr", deviceId: deviceId)
         context.insert(recipe)
+        // Track this attempt's inserts so a failed save can delete exactly
+        // these objects — rollback() would also discard other views'
+        // unsaved changes in the shared context.
+        var inserted: [any PersistentModel] = [recipe]
         let parsed = IngredientParser.parseLines(ingredientLines)
         for (i, p) in parsed.enumerated() {
             let m = Ingredient(recipeId: recipe.id, name: p.name.isEmpty ? p.display : p.name,
@@ -178,6 +405,7 @@ public struct OCRScanView: View {
                                position: i, updatedAt: Date(), deviceId: deviceId)
             m.recipe = recipe
             context.insert(m)
+            inserted.append(m)
         }
         let steps = stepLines.components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
@@ -186,8 +414,17 @@ public struct OCRScanView: View {
                          updatedAt: Date(), deviceId: deviceId)
             m.recipe = recipe
             context.insert(m)
+            inserted.append(m)
         }
-        try? context.save()
-        savedMessage = "Saved OCR recipe “\(recipe.title)”"
+        do {
+            try context.save()
+            notice = nil
+            savedMessage = "Saved “\(recipe.title)”"
+        } catch {
+            inserted.forEach { context.delete($0) }
+            print("OCR save failed: \(error)")
+            notice = "Couldn't save that recipe. Try again."
+        }
+        focused = nil
     }
 }
