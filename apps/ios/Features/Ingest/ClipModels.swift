@@ -1,0 +1,143 @@
+// Smidgen — Lane 3 Capture
+// apps/ios/Features/Ingest/ClipModels.swift
+//
+// Contract types for POST /clip (openapi.yaml ClipRequest → ClipReport).
+// Consumes Lane 2 Core/Models.swift + Sync/SyncEngine.swift — no duplicates.
+//
+// Privacy: log only { strategy, host, confidence }. Never log url query
+// strings, captions, or parsed content.
+
+import Foundation
+
+// MARK: - ClipRequest (openapi ClipRequest)
+
+public enum ClipSource: String, Sendable, Codable {
+    case url
+    case tiktok
+    case instagram
+    case youtube
+    case ocr
+    case clipboard
+}
+
+public struct ClipRequest: Sendable, Codable {
+    public var url: String?
+    public var caption: String?
+    public var source: ClipSource?
+
+    public init(url: String? = nil, caption: String? = nil, source: ClipSource? = nil) {
+        self.url = url
+        self.caption = caption
+        self.source = source
+    }
+
+    private enum CodingKeys: String, CodingKey { case url, caption, source }
+}
+
+// MARK: - ClipReport (openapi ClipReport)
+
+public enum ClipStrategy: String, Sendable, Codable {
+    case jsonld
+    case reader
+    case caption
+    case ocr
+}
+
+public struct ClipIngredientInput: Sendable, Codable {
+    public var name: String
+    public var quantity: Double?
+    public var unit: String?
+    public var display: String?
+    public init(name: String, quantity: Double? = nil, unit: String? = nil, display: String? = nil) {
+        self.name = name; self.quantity = quantity; self.unit = unit; self.display = display
+    }
+}
+
+public struct ClipStepInput: Sendable, Codable {
+    public var text: String
+    public init(text: String) { self.text = text }
+}
+
+public struct ClipRecipeInput: Sendable, Codable {
+    public var title: String
+    public var description: String?
+    public var servings: Double?
+    public var prepMinutes: Int?
+    public var cookMinutes: Int?
+    public var source: String?
+    public var sourceUrl: String?
+    public var categories: [String]?
+    public var ingredients: [ClipIngredientInput]?
+    public var steps: [ClipStepInput]?
+    public init(title: String) { self.title = title }
+}
+
+public struct ClipReport: Sendable, Codable {
+    public var strategy: ClipStrategy
+    public var confidence: Double?
+    public var warnings: [String]?
+    public var sourceUrl: String?
+    public var recipe: ClipRecipeInput
+}
+
+// MARK: - Strategy log event (PII-safe)
+
+/// What we log per clip: strategy + host + confidence only.
+public struct ClipLogEvent: Sendable {
+    public var strategy: ClipStrategy
+    public var host: String
+    public var confidence: Double
+    public init(strategy: ClipStrategy, host: String, confidence: Double) {
+        self.strategy = strategy; self.host = host; self.confidence = confidence
+    }
+    public var description: String { "clip strategy=\(strategy.rawValue) host=\(host) confidence=\(confidence)" }
+}
+
+public func clipHost(from urlString: String?) -> String {
+    guard let s = urlString, let u = URL(string: s), let h = u.host else { return "caption-only" }
+    return h
+}
+
+// MARK: - ClipClient (POST /clip)
+
+public enum ClipClientError: Error, Sendable {
+    case badURL
+    case httpStatus(Int)
+    case decode(Error)
+}
+
+public struct ClipClient: Sendable {
+    public var baseURL: URL
+    public var session: URLSession
+
+    public init(baseURL: URL, session: URLSession = .shared) {
+        self.baseURL = baseURL; self.session = session
+    }
+
+    /// POST /clip with ClipRequest{url, caption, source}.
+    /// Returns decoded ClipReport; caller logs ClipLogEvent only.
+    public func clip(_ request: ClipRequest) async throws -> ClipReport {
+        let url = baseURL.appendingPathComponent("/clip")
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let enc = JSONEncoder()
+        req.httpBody = try enc.encode(request)
+        let (data, resp) = try await session.data(for: req)
+        guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
+            throw ClipClientError.httpStatus((resp as? HTTPURLResponse)?.statusCode ?? -1)
+        }
+        let dec = JSONDecoder()
+        do { return try dec.decode(ClipReport.self, from: data) }
+        catch { throw ClipClientError.decode(error) }
+    }
+
+    /// PII-safe log event for a completed clip.
+    public func logEvent(for report: ClipReport, requestURL: String?) -> ClipLogEvent {
+        ClipLogEvent(
+            strategy: report.strategy,
+            host: clipHost(from: requestURL ?? report.sourceUrl),
+            confidence: report.confidence ?? 0
+        )
+    }
+}
