@@ -99,7 +99,7 @@ public struct ShopListsView: View {
                             }
                         } else if list.items.isEmpty {
                             Section {
-                                Text("Nothing here yet — add the first item below.")
+                                Text(onAddItem == nil ? "Nothing here yet." : "Nothing here yet — add the first item below.")
                                     .foregroundStyle(.secondary)
                             }
                         }
@@ -181,7 +181,8 @@ public struct ShopListsView: View {
     }
 
     private func uncheckedItems(in list: ShoppingListSnapshot, aisle: String) -> [ShopItemSnapshot] {
-        list.items.filter { !$0.checked && $0.aisle == aisle }
+        let key = normalizedAisleKey(aisle)
+        return list.items.filter { !$0.checked && normalizedAisleKey($0.aisle) == key }
             .sorted { $0.name.lowercased() < $1.name.lowercased() }
     }
 

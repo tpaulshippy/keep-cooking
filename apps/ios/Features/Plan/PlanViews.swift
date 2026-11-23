@@ -163,12 +163,14 @@ public struct PlanView: View {
                 HStack {
                     Text("No meals planned").foregroundStyle(.secondary)
                     Spacer()
-                    Button {
-                        onAddDay?(day)
-                    } label: {
-                        Label("Add", systemImage: "plus")
+                    if let onAddDay = onAddDay {
+                        Button {
+                            onAddDay(day)
+                        } label: {
+                            Label("Add", systemImage: "plus")
+                        }
+                        .buttonStyle(.bordered)
                     }
-                    .buttonStyle(.bordered)
                 }
             } else {
                 ForEach(dayEntries) { entry in

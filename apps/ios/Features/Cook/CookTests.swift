@@ -116,6 +116,30 @@ final class CookTests: XCTestCase {
         XCTAssertTrue(kd.0 < ku.0)
     }
 
+    func testAisleGroupedNamesNormalizesCaseAndWhitespace() {
+        // Values differing only by case/whitespace must collapse to one section.
+        struct Item { let aisle: String; let name: String }
+        let items = [
+            Item(aisle: "Produce", name: "Apples"),
+            Item(aisle: "produce ", name: "Carrots"),
+            Item(aisle: "PRODUCE", name: "Bananas"),
+            Item(aisle: "dairy", name: "Milk"),
+            Item(aisle: "", name: "Mystery"),
+            Item(aisle: "  ", name: "Other mystery"),
+        ]
+        let groups = aisleGroupedNames(items: items, aisleOf: { $0.aisle }, nameOf: { $0.name })
+        XCTAssertEqual(groups.count, 3) // produce + dairy + unfiled, not 6
+        XCTAssertEqual(
+            Set(groups.map { normalizedAisleKey($0) }),
+            Set(["produce", "dairy", ""]))
+    }
+
+    func testNormalizedAisleKey() {
+        XCTAssertEqual(normalizedAisleKey(" Produce "), "produce")
+        XCTAssertEqual(normalizedAisleKey("DAIRY"), "dairy")
+        XCTAssertEqual(normalizedAisleKey(""), "")
+    }
+
     func testExpiryStatus() {
         let now = Date()
         XCTAssertEqual(expiryStatus(expiresAt: now.addingTimeInterval(-10)), .expired)
