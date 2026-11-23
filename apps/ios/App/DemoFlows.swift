@@ -53,7 +53,8 @@ func guessAisle(for name: String) -> String {
 private func photoURL(forKey key: String?) -> URL? {
     guard let key, !key.isEmpty,
           let url = URL(string: key),
-          url.scheme == "http" || url.scheme == "https"
+          let scheme = url.scheme?.lowercased(),
+          scheme == "http" || scheme == "https"
     else { return nil }
     return url
 }
@@ -74,9 +75,13 @@ struct RecipeLibraryView: View {
 
     private var filtered: [Recipe] {
         // Single source of truth for search behavior — see LibrarySearch.swift.
-        filterRecipes(recipes, filter: AdvancedFilter(
-            query: searchText,
-            categories: selectedCategory.map { [$0] } ?? []))
+        // A selection whose category vanished (e.g. last recipe deleted) is
+        // ignored so the list can't strand on an empty "No results" state.
+        let categories = selectedCategory.flatMap { sel in
+            allCategories.contains(sel) ? [sel] : nil
+        } ?? []
+        return filterRecipes(recipes, filter: AdvancedFilter(
+            query: searchText, categories: categories))
     }
 
     var body: some View {

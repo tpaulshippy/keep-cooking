@@ -50,6 +50,12 @@ final class LibrarySearchTests: XCTestCase {
         XCTAssertEqual(out.map { $0.recipeId }.sorted(), ["r1", "r2"])
     }
 
+    func testQueryMatchesStepsOnlyTerm() {
+        // "bake" appears only in r1's stepTexts (not title/ingredients).
+        let out = filterRecipes(recipes(), filter: AdvancedFilter(query: "bake"))
+        XCTAssertEqual(out.map { $0.recipeId }, ["r1"])
+    }
+
     func testQueryTokensAreANDed() {
         let out = filterRecipes(recipes(), filter: AdvancedFilter(query: "miso salmon"))
         XCTAssertEqual(out.map { $0.recipeId }, ["r1"])
