@@ -50,6 +50,15 @@ configs:
 
 settings:
   SWIFT_VERSION: '5.0'
+  # Release plumbing: single source of truth for version/build. The
+  # Config/Info-*.plist files reference these as
+  # $(MARKETING_VERSION)/$(CURRENT_PROJECT_VERSION) so Xcode Cloud
+  # ci_pre_xcodebuild.sh can stamp a unique build number per upload.
+  # NOTE: `xcodegen generate` rewrites Config/Info-*.plist from scratch —
+  # re-apply the $(...) version keys by hand after any regen (see warning
+  # at the top of this file). Do NOT run `xcodegen generate` casually.
+  MARKETING_VERSION: '1.0'
+  CURRENT_PROJECT_VERSION: '1'
   # Lane 1 ios-packaging: automatic signing. TODO — replace YOUR_TEAM_ID with
   # the real Apple Developer Portal Team ID (requires portal access).
   CODE_SIGN_STYLE: Automatic

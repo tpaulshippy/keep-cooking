@@ -15,8 +15,11 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<!-- Release plumbing: see Config/Info-App.plist. Re-apply by hand
+	     after any `xcodegen generate`. NOTE: watch is out of the upload
+	     set; this key only keeps the in-tree target consistent. -->
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 </dict>
 </plist>

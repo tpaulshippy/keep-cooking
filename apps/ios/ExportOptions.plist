@@ -2,19 +2,25 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- Lane 1 ios-packaging: app-store export skeleton. Upload set is app +
-	     widgets + share ONLY — the watch target (SmidgenWatch) stays in-tree
-	     but is NOT uploaded (pair at distribution time). -->
+	<!-- TestFlight / App Store export. Upload set is app + widgets + share
+	     ONLY — SmidgenWatch (org.smidgen.app.watch) stays in-tree but is NOT
+	     uploaded (pair at distribution time).
+	     Local archive-testflight.sh uses automatic signing (lets Xcode fetch
+	     profiles with -allowProvisioningUpdates); Xcode Cloud uses
+	     cloud-managed signing. -->
 	<key>method</key>
 	<string>app-store</string>
-	<!-- TODO(lane-1-ios-packaging): replace with the real Apple Developer
-	     Portal Team ID. Requires Apple portal access — unverified. -->
+	<!-- TEAM_ID override: `export TEAM_ID=<10-char ID>` before running
+	     scripts/archive-testflight.sh; the script passes it as
+	     DEVELOPMENT_TEAM. Default below is the owner's portal Team ID. -->
 	<key>teamID</key>
-	<string>YOUR_TEAM_ID</string>
+	<string>KRF39C6NC9</string>
+	<key>signingStyle</key>
+	<string>automatic</string>
 	<key>provisioningProfiles</key>
 	<dict>
-		<!-- TODO(lane-1-ios-packaging): replace values with the real
-		     App Store provisioning profile names from the portal. -->
+		<!-- TODO: replace values with the real App Store provisioning
+		     profile names from the portal (requires portal access). -->
 		<key>org.smidgen.app</key>
 		<string>Smidgen App Store</string>
 		<key>org.smidgen.app.widgets</key>
@@ -22,9 +28,9 @@
 		<key>org.smidgen.app.share</key>
 		<string>Smidgen Share App Store</string>
 	</dict>
-	<key>uploadBitcode</key>
-	<false/>
 	<key>uploadSymbols</key>
 	<true/>
+	<key>uploadBitcode</key>
+	<false/>
 </dict>
 </plist>

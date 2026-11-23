@@ -15,9 +15,14 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<!-- Release plumbing: stamped via project-level MARKETING_VERSION
+	     (project.yml). Re-apply by hand after any `xcodegen generate`. -->
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<!-- Release plumbing: stamped via project-level CURRENT_PROJECT_VERSION
+	     (project.yml) / Xcode Cloud $CI_BUILD_NUMBER. Re-apply by hand
+	     after any `xcodegen generate`. -->
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Take a photo of a cookbook page to scan its text.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

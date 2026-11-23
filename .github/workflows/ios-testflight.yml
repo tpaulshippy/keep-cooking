@@ -1,0 +1,58 @@
+# Secrets-setup checklist (one-time, repo Settings → Secrets and variables → Actions):
+#   1. ASC_ISSUER_ID    — App Store Connect → Users and Access → Integrations → Team Keys → Issuer ID.
+#   2. ASC_KEY_ID       — same Team Key's Key ID (the 10-char ID for the .p8 key).
+#   3. ASC_PRIVATE_KEY  — contents of the .p8 private key file (paste whole file incl.
+#                          -----BEGIN PRIVATE KEY----- / -----END PRIVATE KEY----- lines).
+#                          Key needs App Store Connect API access (Admin or App Manager role).
+#   4. XCODE_CLOUD_WORKFLOW_ID — App Store Connect → Xcode Cloud workflow → copy its
+#                          workflow ID (UUID). Create the .p8 Team Key + note the workflow
+#                          ID in the Apple Developer / App Store Connect portal, then add
+#                          all four values as GitHub repo secrets (never commit them).
+#
+# Xcode Cloud workflow must be Manual/off with dummy start condition; this workflow is the real gate.
+# Backend deploys stay in deploy.yml (path-separated, no overlap).
+
+name: Trigger Xcode Cloud (iOS only)
+
+# Source-controlled path filter: Xcode Cloud start conditions can't live in
+# git, so the workflow over there must be set to Manual/off (keep a dummy
+# "any branch" start condition — Xcode requires one). This workflow is the
+# real gate: only iOS app pushes dispatch a build.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/ios/**"
+      - "apps/ios/Smidgen.xcodeproj/**"
+      - "apps/ios/ci_scripts/**"
+      - "apps/ios/scripts/**"
+      - ".github/workflows/ios-testflight.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/ios/**"
+      - "apps/ios/Smidgen.xcodeproj/**"
+      - "apps/ios/ci_scripts/**"
+      - "apps/ios/scripts/**"
+      - ".github/workflows/ios-testflight.yml"
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Generate App Store Connect token
+        id: asc
+        uses: yuki0n0/action-appstoreconnect-token@v1.0
+        with:
+          issuer id: ${{ secrets.ASC_ISSUER_ID }}
+          key id: ${{ secrets.ASC_KEY_ID }}
+          key: ${{ secrets.ASC_PRIVATE_KEY }}
+
+      - name: Dispatch Xcode Cloud workflow
+        uses: yorifuji/actions-xcode-cloud-dispatcher@v1
+        with:
+          appstore-connect-token: ${{ steps.asc.outputs.token }}
+          xcode-cloud-workflow-id: ${{ secrets.XCODE_CLOUD_WORKFLOW_ID }}
+          git-branch-name: ${{ github.head_ref || github.ref_name }}
