@@ -1,0 +1,5 @@
+{
+  "name": "smidgen",
+  "private": true,
+  "workspaces": ["api", "packages/contracts"]
+}

@@ -1,0 +1,13 @@
+{
+  "strategy": "jsonld",
+  "confidence": 0.95,
+  "warnings": [],
+  "sourceUrl": "https://example.com/miso-salmon",
+  "recipe": {
+    "title": "Weeknight Miso Salmon",
+    "servings": 4,
+    "ingredients": [{ "name": "salmon fillets", "quantity": 1.5, "unit": "lb", "display": "1 1/2 lb" }],
+    "steps": [{ "text": "Broil 8-10 min." }],
+    "sourceUrl": "https://example.com/miso-salmon"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "id": "0190c8a1-7a2e-7b3c-9d1e-000000000001",
+  "updatedAt": "2026-11-20T12:00:00Z",
+  "deviceId": "seed",
+  "deleted": false,
+  "entity": "recipe",
+  "title": "Weeknight Miso Salmon",
+  "description": "Fast broiled salmon with miso glaze.",
+  "servings": 4,
+  "prepMinutes": 10,
+  "cookMinutes": 12,
+  "rating": 4.5,
+  "source": "Seed",
+  "sourceUrl": "https://example.com/miso-salmon",
+  "categories": ["dinner", "fish"],
+  "householdId": "hh-demo",
+  "photoKeys": {
+    "original": "photos/miso-salmon/original.jpg",
+    "large1024": "photos/miso-salmon/1024.jpg",
+    "thumb": "photos/miso-salmon/thumb.jpg"
+  },
+  "ingredients": [
+    { "id": "0190c8a1-0000-0000-0000-000000000011", "name": "salmon fillets", "quantity": 1.5, "unit": "lb", "display": "1 1/2 lb", "position": 0, "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000001" },
+    { "id": "0190c8a1-0000-0000-0000-000000000012", "name": "white miso", "quantity": 3, "unit": "tbsp", "display": "3 tbsp", "position": 1, "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000001" }
+  ],
+  "steps": [
+    { "id": "0190c8a1-0000-0000-0000-000000000021", "position": 0, "text": "Heat broiler. Whisk miso, mirin, soy.", "timers": [], "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000001" },
+    { "id": "0190c8a1-0000-0000-0000-000000000022", "position": 1, "text": "Broil 8-10 min, rest 5 min.", "timers": [{ "seconds": 540, "label": "broil" }, { "seconds": 300, "label": "rest" }], "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000001" }
+  ]
+}

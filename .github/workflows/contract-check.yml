@@ -1,0 +1,20 @@
+name: contract-check
+on:
+  pull_request:
+    paths: ['packages/contracts/**', 'api/**', 'apps/ios/**']
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install pyyaml jsonschema
+      - name: openapi.json in sync
+        run: |
+          python3 -c "import yaml,json; d=yaml.safe_load(open('packages/contracts/openapi.yaml')); json.dump(d,open('/tmp/gen.json','w'),indent=2,sort_keys=True); e=json.load(open('packages/contracts/openapi.json')); g=json.load(open('/tmp/gen.json')); assert json.dumps(e,sort_keys=True)==json.dumps(g,sort_keys=True), 'openapi.json stale — regenerate from openapi.yaml'"
+      - name: validate examples
+        run: |
+          python3 -c "import json; [json.load(open(f)) for f in ['packages/contracts/examples/Recipe.json','packages/contracts/examples/ClipReport.json','packages/contracts/examples/SyncEnvelope.json']]; print('examples ok')"
+          test -f packages/contracts/schema.sql
+          test $(ls packages/contracts/seed/*.json | wc -l) -ge 15 || (echo "need 15 seeds"; exit 1)
