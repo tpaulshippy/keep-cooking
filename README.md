@@ -67,5 +67,8 @@ runs on PR. No lane may change contracts without orchestrator approval.
 - Lane 4 Cook/Plan/Shop: scaling + timer + aggregation tests
 - Lane 5 Library/System: 3 seeded dupes caught, EXPORT_SAMPLES validated
 
-Demos: `IngestDemoNotes.md`, `SCREEN_RECORDING_NOTES.md`, `EXPORT_SAMPLES/`
-(GIFs TODO — record airplane-mode + plan→list flows).
+Demos (real simulator recordings, iOS 26.5 iPhone 16 Pro): `docs/demos/offline-launch.mp4`
+(15 seeds, kill + relaunch persists), `ingest-save.mp4` (OCR scan → parse → save),
+`plan-to-list.mp4` (week plan → aggregated aisle-sorted list → check-off → cook mode).
+See `docs/demos/NOTES.md` for commands + honest gaps. Full XcodeGen project:
+`apps/ios/project.yml` → `Smidgen.xcodeproj` (app + widgets + share + watch + unit/UITests).
