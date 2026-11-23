@@ -47,33 +47,191 @@ func guessAisle(for name: String) -> String {
 // MARK: - Recipes tab (live list → detail → cook / add-to-list)
 
 struct RecipeLibraryView: View {
+    @Environment(\.modelContext) private var context
     @Query(filter: #Predicate<Recipe> { !$0.deleted },
            sort: [SortDescriptor(\Recipe.title)])
     private var recipes: [Recipe]
+    @State private var searchText = ""
+    @State private var selectedCategory: String? = nil
+
+    private var allCategories: [String] {
+        Array(Set(recipes.flatMap { $0.categories })).sorted()
+    }
+
+    private var filtered: [Recipe] {
+        recipes.filter { recipe in
+            let matchesCategory = selectedCategory == nil
+                || recipe.categories.contains(selectedCategory!)
+            if !matchesCategory { return false }
+            let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if q.isEmpty { return true }
+            let hay = ([recipe.title, recipe.recipeDescription, recipe.source]
+                + recipe.categories
+                + recipe.ingredients.map { $0.name }
+                + recipe.steps.map { $0.text })
+                .joined(separator: " ").lowercased()
+            return q.lowercased().split(whereSeparator: \.isWhitespace).allSatisfy { hay.contains($0) }
+        }
+    }
 
     var body: some View {
         NavigationStack {
-            Group {
-                if recipes.isEmpty {
-                    ContentUnavailableView("No recipes yet", systemImage: "book.pages",
-                        description: Text("Seeds load on first launch — airplane mode works."))
-                } else {
-                    List(recipes, id: \.id) { recipe in
-                        NavigationLink {
-                            RecipeDetailView(recipe: recipe)
-                        } label: {
-                            VStack(alignment: .leading) {
-                                Text(recipe.title).font(.headline)
-                                Text("\(recipe.ingredients.count) ingredients · \(recipe.steps.count) steps")
-                                    .font(.caption).foregroundStyle(.secondary)
+            VStack(spacing: 0) {
+                if !allCategories.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            categoryChip(title: "All", selected: selectedCategory == nil) {
+                                selectedCategory = nil
+                            }
+                            ForEach(allCategories, id: \.self) { cat in
+                                categoryChip(title: cat, selected: selectedCategory == cat) {
+                                    selectedCategory = (selectedCategory == cat) ? nil : cat
+                                }
                             }
                         }
+                        .padding(.horizontal)
+                        .padding(.vertical, 8)
                     }
-                    .accessibilityIdentifier("recipe-list")
+                }
+                Group {
+                    if recipes.isEmpty {
+                        VStack(spacing: 8) {
+                            ContentUnavailableView("No recipes yet", systemImage: "book.pages",
+                                description: Text("Seeds load on first launch — airplane mode works."))
+                            ActionsCTA()
+                        }
+                    } else if filtered.isEmpty {
+                        ContentUnavailableView.search(text: searchText)
+                    } else {
+                        List {
+                            ForEach(filtered, id: \.id) { recipe in
+                                NavigationLink {
+                                    RecipeDetailView(recipe: recipe)
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        recipeThumb(for: recipe)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(recipe.title).font(.headline)
+                                            Text(librarySubtitle(for: recipe))
+                                                .font(.caption).foregroundStyle(.secondary)
+                                                .lineLimit(2)
+                                        }
+                                    }
+                                    .padding(.vertical, 2)
+                                }
+                            }
+                            .onDelete(perform: tombstone)
+                        }
+                        .listStyle(.insetGrouped)
+                        .contentMargins(.bottom, 90, for: .scrollContent)
+                        .safeAreaPadding(.bottom, 8)
+                        .accessibilityIdentifier("recipe-list")
+                    }
                 }
             }
             .navigationTitle("Recipes")
+            .searchable(text: $searchText, prompt: "Search recipes")
+            .toolbar(content: {
+                ToolbarItem(placement: .topBarTrailing) {
+                    SwiftUI.Menu(content: {
+                        NavigationLink(destination: ClipView()) {
+                            Text("Clip recipe URL")
+                        }
+                        NavigationLink(destination: OCRScanView()) {
+                            Text("Scan cookbook (OCR)")
+                        }
+                    }, label: {
+                        Image(systemName: "plus")
+                            .accessibilityIdentifier("add-recipe-button")
+                    })
+                }
+            })
         }
+    }
+
+    private func categoryChip(title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline.weight(selected ? .semibold : .regular))
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(selected ? Color.accentColor : Color(.secondarySystemBackground))
+                .foregroundStyle(selected ? .white : .primary)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("category-chip-\(title)")
+    }
+
+    private func recipeThumb(for recipe: Recipe) -> some View {
+        Group {
+            if let key = recipe.photoThumb, !key.isEmpty, key.hasPrefix("http"),
+               let url = URL(string: key)
+            {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let img): img.resizable().scaledToFill()
+                    default:
+                        Image(systemName: "fork.knife.circle.fill")
+                            .resizable().scaledToFit().padding(8)
+                            .foregroundStyle(.orange)
+                    }
+                }
+                .frame(width: 52, height: 52)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            } else {
+                Image(systemName: "fork.knife.circle.fill")
+                    .resizable().scaledToFit().padding(8)
+                    .frame(width: 52, height: 52)
+                    .background(Color.orange.opacity(0.15))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .foregroundStyle(.orange)
+            }
+        }
+    }
+
+    private func librarySubtitle(for recipe: Recipe) -> String {
+        let n = recipe.ingredients.count, m = recipe.steps.count
+        var parts = [
+            n == 1 ? "1 ingredient" : "\(n) ingredients",
+            m == 1 ? "1 step" : "\(m) steps",
+        ]
+        if let total = totalMinutes(for: recipe) { parts.append("\(total) min") }
+        if recipe.servings > 0 {
+            let s = recipe.servings.truncatingRemainder(dividingBy: 1) == 0
+                ? String(Int(recipe.servings)) : String(format: "%.1g", recipe.servings)
+            parts.append("Serves \(s)")
+        }
+        let cats = recipe.categories.prefix(2).joined(separator: " · ")
+        if !cats.isEmpty { parts.append(cats) }
+        return parts.joined(separator: " · ")
+    }
+
+    private func totalMinutes(for recipe: Recipe) -> Int? {
+        switch (recipe.prepMinutes, recipe.cookMinutes) {
+        case let (p?, c?): return p + c
+        case let (p?, nil): return p
+        case let (nil, c?): return c
+        case (nil, nil): return nil
+        }
+    }
+
+    private func tombstone(at offsets: IndexSet) {
+        for i in offsets {
+            filtered[i].deleted = true
+        }
+        try? context.save()
+    }
+}
+
+private struct ActionsCTA: View {
+    var body: some View {
+        VStack(spacing: 8) {
+            NavigationLink("Clip a recipe URL") { ClipView() }
+                .buttonStyle(.borderedProminent)
+            NavigationLink("Scan a cookbook") { OCRScanView() }
+                .buttonStyle(.bordered)
+        }
+        .padding(.top, 8)
     }
 }
 
@@ -81,21 +239,113 @@ struct RecipeDetailView: View {
     @Environment(\.modelContext) private var context
     let recipe: Recipe
     @State private var addedMessage: String?
+    @State private var checked: Set<String> = []
+    @State private var servings: Double
+
+    init(recipe: Recipe) {
+        self.recipe = recipe
+        _servings = State(initialValue: recipe.servings)
+        _addedMessage = State(initialValue: nil)
+    }
+
+    private var sortedIngredients: [Ingredient] {
+        recipe.ingredients.sorted(by: { $0.position < $1.position })
+    }
+
+    private var sortedSteps: [Step] {
+        recipe.steps.sorted(by: { $0.position < $1.position })
+    }
+
+    private var totalMinutes: Int? {
+        switch (recipe.prepMinutes, recipe.cookMinutes) {
+        case let (p?, c?): return p + c
+        case let (p?, nil): return p
+        case let (nil, c?): return c
+        case (nil, nil): return nil
+        }
+    }
 
     var body: some View {
         List {
-            Section("Ingredients") {
-                ForEach(recipe.ingredients.sorted(by: { $0.position < $1.position })) { ing in
-                    Text(ing.display.isEmpty ? ing.name : ing.display)
+            // Photo hero
+            Section {
+                heroHeader
+            }
+            .listRowInsets(EdgeInsets())
+            // Meta row
+            Section {
+                HStack(spacing: 12) {
+                    Stepper("Serves \(servingsDisplay)", value: $servings, in: 1...24, step: 1)
+                        .font(.subheadline)
+                    Spacer()
+                    if let total = totalMinutes {
+                        Label("\(total) min", systemImage: "clock")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    if let rating = recipe.rating {
+                        Label(String(format: "%.1f", rating), systemImage: "star.fill")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                }
+                if !recipe.categories.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack {
+                            ForEach(recipe.categories, id: \.self) { cat in
+                                Text(cat).font(.caption)
+                                    .padding(.horizontal, 8).padding(.vertical, 4)
+                                    .background(Color(.secondarySystemBackground))
+                                    .clipShape(Capsule())
+                            }
+                        }
+                    }
                 }
             }
-            Section("Steps") {
-                ForEach(recipe.steps.sorted(by: { $0.position < $1.position })) { step in
-                    Text(step.text)
+            if let addedMessage {
+                Section {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                        Text(addedMessage).foregroundStyle(.primary)
+                    }
+                    .padding(.vertical, 4)
+                    .accessibilityIdentifier("added-confirm")
+                }
+            }
+            Section("Ingredients (\(sortedIngredients.count))") {
+                ForEach(sortedIngredients) { ing in
+                    Button {
+                        if checked.contains(ing.id) { checked.remove(ing.id) }
+                        else { checked.insert(ing.id) }
+                    } label: {
+                        HStack {
+                            Image(systemName: checked.contains(ing.id)
+                                ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(checked.contains(ing.id) ? .green : .secondary)
+                            Text(ing.display.isEmpty ? ing.name : ing.display)
+                                .strikethrough(checked.contains(ing.id))
+                                .foregroundStyle(checked.contains(ing.id) ? .secondary : .primary)
+                                .multilineTextAlignment(.leading)
+                            Spacer()
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            Section("Steps (\(sortedSteps.count))") {
+                ForEach(Array(sortedSteps.enumerated()), id: \.element.id) { idx, step in
+                    HStack(alignment: .top, spacing: 10) {
+                        Text("\(idx + 1)")
+                            .font(.caption.weight(.bold))
+                            .frame(width: 24, height: 24)
+                            .background(Color.accentColor.opacity(0.15))
+                            .foregroundStyle(Color.accentColor)
+                            .clipShape(Circle())
+                        Text(step.text)
+                    }
+                    .padding(.vertical, 2)
                 }
             }
             Section {
-                NavigationLink("Cook") {
+                NavigationLink {
                     CookModeView(
                         title: recipe.title,
                         baseServings: recipe.servings,
@@ -106,18 +356,61 @@ struct RecipeDetailView: View {
                         steps: recipe.steps.map {
                             CookModeView.StepSnapshot(id: $0.id, position: $0.position, text: $0.text)
                         })
+                } label: {
+                    Label("Cook", systemImage: "frying.pan")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
                 }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
                 .accessibilityIdentifier("cook-button")
-                Button("Add to shopping list") { addToList() }
-                    .accessibilityIdentifier("add-to-list-button")
-            }
-            if let addedMessage {
-                Section { Text(addedMessage).foregroundStyle(.green)
-                    .accessibilityIdentifier("added-confirm") }
+                Button {
+                    addToList()
+                } label: {
+                    Label("Add to shopping list", systemImage: "cart.badge.plus")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("add-to-list-button")
             }
         }
         .navigationTitle(recipe.title)
+        .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("recipe-detail-title")
+    }
+
+    private var servingsDisplay: String {
+        servings.truncatingRemainder(dividingBy: 1) == 0
+            ? String(Int(servings)) : String(format: "%.1g", servings)
+    }
+
+    @ViewBuilder
+    private var heroHeader: some View {
+        if let key = recipe.photoThumb, !key.isEmpty, key.hasPrefix("http"),
+           let url = URL(string: key)
+        {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let img):
+                    img.resizable().scaledToFill()
+                        .frame(height: 220).clipped()
+                default:
+                    placeholderHero
+                }
+            }
+        } else {
+            placeholderHero
+        }
+    }
+
+    private var placeholderHero: some View {
+        ZStack {
+            LinearGradient(colors: [.orange, .red.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                .frame(height: 140)
+            Image(systemName: "fork.knife.circle.fill")
+                .font(.system(size: 48))
+                .foregroundStyle(.white.opacity(0.9))
+        }
     }
 
     private func addToList() {
