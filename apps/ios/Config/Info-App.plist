@@ -31,6 +31,8 @@
 	<false/>
 	<key>UILaunchScreen</key>
 	<dict/>
+	<key>UIRequiresFullScreen</key>
+	<true/>
 	<key>SMIDGEN_API_BASE_URL</key>
 	<string>$(SMIDGEN_API_BASE_URL)</string>
 </dict>
