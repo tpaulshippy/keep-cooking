@@ -10,7 +10,6 @@
 // with an in-memory fake transport — no SwiftData, no network, no CloudKit.
 
 import XCTest
-@testable import SmidgenSync
 
 // MARK: - Fake transport (in-memory Lane 1 stand-in)
 
@@ -102,8 +101,10 @@ final class TwoDeviceConvergenceTests: XCTestCase {
 
         let finalA = await server.store["r1"]
         XCTAssertEqual(finalA?.deviceId, "device-b")
-        XCTAssertEqual(await engineA.pendingCount, 0)
-        XCTAssertEqual(await engineB.pendingCount, 0)
+        let pendingA = await engineA.pendingCount
+        let pendingB = await engineB.pendingCount
+        XCTAssertEqual(pendingA, 0)
+        XCTAssertEqual(pendingB, 0)
     }
 
     func testDeleteTombstoneBeatsOlderLiveRecord() async throws {
@@ -116,7 +117,8 @@ final class TwoDeviceConvergenceTests: XCTestCase {
                                      device: "device-a", deleted: true))
         let res = try await engine.sync()
         XCTAssertEqual(res.pushed, 1)
-        XCTAssertEqual(await server.store["r9"]?.deleted, true)
+        let r9deleted = (await server.store["r9"])?.deleted
+        XCTAssertEqual(r9deleted, true)
     }
 }
 

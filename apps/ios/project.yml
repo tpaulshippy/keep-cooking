@@ -1,0 +1,168 @@
+# Smidgen — XcodeGen project spec (PASS 1: full Xcode project).
+# Generated project: apps/ios/Smidgen.xcodeproj (`xcodegen generate` from apps/ios).
+# Toolchain: Xcode 27.2, iOS 17+ (iPhone+iPad), watchOS 10+.
+#
+# Decisions (recorded):
+# - XcodeGen (2.48.0, brew) instead of a hand-written pbxproj: the 36 loose
+#   Swift files change often; regenerating beats hand-merging GUIDs.
+# - Bundle IDs: app org.smidgen.app (seed); widgets org.smidgen.app.widgets;
+#   share org.smidgen.app.share; tests org.smidgen.app.tests;
+#   watch org.smidgen.app.watch.
+# - AppIntents live IN-APP (Intents/ in the Smidgen target). A separate
+#   AppIntent extension target was considered and rejected: triple the
+#   SwiftData model duplication for zero offline benefit; Shortcuts works
+#   from the app target on iOS 17+.
+# - App Groups: BOTH group.com.smidgen.share (ShareStore bridge, required)
+#   and group.com.smidgen.shared (WidgetSnapshotStore/WatchStore) are wired
+#   into app + both extensions + watch via one shared entitlements file.
+# - Watch: real watchOS app target (SmidgenWatch, standalone, own scheme).
+#   NOT embedded in the iOS app (avoids Embed Watch Content fragility);
+#   pair at distribution time. If SDK pairing ever blocks, this target is
+#   the documented stub-host seam.
+# - Tests: standalone SmidgenTests unit-test bundle (NO app host) compiling
+#   the 4 *Tests.swift files plus the pure-logic sources they exercise
+#   (Foundation-only, plus ClipboardBanner/OCRScanView/Models for the
+#   ClipboardDetector/OCRSplitter/Recipe paths). Matches the files' own
+#   header notes ("no import needed when in the same test target").
+# - Widgets extension compiles Core/Models.swift alongside the widget
+#   sources so SnapshotWriter (same file as the providers) resolves
+#   Plan/Recipe/ShoppingList without source edits.
+# - SWIFT_VERSION pinned to 5.0: the 36 files were validated with
+#   `swiftc -parse` only; Swift 6 strict concurrency is a later lane.
+name: Smidgen
+
+options:
+  bundleIdPrefix: org.smidgen.app
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: '17.0'
+    watchOS: '10.0'
+
+configs:
+  Debug: debug
+  Release: release
+
+settings:
+  SWIFT_VERSION: '5.0'
+
+targets:
+  Smidgen:
+    type: application
+    platform: iOS
+    deploymentTarget: '17.0'
+    sources:
+      # Swift-only: doc/sample files (*.md, EXPORT_SAMPLES/*) must not land
+      # in the bundle as resources (duplicate README.md filenames collide).
+      - path: App
+        includes: ['**/*.swift']
+        excludes: ['**/*Tests.swift']
+      - path: Core
+        includes: ['**/*.swift']
+        excludes: ['**/*Tests.swift']
+      - path: Export
+        includes: ['**/*.swift']
+        excludes: ['**/*Tests.swift']
+      - path: Features
+        includes: ['**/*.swift']
+        excludes: ['**/*Tests.swift']
+      - path: Intents
+        includes: ['**/*.swift']
+        excludes: ['**/*Tests.swift']
+      - path: Sync
+        includes: ['**/*.swift']
+        excludes: ['**/*Tests.swift']
+      - path: Widgets
+        includes: ['**/*.swift']
+        excludes: ['**/*Tests.swift']
+      - path: ShareExtension/ShareStore.swift
+    dependencies:
+      - target: SmidgenWidgets
+      - target: SmidgenShare
+    info:
+      path: Config/Info-App.plist
+    entitlements:
+      path: Config/AppGroups.entitlements
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.smidgen.app
+      TARGETED_DEVICE_FAMILY: '1,2'
+      INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: 'YES'
+
+  SmidgenWidgets:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: '17.0'
+    sources:
+      - path: Widgets/SmidgenWidgets.swift
+      - path: Widgets/WidgetSnapshot.swift
+      - path: Core/Models.swift
+    info:
+      path: Config/Info-Widgets.plist
+    entitlements:
+      path: Config/AppGroups.entitlements
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.smidgen.app.widgets
+      TARGETED_DEVICE_FAMILY: '1,2'
+
+  SmidgenShare:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: '17.0'
+    sources:
+      - path: ShareExtension/ShareViewController.swift
+      - path: ShareExtension/ShareStore.swift
+    info:
+      path: Config/Info-Share.plist
+    entitlements:
+      path: Config/AppGroups.entitlements
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.smidgen.app.share
+      TARGETED_DEVICE_FAMILY: '1,2'
+
+  SmidgenTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: '17.0'
+    sources:
+      # Pure-logic sources under test (no app host; same-target convention).
+      - path: Core/Models.swift
+      - path: Sync/SyncEngine.swift
+      - path: Features/Ingest/IngredientParser.swift
+      - path: Features/Ingest/ClipModels.swift
+      - path: Features/Ingest/ClipboardBanner.swift
+      - path: Features/Ingest/OCRScanView.swift
+      - path: Features/Cook/RecipeScaler.swift
+      - path: Features/Cook/StepTimerParser.swift
+      - path: Features/Plan/PlanAggregation.swift
+      - path: Features/Shop/ShopHelpers.swift
+      - path: Features/Library/DuplicateFinder.swift
+      # The 4 XCTest suites.
+      - path: Sync/SyncEngineTests.swift
+      - path: Features/Ingest/IngredientParserTests.swift
+      - path: Features/Cook/CookTests.swift
+      - path: Features/Library/DuplicateFinderTests.swift
+    info:
+      path: Config/Info-Tests.plist
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.smidgen.app.tests
+      TARGETED_DEVICE_FAMILY: '1,2'
+
+  SmidgenWatch:
+    type: application.watchapp2
+    platform: watchOS
+    deploymentTarget: '10.0'
+    sources:
+      - path: watch/WatchViews.swift
+      - path: Widgets/WidgetSnapshot.swift
+    info:
+      path: Config/Info-Watch.plist
+    entitlements:
+      path: Config/AppGroups.entitlements
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.smidgen.app.watch
+
+# NOTE: no explicit `schemes:` — XcodeGen auto-generates one shared scheme
+# per target (Smidgen, SmidgenWidgets, SmidgenShare, SmidgenTests,
+# SmidgenWatch). `xcodebuild -scheme Smidgen` and
+# `xcodebuild -scheme SmidgenTests` resolve to those. Explicit scheme
+# blocks were attempted and rejected by the spec decoder; autogen keeps
+# `xcodegen generate` reproducible with zero hand-maintained scheme XML.

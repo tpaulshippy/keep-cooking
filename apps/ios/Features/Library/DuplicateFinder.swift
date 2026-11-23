@@ -160,7 +160,11 @@ public func isDuplicatePair<R: DuplicableRecipe>(
 /// "X - copy" -> "X". A bare "dup of 09" strips to "" (handled by
 /// referenceFragment instead) — never force-unwrap, never crash on odd input.
 public func strippedCopyTitle(_ title: String) -> String {
-    var s = normalizedTitle(title)
+    // Strip "(N)" copy-numbers BEFORE normalization: normalizedTitle drops
+    // all punctuation, so a post-normalization `\(\d+\)` regex could never
+    // match ("Salsa (1)" normalizes to "salsa 1", parens already gone).
+    let deNumbered = title.replacingOccurrences(of: #"\s*\(\d+\)\s*$"#, with: "", options: .regularExpression)
+    var s = normalizedTitle(deNumbered)
     for prefix in ["copy of ", "copy ", "duplicate of ", "duplicate "] {
         if s.hasPrefix(prefix) { s = String(s.dropFirst(prefix.count)); break }
     }

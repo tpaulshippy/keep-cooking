@@ -1,0 +1,884 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		146B4607ACF94CD235B22A99 /* ShopHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3297070733AC64326D629042 /* ShopHelpers.swift */; };
+		15F5E222D96C0BF5A0B2758A /* ShopViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B49F0C98D1D42A92BAAC37D /* ShopViews.swift */; };
+		1A9B1E92D6226B11D146CF49 /* CookModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE64A7F90524D00758BED160 /* CookModeView.swift */; };
+		1D7D8265EA70F7516559552F /* PlanViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 001753EFE47673C0075BB23A /* PlanViews.swift */; };
+		237356453E8CA48A6C10880B /* CookSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98BD4B83DAED27582CD5E9C /* CookSession.swift */; };
+		24AF59A73F6E2C90572C38DE /* SeedLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB072D7F5ECACC2922F3EBD6 /* SeedLoader.swift */; };
+		283E34988CC8C6258483837B /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = C29A1009A84B444254CD7415 /* Models.swift */; };
+		29C96541DCCC06E1DF27E2BB /* LibraryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64208EF15E7B5BC7A25C6337 /* LibraryModels.swift */; };
+		2B20935642F9BED4293DF27A /* ClipboardBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E048AEAE306958C06CF0B8AD /* ClipboardBanner.swift */; };
+		2C0D011F754277317BDC8262 /* IngredientParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F6210C0ADC1C8C59178469B /* IngredientParser.swift */; };
+		3543E32D27FE72EE997DE03F /* DuplicateFinderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E5DB7DC50200281903A3EA0 /* DuplicateFinderTests.swift */; };
+		36BA2FC76027B9CDEAF5711D /* ShareStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58C98BED44DCA47F717AD78C /* ShareStore.swift */; };
+		3C4482208A8D1F5EEE391E77 /* SmidgenWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F17874BF113DCEB362D9890 /* SmidgenWidgets.swift */; };
+		41637B0E1053163C90E1450D /* ClipboardBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E048AEAE306958C06CF0B8AD /* ClipboardBanner.swift */; };
+		4568A05235233561F22480F0 /* DuplicateFinder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33E81FAB33D10D4F00FABAF2 /* DuplicateFinder.swift */; };
+		52D74B01AC0FC879994D257D /* RecipeScaler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A40A587E766B41D3A54B7F6 /* RecipeScaler.swift */; };
+		53892542916A3E727C80880B /* ExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35FF7DE46DB032DF903CE4C6 /* ExportView.swift */; };
+		5F9CCD36213494A18AABD4B9 /* PlanAggregation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23789FAAD89E65816EC079FC /* PlanAggregation.swift */; };
+		6240CEA7264FE38CB4E6D33B /* SmidgenApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78CF752BEB5799714C262738 /* SmidgenApp.swift */; };
+		6ED184ED02D444C21775EF2E /* DuplicateFinder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33E81FAB33D10D4F00FABAF2 /* DuplicateFinder.swift */; };
+		6F3FAE4AB0811C1A26F9172D /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = C29A1009A84B444254CD7415 /* Models.swift */; };
+		6FE57C1CFCD71EEE8F3F5588 /* SyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DFAC576FA69697C63244F82 /* SyncEngine.swift */; };
+		723BC5F8FED26ECCD3C508AA /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = C29A1009A84B444254CD7415 /* Models.swift */; };
+		75B0B7C6E49626C4CF19A10D /* SmidgenWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F17874BF113DCEB362D9890 /* SmidgenWidgets.swift */; };
+		7DA9369B70FE123F051B1C28 /* ShareViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = EACF5E755C544FFBD1793665 /* ShareViews.swift */; };
+		800694335C558E4E1D5C0F3E /* WidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BFCDD47F7C8B01DA19454C4 /* WidgetSnapshot.swift */; };
+		82F6F80696416C2829C7B9C2 /* LibraryViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC78DD635279CA0FA78B51CD /* LibraryViews.swift */; };
+		8F6BC75DE7F90D499F8E5978 /* PlanAggregation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23789FAAD89E65816EC079FC /* PlanAggregation.swift */; };
+		934D962D9B2A3B30E32D0DE9 /* ClipModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFEB426C01662481C2053D24 /* ClipModels.swift */; };
+		9471C5981825961CC5D242D4 /* SmidgenWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = BF6EC7BDD478141917C9716C /* SmidgenWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		9744F866974A8FAD9CE097F3 /* SmidgenShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 1962776F2E60FB4A81CFB17A /* SmidgenShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		98AAAACCB25B688D74178172 /* WatchViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C25E4C252A28F46E2F7A52E /* WatchViews.swift */; };
+		A29DDD2522297EC01BE779E3 /* IngredientParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACD36CEE15F0BF13B0F9EF70 /* IngredientParserTests.swift */; };
+		A4D5D3B0FEAA90EA5AB9E853 /* StepTimerParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B399F5950B23BA7D5BCE68A9 /* StepTimerParser.swift */; };
+		A7C35EFE2191605FB3A42A60 /* ClipView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BA8BDFC24A02DDF34A670BF /* ClipView.swift */; };
+		A8596D2B1F0D4017D84BB7E9 /* ShopHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3297070733AC64326D629042 /* ShopHelpers.swift */; };
+		A8BEC4E8A4C9CF994EAEBDF5 /* BarcodeScannerStub.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6632A0DBDFB610078F7170D /* BarcodeScannerStub.swift */; };
+		AAB93A2259B2B0A1ED976986 /* SyncEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9C3A3E566A0A70144AE964C /* SyncEngineTests.swift */; };
+		AF6EAE9A96B3786B457342CD /* CookTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3950650623396EA2ADBCA9E2 /* CookTests.swift */; };
+		B69C24A0C530C685D90F1F92 /* RecipeExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B34CAECDF306797D51B7B2E7 /* RecipeExporter.swift */; };
+		B96072184B3458205049DCF6 /* RecipeScaler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A40A587E766B41D3A54B7F6 /* RecipeScaler.swift */; };
+		BB6B390FA7D1D1989E407270 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07E5FB27D9CF0231028F34A7 /* ShareViewController.swift */; };
+		BDAD86049920B986C8DABB53 /* ShareStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58C98BED44DCA47F717AD78C /* ShareStore.swift */; };
+		C737EAD11B56D34CF2D22EEC /* WidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BFCDD47F7C8B01DA19454C4 /* WidgetSnapshot.swift */; };
+		D69B64F308EF648A7093EFA9 /* OCRScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2A8C22786FA68F1E6CC4BC9 /* OCRScanView.swift */; };
+		D8C05D54CA956CAAEE1C605C /* WidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BFCDD47F7C8B01DA19454C4 /* WidgetSnapshot.swift */; };
+		E1FE845FA17465C0B4A9D4E1 /* SmidgenIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1848936A3CC5C47FA2D3B258 /* SmidgenIntents.swift */; };
+		E22F6B1A7E63A2926DFA1F6E /* CaptionsImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97BCB550D9FF7CD4530BD6D1 /* CaptionsImportView.swift */; };
+		E3C48E8CF0791DCCD3666AF9 /* StepTimerParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B399F5950B23BA7D5BCE68A9 /* StepTimerParser.swift */; };
+		EFBA33FAABB8583B8F213106 /* IngredientParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F6210C0ADC1C8C59178469B /* IngredientParser.swift */; };
+		F0ADD184F26E0FC03B726023 /* SyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DFAC576FA69697C63244F82 /* SyncEngine.swift */; };
+		F9ED426AE428745C2D331DF3 /* LibrarySearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 387AFE136C2733428BD24526 /* LibrarySearch.swift */; };
+		FB245E8234405CC7638D4FA4 /* ClipModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFEB426C01662481C2053D24 /* ClipModels.swift */; };
+		FC8E8046FA88377EB78E834E /* OCRScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2A8C22786FA68F1E6CC4BC9 /* OCRScanView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		383226271324D3784C2237E1 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 75B6361BB9281861F41E5B43 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 659DE4328200EAFFB75D9049;
+			remoteInfo = SmidgenShare;
+		};
+		6BC2241245D332958EAA3F8B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 75B6361BB9281861F41E5B43 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2D8DC5E2DA8580B726A90525;
+			remoteInfo = SmidgenWidgets;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		5E3A503BF00D4B5D3E34CD81 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				9471C5981825961CC5D242D4 /* SmidgenWidgets.appex in Embed Foundation Extensions */,
+				9744F866974A8FAD9CE097F3 /* SmidgenShare.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		001753EFE47673C0075BB23A /* PlanViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanViews.swift; sourceTree = "<group>"; };
+		07E5FB27D9CF0231028F34A7 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		1848936A3CC5C47FA2D3B258 /* SmidgenIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmidgenIntents.swift; sourceTree = "<group>"; };
+		1962776F2E60FB4A81CFB17A /* SmidgenShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = SmidgenShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		1B49F0C98D1D42A92BAAC37D /* ShopViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShopViews.swift; sourceTree = "<group>"; };
+		1E5DB7DC50200281903A3EA0 /* DuplicateFinderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuplicateFinderTests.swift; sourceTree = "<group>"; };
+		23789FAAD89E65816EC079FC /* PlanAggregation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanAggregation.swift; sourceTree = "<group>"; };
+		3297070733AC64326D629042 /* ShopHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShopHelpers.swift; sourceTree = "<group>"; };
+		33E81FAB33D10D4F00FABAF2 /* DuplicateFinder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuplicateFinder.swift; sourceTree = "<group>"; };
+		35FF7DE46DB032DF903CE4C6 /* ExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportView.swift; sourceTree = "<group>"; };
+		387AFE136C2733428BD24526 /* LibrarySearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySearch.swift; sourceTree = "<group>"; };
+		3950650623396EA2ADBCA9E2 /* CookTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CookTests.swift; sourceTree = "<group>"; };
+		4A40A587E766B41D3A54B7F6 /* RecipeScaler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecipeScaler.swift; sourceTree = "<group>"; };
+		4BA8BDFC24A02DDF34A670BF /* ClipView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipView.swift; sourceTree = "<group>"; };
+		4F17874BF113DCEB362D9890 /* SmidgenWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmidgenWidgets.swift; sourceTree = "<group>"; };
+		58C98BED44DCA47F717AD78C /* ShareStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareStore.swift; sourceTree = "<group>"; };
+		5DFAC576FA69697C63244F82 /* SyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncEngine.swift; sourceTree = "<group>"; };
+		64208EF15E7B5BC7A25C6337 /* LibraryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryModels.swift; sourceTree = "<group>"; };
+		65D092DB92EA97B27D1195A9 /* Smidgen.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Smidgen.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		78CF752BEB5799714C262738 /* SmidgenApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmidgenApp.swift; sourceTree = "<group>"; };
+		7C25E4C252A28F46E2F7A52E /* WatchViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchViews.swift; sourceTree = "<group>"; };
+		7F6210C0ADC1C8C59178469B /* IngredientParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngredientParser.swift; sourceTree = "<group>"; };
+		8BFCDD47F7C8B01DA19454C4 /* WidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSnapshot.swift; sourceTree = "<group>"; };
+		8EF78B647256803BE6FD1BEB /* SmidgenWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SmidgenWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		97BCB550D9FF7CD4530BD6D1 /* CaptionsImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptionsImportView.swift; sourceTree = "<group>"; };
+		A9C3A3E566A0A70144AE964C /* SyncEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncEngineTests.swift; sourceTree = "<group>"; };
+		ACD36CEE15F0BF13B0F9EF70 /* IngredientParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngredientParserTests.swift; sourceTree = "<group>"; };
+		B34CAECDF306797D51B7B2E7 /* RecipeExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecipeExporter.swift; sourceTree = "<group>"; };
+		B399F5950B23BA7D5BCE68A9 /* StepTimerParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StepTimerParser.swift; sourceTree = "<group>"; };
+		BF6EC7BDD478141917C9716C /* SmidgenWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = SmidgenWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		BF773A1378378CE96510F64E /* SmidgenTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SmidgenTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		C29A1009A84B444254CD7415 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		CC78DD635279CA0FA78B51CD /* LibraryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryViews.swift; sourceTree = "<group>"; };
+		CE64A7F90524D00758BED160 /* CookModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CookModeView.swift; sourceTree = "<group>"; };
+		D6632A0DBDFB610078F7170D /* BarcodeScannerStub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarcodeScannerStub.swift; sourceTree = "<group>"; };
+		E048AEAE306958C06CF0B8AD /* ClipboardBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardBanner.swift; sourceTree = "<group>"; };
+		E2A8C22786FA68F1E6CC4BC9 /* OCRScanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OCRScanView.swift; sourceTree = "<group>"; };
+		E98BD4B83DAED27582CD5E9C /* CookSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CookSession.swift; sourceTree = "<group>"; };
+		EACF5E755C544FFBD1793665 /* ShareViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViews.swift; sourceTree = "<group>"; };
+		FB072D7F5ECACC2922F3EBD6 /* SeedLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeedLoader.swift; sourceTree = "<group>"; };
+		FFEB426C01662481C2053D24 /* ClipModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipModels.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		00E0DCAD91AA78061FAAB894 /* Export */ = {
+			isa = PBXGroup;
+			children = (
+				35FF7DE46DB032DF903CE4C6 /* ExportView.swift */,
+				B34CAECDF306797D51B7B2E7 /* RecipeExporter.swift */,
+			);
+			path = Export;
+			sourceTree = "<group>";
+		};
+		06FCFF30F348D6683CF8CAC5 /* Widgets */ = {
+			isa = PBXGroup;
+			children = (
+				4F17874BF113DCEB362D9890 /* SmidgenWidgets.swift */,
+				8BFCDD47F7C8B01DA19454C4 /* WidgetSnapshot.swift */,
+			);
+			path = Widgets;
+			sourceTree = "<group>";
+		};
+		0F64824A44080A6C3304122E = {
+			isa = PBXGroup;
+			children = (
+				AA62B4E6B7298B23A2F3D3DD /* App */,
+				A442A0E05D010B382F4C34B9 /* Core */,
+				00E0DCAD91AA78061FAAB894 /* Export */,
+				ABE8863E83BE63BE8C7FCFE0 /* Features */,
+				75D96B4951BC436A7BF65996 /* Intents */,
+				3E7CFB4B72811BBA27FA260A /* ShareExtension */,
+				6838D55237B323809A3C6089 /* Sync */,
+				AB10B77BD5AA87074530F6A5 /* watch */,
+				06FCFF30F348D6683CF8CAC5 /* Widgets */,
+				1DAD80DE2FCB1D461C4CE105 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		1DAD80DE2FCB1D461C4CE105 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				65D092DB92EA97B27D1195A9 /* Smidgen.app */,
+				1962776F2E60FB4A81CFB17A /* SmidgenShare.appex */,
+				BF773A1378378CE96510F64E /* SmidgenTests.xctest */,
+				8EF78B647256803BE6FD1BEB /* SmidgenWatch.app */,
+				BF6EC7BDD478141917C9716C /* SmidgenWidgets.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		298A7A8B4B461D426BB36C98 /* Cook */ = {
+			isa = PBXGroup;
+			children = (
+				CE64A7F90524D00758BED160 /* CookModeView.swift */,
+				E98BD4B83DAED27582CD5E9C /* CookSession.swift */,
+				3950650623396EA2ADBCA9E2 /* CookTests.swift */,
+				4A40A587E766B41D3A54B7F6 /* RecipeScaler.swift */,
+				B399F5950B23BA7D5BCE68A9 /* StepTimerParser.swift */,
+			);
+			path = Cook;
+			sourceTree = "<group>";
+		};
+		3E7CFB4B72811BBA27FA260A /* ShareExtension */ = {
+			isa = PBXGroup;
+			children = (
+				58C98BED44DCA47F717AD78C /* ShareStore.swift */,
+				07E5FB27D9CF0231028F34A7 /* ShareViewController.swift */,
+			);
+			path = ShareExtension;
+			sourceTree = "<group>";
+		};
+		3FF541BC300F5E6E5B8E482E /* Shop */ = {
+			isa = PBXGroup;
+			children = (
+				D6632A0DBDFB610078F7170D /* BarcodeScannerStub.swift */,
+				3297070733AC64326D629042 /* ShopHelpers.swift */,
+				1B49F0C98D1D42A92BAAC37D /* ShopViews.swift */,
+			);
+			path = Shop;
+			sourceTree = "<group>";
+		};
+		6838D55237B323809A3C6089 /* Sync */ = {
+			isa = PBXGroup;
+			children = (
+				5DFAC576FA69697C63244F82 /* SyncEngine.swift */,
+				A9C3A3E566A0A70144AE964C /* SyncEngineTests.swift */,
+			);
+			path = Sync;
+			sourceTree = "<group>";
+		};
+		75D96B4951BC436A7BF65996 /* Intents */ = {
+			isa = PBXGroup;
+			children = (
+				1848936A3CC5C47FA2D3B258 /* SmidgenIntents.swift */,
+			);
+			path = Intents;
+			sourceTree = "<group>";
+		};
+		A442A0E05D010B382F4C34B9 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				C29A1009A84B444254CD7415 /* Models.swift */,
+				FB072D7F5ECACC2922F3EBD6 /* SeedLoader.swift */,
+			);
+			path = Core;
+			sourceTree = "<group>";
+		};
+		AA62B4E6B7298B23A2F3D3DD /* App */ = {
+			isa = PBXGroup;
+			children = (
+				78CF752BEB5799714C262738 /* SmidgenApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		AB10B77BD5AA87074530F6A5 /* watch */ = {
+			isa = PBXGroup;
+			children = (
+				7C25E4C252A28F46E2F7A52E /* WatchViews.swift */,
+			);
+			path = watch;
+			sourceTree = "<group>";
+		};
+		ABE8863E83BE63BE8C7FCFE0 /* Features */ = {
+			isa = PBXGroup;
+			children = (
+				298A7A8B4B461D426BB36C98 /* Cook */,
+				C25852B76E8489C03C872D74 /* Ingest */,
+				AD1C82C4D94D4EEA659348E5 /* Library */,
+				D8159C7788674A2948BEFBF8 /* Plan */,
+				3FF541BC300F5E6E5B8E482E /* Shop */,
+			);
+			path = Features;
+			sourceTree = "<group>";
+		};
+		AD1C82C4D94D4EEA659348E5 /* Library */ = {
+			isa = PBXGroup;
+			children = (
+				33E81FAB33D10D4F00FABAF2 /* DuplicateFinder.swift */,
+				1E5DB7DC50200281903A3EA0 /* DuplicateFinderTests.swift */,
+				64208EF15E7B5BC7A25C6337 /* LibraryModels.swift */,
+				387AFE136C2733428BD24526 /* LibrarySearch.swift */,
+				CC78DD635279CA0FA78B51CD /* LibraryViews.swift */,
+				EACF5E755C544FFBD1793665 /* ShareViews.swift */,
+			);
+			path = Library;
+			sourceTree = "<group>";
+		};
+		C25852B76E8489C03C872D74 /* Ingest */ = {
+			isa = PBXGroup;
+			children = (
+				97BCB550D9FF7CD4530BD6D1 /* CaptionsImportView.swift */,
+				E048AEAE306958C06CF0B8AD /* ClipboardBanner.swift */,
+				FFEB426C01662481C2053D24 /* ClipModels.swift */,
+				4BA8BDFC24A02DDF34A670BF /* ClipView.swift */,
+				7F6210C0ADC1C8C59178469B /* IngredientParser.swift */,
+				ACD36CEE15F0BF13B0F9EF70 /* IngredientParserTests.swift */,
+				E2A8C22786FA68F1E6CC4BC9 /* OCRScanView.swift */,
+			);
+			path = Ingest;
+			sourceTree = "<group>";
+		};
+		D8159C7788674A2948BEFBF8 /* Plan */ = {
+			isa = PBXGroup;
+			children = (
+				23789FAAD89E65816EC079FC /* PlanAggregation.swift */,
+				001753EFE47673C0075BB23A /* PlanViews.swift */,
+			);
+			path = Plan;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		2D8DC5E2DA8580B726A90525 /* SmidgenWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 205D898BFDBC8069A63252E6 /* Build configuration list for PBXNativeTarget "SmidgenWidgets" */;
+			buildPhases = (
+				D052AF6E704693676ACEDBA1 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SmidgenWidgets;
+			packageProductDependencies = (
+			);
+			productName = SmidgenWidgets;
+			productReference = BF6EC7BDD478141917C9716C /* SmidgenWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		659DE4328200EAFFB75D9049 /* SmidgenShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F64DE936C2266B7F6B6059CD /* Build configuration list for PBXNativeTarget "SmidgenShare" */;
+			buildPhases = (
+				31E2CDA18EC6A100C956146F /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SmidgenShare;
+			packageProductDependencies = (
+			);
+			productName = SmidgenShare;
+			productReference = 1962776F2E60FB4A81CFB17A /* SmidgenShare.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		66CA8E96D620A6C26E2D74CA /* Smidgen */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 14C6E8BBA7966CF95B1E283E /* Build configuration list for PBXNativeTarget "Smidgen" */;
+			buildPhases = (
+				D3802078F8056E8CBBFACF96 /* Sources */,
+				5E3A503BF00D4B5D3E34CD81 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F6946E239BDCD99F1BFF105E /* PBXTargetDependency */,
+				1C6B98BE156C3895955C859D /* PBXTargetDependency */,
+			);
+			name = Smidgen;
+			packageProductDependencies = (
+			);
+			productName = Smidgen;
+			productReference = 65D092DB92EA97B27D1195A9 /* Smidgen.app */;
+			productType = "com.apple.product-type.application";
+		};
+		9FC61F18F2DD7581ED2D729C /* SmidgenWatch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A0513FDB74ACAB8B1D1ADC1D /* Build configuration list for PBXNativeTarget "SmidgenWatch" */;
+			buildPhases = (
+				6F6FCF589C0FAE0117906920 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SmidgenWatch;
+			packageProductDependencies = (
+			);
+			productName = SmidgenWatch;
+			productReference = 8EF78B647256803BE6FD1BEB /* SmidgenWatch.app */;
+			productType = "com.apple.product-type.application.watchapp2";
+		};
+		BEAAC64E6BC5929C7017A4A6 /* SmidgenTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5C2EB5EFBDF07C714B27DEA6 /* Build configuration list for PBXNativeTarget "SmidgenTests" */;
+			buildPhases = (
+				7302593D9F38EB02CF9163F1 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SmidgenTests;
+			packageProductDependencies = (
+			);
+			productName = SmidgenTests;
+			productReference = BF773A1378378CE96510F64E /* SmidgenTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		75B6361BB9281861F41E5B43 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+				};
+			};
+			buildConfigurationList = D222E87585E4AE88A60C1105 /* Build configuration list for PBXProject "Smidgen" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 0F64824A44080A6C3304122E;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 1DAD80DE2FCB1D461C4CE105 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				66CA8E96D620A6C26E2D74CA /* Smidgen */,
+				2D8DC5E2DA8580B726A90525 /* SmidgenWidgets */,
+				659DE4328200EAFFB75D9049 /* SmidgenShare */,
+				BEAAC64E6BC5929C7017A4A6 /* SmidgenTests */,
+				9FC61F18F2DD7581ED2D729C /* SmidgenWatch */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		31E2CDA18EC6A100C956146F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				36BA2FC76027B9CDEAF5711D /* ShareStore.swift in Sources */,
+				BB6B390FA7D1D1989E407270 /* ShareViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6F6FCF589C0FAE0117906920 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				98AAAACCB25B688D74178172 /* WatchViews.swift in Sources */,
+				D8C05D54CA956CAAEE1C605C /* WidgetSnapshot.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7302593D9F38EB02CF9163F1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FB245E8234405CC7638D4FA4 /* ClipModels.swift in Sources */,
+				2B20935642F9BED4293DF27A /* ClipboardBanner.swift in Sources */,
+				AF6EAE9A96B3786B457342CD /* CookTests.swift in Sources */,
+				6ED184ED02D444C21775EF2E /* DuplicateFinder.swift in Sources */,
+				3543E32D27FE72EE997DE03F /* DuplicateFinderTests.swift in Sources */,
+				2C0D011F754277317BDC8262 /* IngredientParser.swift in Sources */,
+				A29DDD2522297EC01BE779E3 /* IngredientParserTests.swift in Sources */,
+				6F3FAE4AB0811C1A26F9172D /* Models.swift in Sources */,
+				FC8E8046FA88377EB78E834E /* OCRScanView.swift in Sources */,
+				5F9CCD36213494A18AABD4B9 /* PlanAggregation.swift in Sources */,
+				52D74B01AC0FC879994D257D /* RecipeScaler.swift in Sources */,
+				146B4607ACF94CD235B22A99 /* ShopHelpers.swift in Sources */,
+				A4D5D3B0FEAA90EA5AB9E853 /* StepTimerParser.swift in Sources */,
+				F0ADD184F26E0FC03B726023 /* SyncEngine.swift in Sources */,
+				AAB93A2259B2B0A1ED976986 /* SyncEngineTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D052AF6E704693676ACEDBA1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				283E34988CC8C6258483837B /* Models.swift in Sources */,
+				3C4482208A8D1F5EEE391E77 /* SmidgenWidgets.swift in Sources */,
+				C737EAD11B56D34CF2D22EEC /* WidgetSnapshot.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D3802078F8056E8CBBFACF96 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A8BEC4E8A4C9CF994EAEBDF5 /* BarcodeScannerStub.swift in Sources */,
+				E22F6B1A7E63A2926DFA1F6E /* CaptionsImportView.swift in Sources */,
+				934D962D9B2A3B30E32D0DE9 /* ClipModels.swift in Sources */,
+				A7C35EFE2191605FB3A42A60 /* ClipView.swift in Sources */,
+				41637B0E1053163C90E1450D /* ClipboardBanner.swift in Sources */,
+				1A9B1E92D6226B11D146CF49 /* CookModeView.swift in Sources */,
+				237356453E8CA48A6C10880B /* CookSession.swift in Sources */,
+				4568A05235233561F22480F0 /* DuplicateFinder.swift in Sources */,
+				53892542916A3E727C80880B /* ExportView.swift in Sources */,
+				EFBA33FAABB8583B8F213106 /* IngredientParser.swift in Sources */,
+				29C96541DCCC06E1DF27E2BB /* LibraryModels.swift in Sources */,
+				F9ED426AE428745C2D331DF3 /* LibrarySearch.swift in Sources */,
+				82F6F80696416C2829C7B9C2 /* LibraryViews.swift in Sources */,
+				723BC5F8FED26ECCD3C508AA /* Models.swift in Sources */,
+				D69B64F308EF648A7093EFA9 /* OCRScanView.swift in Sources */,
+				8F6BC75DE7F90D499F8E5978 /* PlanAggregation.swift in Sources */,
+				1D7D8265EA70F7516559552F /* PlanViews.swift in Sources */,
+				B69C24A0C530C685D90F1F92 /* RecipeExporter.swift in Sources */,
+				B96072184B3458205049DCF6 /* RecipeScaler.swift in Sources */,
+				24AF59A73F6E2C90572C38DE /* SeedLoader.swift in Sources */,
+				BDAD86049920B986C8DABB53 /* ShareStore.swift in Sources */,
+				7DA9369B70FE123F051B1C28 /* ShareViews.swift in Sources */,
+				A8596D2B1F0D4017D84BB7E9 /* ShopHelpers.swift in Sources */,
+				15F5E222D96C0BF5A0B2758A /* ShopViews.swift in Sources */,
+				6240CEA7264FE38CB4E6D33B /* SmidgenApp.swift in Sources */,
+				E1FE845FA17465C0B4A9D4E1 /* SmidgenIntents.swift in Sources */,
+				75B0B7C6E49626C4CF19A10D /* SmidgenWidgets.swift in Sources */,
+				E3C48E8CF0791DCCD3666AF9 /* StepTimerParser.swift in Sources */,
+				6FE57C1CFCD71EEE8F3F5588 /* SyncEngine.swift in Sources */,
+				800694335C558E4E1D5C0F3E /* WidgetSnapshot.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		1C6B98BE156C3895955C859D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 659DE4328200EAFFB75D9049 /* SmidgenShare */;
+			targetProxy = 383226271324D3784C2237E1 /* PBXContainerItemProxy */;
+		};
+		F6946E239BDCD99F1BFF105E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 2D8DC5E2DA8580B726A90525 /* SmidgenWidgets */;
+			targetProxy = 6BC2241245D332958EAA3F8B /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		1B5EB0A5AA702D2117835EBA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				INFOPLIST_FILE = "Config/Info-Tests.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.smidgen.app.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		429E0E06466A0892CB74A622 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/AppGroups.entitlements;
+				INFOPLIST_FILE = "Config/Info-Share.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.smidgen.app.share;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		5E72DB38EEF5A4C364C77E48 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
+		5FFF1B184A8FE449980E1035 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/AppGroups.entitlements;
+				INFOPLIST_FILE = "Config/Info-Widgets.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.smidgen.app.widgets;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		6B5703D9B881E39098350123 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Config/AppGroups.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = "Config/Info-App.plist";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.smidgen.app;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		6CB96DB2EDCD244628498B67 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/AppGroups.entitlements;
+				INFOPLIST_FILE = "Config/Info-Watch.plist";
+				PRODUCT_BUNDLE_IDENTIFIER = org.smidgen.app.watch;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
+		7C6A3B9BA9C955E6950E4EC3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/AppGroups.entitlements;
+				INFOPLIST_FILE = "Config/Info-Widgets.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.smidgen.app.widgets;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		97AAFF578F6BD9B618D2F273 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/AppGroups.entitlements;
+				INFOPLIST_FILE = "Config/Info-Watch.plist";
+				PRODUCT_BUNDLE_IDENTIFIER = org.smidgen.app.watch;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		9D6C479F9B1E159E172ED91D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Config/AppGroups.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = "Config/Info-App.plist";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.smidgen.app;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		D1945F63BBFFEE253185CF93 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		DF0642E222F5B1B5A064CEFB /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/AppGroups.entitlements;
+				INFOPLIST_FILE = "Config/Info-Share.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.smidgen.app.share;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		EDD310FFAF2BB92824A1A5CF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				INFOPLIST_FILE = "Config/Info-Tests.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.smidgen.app.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		14C6E8BBA7966CF95B1E283E /* Build configuration list for PBXNativeTarget "Smidgen" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6B5703D9B881E39098350123 /* Debug */,
+				9D6C479F9B1E159E172ED91D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		205D898BFDBC8069A63252E6 /* Build configuration list for PBXNativeTarget "SmidgenWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7C6A3B9BA9C955E6950E4EC3 /* Debug */,
+				5FFF1B184A8FE449980E1035 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		5C2EB5EFBDF07C714B27DEA6 /* Build configuration list for PBXNativeTarget "SmidgenTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1B5EB0A5AA702D2117835EBA /* Debug */,
+				EDD310FFAF2BB92824A1A5CF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		A0513FDB74ACAB8B1D1ADC1D /* Build configuration list for PBXNativeTarget "SmidgenWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				97AAFF578F6BD9B618D2F273 /* Debug */,
+				6CB96DB2EDCD244628498B67 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D222E87585E4AE88A60C1105 /* Build configuration list for PBXProject "Smidgen" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D1945F63BBFFEE253185CF93 /* Debug */,
+				5E72DB38EEF5A4C364C77E48 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		F64DE936C2266B7F6B6059CD /* Build configuration list for PBXNativeTarget "SmidgenShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				429E0E06466A0892CB74A622 /* Debug */,
+				DF0642E222F5B1B5A064CEFB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 75B6361BB9281861F41E5B43 /* Project object */;
+}

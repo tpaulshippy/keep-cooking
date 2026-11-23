@@ -24,7 +24,11 @@ struct SmidgenApp: App {
          ListItem.self,
          PantryItem.self,
          Plan.self,
-         Menu.self]
+         Menu.self,
+         // Lane 5 models (LibraryModels.swift): Cookbook/SavedSearch must be
+         // registered or @Query(Cookbook)/@Query(SavedSearch) traps at runtime.
+         Cookbook.self,
+         SavedSearch.self]
     }
 
     var body: some Scene {

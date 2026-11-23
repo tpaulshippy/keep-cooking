@@ -275,7 +275,11 @@ public actor SyncEngine {
         let remote = try await transport.pull(since: lastPulledAt)
         var pulled = 0
         for env in remote {
-            if let local = baseline[env.id] ?? outbox[env.id] {
+            // Local truth is the newest local write: a pending outbox entry
+            // (unsynced offline edit) shadows the last-synced baseline.
+            // Comparing against a stale baseline would silently discard the
+            // offline edit the moment any remote version arrives.
+            if let local = outbox[env.id] ?? baseline[env.id] {
                 switch mergeOutcome(local: local, remote: env) {
                 case .takeRemote:
                     baseline[env.id] = env
@@ -295,7 +299,12 @@ public actor SyncEngine {
                 pulled += 1
             }
         }
-        lastPulledAt = Date()
+        // Advance the pull cursor by ENVELOPE time (max updatedAt seen),
+        // never wall-clock: backdated restores, clock jumps, or frozen test
+        // fixtures would otherwise make pulls silently skip remote writes.
+        if let maxRemote = remote.map(\.updatedAt).max() {
+            lastPulledAt = max(lastPulledAt ?? .distantPast, maxRemote)
+        }
 
         let pending = Array(outbox.values)
         var conflicts = 0
