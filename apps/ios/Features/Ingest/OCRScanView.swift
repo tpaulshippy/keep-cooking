@@ -217,9 +217,11 @@ public struct OCRScanView: View {
                             .focused($focused, equals: .paste)
                             .accessibilityIdentifier("ocr-text")
                             .accessibilityLabel("Recognized text")
+                            .disabled(isScanning)
                         Button("Parse text") { parse() }
                             .buttonStyle(.borderedProminent)
                             .accessibilityIdentifier("ocr-parse")
+                            .disabled(isScanning)
                     }
                     .padding(14)
                     .background(Color(.secondarySystemBackground))
@@ -235,6 +237,7 @@ public struct OCRScanView: View {
                         TextField("Title", text: $title)
                             .textFieldStyle(.roundedBorder)
                             .focused($focused, equals: .title)
+                            .disabled(isScanning)
                         Text("Ingredients")
                             .font(.caption).foregroundStyle(.secondary)
                         TextEditor(text: $ingredientLines)
@@ -244,6 +247,7 @@ public struct OCRScanView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                             .focused($focused, equals: .ings)
                             .accessibilityLabel("Ingredients")
+                            .disabled(isScanning)
                         Text("Steps")
                             .font(.caption).foregroundStyle(.secondary)
                         TextEditor(text: $stepLines)
@@ -253,6 +257,7 @@ public struct OCRScanView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                             .focused($focused, equals: .steps)
                             .accessibilityLabel("Steps")
+                            .disabled(isScanning)
                     }
                     .padding(14)
                     .background(Color(.secondarySystemBackground))
