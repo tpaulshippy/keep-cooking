@@ -465,7 +465,8 @@ struct PlanTabView: View {
                         .padding(.vertical, 6)
                         .accessibilityIdentifier("week-to-list-confirm")
                 }
-                PlanView(entries: entries, menus: menuSnapshots, onAddWeekToList: addWeekToList)
+                PlanView(entries: entries, menus: menuSnapshots, onAddWeekToList: addWeekToList,
+                    onAddDay: addDay)
                     .accessibilityIdentifier("plan-view")
             }
         }
@@ -489,6 +490,14 @@ struct PlanTabView: View {
         menus.filter { !$0.deleted }.map {
             MenuSnapshot(id: $0.id, name: $0.name, entryCount: $0.entries.count)
         }
+    }
+
+    /// Empty-day "Add" affordance: inserts a blank dinner shell for `day`
+    /// (recipe/note filled in later); the day row re-renders with content.
+    private func addDay(_ day: Date) {
+        context.insert(Plan(householdId: "hh-demo", date: day, meal: .dinner,
+            deviceId: currentDeviceId()))
+        try? context.save()
     }
 
     private func addWeekToList(_ weekStart: Date) {
@@ -544,7 +553,7 @@ struct ListsTabView: View {
                     ContentUnavailableView("No lists yet", systemImage: "cart",
                         description: Text("Add a week to a list from the Plan tab."))
                 } else {
-                    ShopListsView(lists: snapshots, onToggle: toggle)
+                    ShopListsView(lists: snapshots, onToggle: toggle, onAddItem: addItem)
                         .accessibilityIdentifier("lists-view")
                 }
             }
@@ -563,6 +572,21 @@ struct ListsTabView: View {
     private func toggle(listId: String, itemId: String) {
         guard let item = (try? context.fetch(FetchDescriptor<ListItem>()))?.first(where: { $0.id == itemId }) else { return }
         item.checked.toggle()
+        try? context.save()
+    }
+
+    /// Manually added row: persists a new unchecked `ListItem` on `listId`
+    /// with a locally guessed aisle; the list re-renders with the item.
+    private func addItem(listId: String, name: String) {
+        let text = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        guard let list = (try? context.fetch(FetchDescriptor<ShoppingList>()))?.first(where: {
+            $0.id == listId && !$0.deleted
+        }) else { return }
+        let item = ListItem(listId: listId, name: text, aisle: guessAisle(for: text),
+            deviceId: currentDeviceId())
+        item.shoppingList = list
+        context.insert(item)
         try? context.save()
     }
 }
