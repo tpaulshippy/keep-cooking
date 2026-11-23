@@ -38,13 +38,14 @@ public struct CookModeView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     public init(title: String, baseServings: Double,
-                ingredients: [IngredientSnapshot], steps: [StepSnapshot]) {
+                ingredients: [IngredientSnapshot], steps: [StepSnapshot],
+                initialServings: Double? = nil) {
         self.title = title
         self.baseServings = baseServings
         self.ingredients = ingredients
         self.steps = steps.sorted(by: { $0.position < $1.position })
         _session = State(initialValue: CookSession(stepCount: max(1, steps.count)))
-        _targetServings = State(initialValue: baseServings)
+        _targetServings = State(initialValue: initialServings ?? baseServings)
     }
 
     private var factor: Double { scaleFactor(baseServings: baseServings, targetServings: targetServings) }
