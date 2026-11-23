@@ -20,7 +20,7 @@
 #   pair at distribution time. If SDK pairing ever blocks, this target is
 #   the documented stub-host seam.
 # - Tests: standalone SmidgenTests unit-test bundle (NO app host) compiling
-#   the 4 *Tests.swift files plus the pure-logic sources they exercise
+#   the *Tests.swift files plus the pure-logic sources they exercise
 #   (Foundation-only, plus ClipboardBanner/OCRScanView/Models for the
 #   ClipboardDetector/OCRSplitter/Recipe paths). Matches the files' own
 #   header notes ("no import needed when in the same test target").
@@ -141,11 +141,13 @@ targets:
       - path: Features/Plan/PlanAggregation.swift
       - path: Features/Shop/ShopHelpers.swift
       - path: Features/Library/DuplicateFinder.swift
-      # The 4 XCTest suites.
+      - path: Features/Library/LibrarySearch.swift
+      # The XCTest suites.
       - path: Sync/SyncEngineTests.swift
       - path: Features/Ingest/IngredientParserTests.swift
       - path: Features/Cook/CookTests.swift
       - path: Features/Library/DuplicateFinderTests.swift
+      - path: Features/Library/LibrarySearchTests.swift
     info:
       path: Config/Info-Tests.plist
     settings:

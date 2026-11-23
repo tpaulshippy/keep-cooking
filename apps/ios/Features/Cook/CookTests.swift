@@ -35,6 +35,10 @@ final class CookTests: XCTestCase {
         XCTAssertEqual(fractionDisplayString(for: 6), "6") // 4 cups @1.5x
         XCTAssertEqual(fractionDisplayString(for: 0.5), "½")
         XCTAssertEqual(fractionDisplayString(for: 0.25), "¼")
+        // Servings labels must never use %.1g (2.5 -> "2", 12.5 -> "1e+01").
+        XCTAssertEqual(fractionDisplayString(for: 2.5), "2½")
+        XCTAssertEqual(fractionDisplayString(for: 12.5), "12½")
+        XCTAssertEqual(fractionDisplayString(for: 4), "4")
     }
 
     func testScaledDisplay4to6() {
@@ -153,5 +157,41 @@ final class CookTests: XCTestCase {
         XCTAssertFalse(isLowStock(quantity: "3", threshold: "2"))
         XCTAssertFalse(isLowStock(quantity: "anything", threshold: "")) // no threshold
         XCTAssertTrue(isLowStock(quantity: "", threshold: "2")) // nothing left
+    }
+
+    // MARK: - Session: Finish is idempotent, card toggle unmarks
+
+    @MainActor
+    func testMarkStepDoneIdempotent() {
+        let session = CookSession(stepCount: 3)
+        session.markStepDone(id: "s-last")
+        session.markStepDone(id: "s-last") // repeat Finish tap
+        XCTAssertTrue(session.crossedOffSteps.contains("s-last"))
+        // Card toggle remains the explicit unmark action.
+        session.toggleStep(id: "s-last")
+        XCTAssertFalse(session.crossedOffSteps.contains("s-last"))
+    }
+
+    // MARK: - Timer scheduling: stable unique identifiers
+
+    func testScheduleIdsUniqueAcrossCalls() {
+        // Per-timer starts each pass a one-element array; equal durations
+        // must not reuse one notification identifier.
+        let timer = ParsedTimer(seconds: 600, label: "bake")
+        let first = CookActivityStub.schedule(timers: [timer])
+        let second = CookActivityStub.schedule(timers: [timer])
+        XCTAssertEqual(first.count, 1)
+        XCTAssertEqual(second.count, 1)
+        XCTAssertNotEqual(first[0], second[0])
+        CookActivityStub.cancel(ids: first + second)
+    }
+
+    func testScheduleIdsUniqueWithinBatch() {
+        let timers = [ParsedTimer(seconds: 600, label: "bake"),
+                      ParsedTimer(seconds: 600, label: "rest")]
+        let ids = CookActivityStub.schedule(timers: timers)
+        XCTAssertEqual(ids.count, 2)
+        XCTAssertNotEqual(ids[0], ids[1])
+        CookActivityStub.cancel(ids: ids)
     }
 }
