@@ -53,9 +53,45 @@ Stay-free rules: signed photo URLs (<15 min TTL) instead of proxied bytes,
   `getUser()` is the single swap point (currently trusts `x-user-id` /
   `x-user-email` / `x-role` headers as a dev stub — **never enable header auth
   in production**; set `BETTER_AUTH_SECRET` via `wrangler secret put`).
+  `BETTER_AUTH_SECRET` is currently **unused** (reserved for pass 2 real Apple
+  auth); the TestFlight gate uses `INTERNAL_BETA_TOKEN` instead.
+- Internal TestFlight gate (pass 1): when `PUBLIC_BASE_URL` is a deployed host
+  (`*.workers.dev` or any non-local domain), every route except `GET /health`
+  requires `Authorization: Bearer <INTERNAL_BETA_TOKEN>` (else `401
+  {error:"unauthorized"}`). `x-role` is **ignored in prod** — header fallback
+  is forced to `viewer`, so header-role escalation is impossible; stored
+  `memberships` rows (keyed off `user.id`) can still grant member/owner.
+  Dev (`localhost` / `*.local` / vitest) keeps the header stub with no bearer.
 - Roles: `viewer` read-only (all mutations → 403), `member` full CRUD,
   `owner` everything + `POST /share/cookbook` + membership management.
 - Stored `memberships` rows win over the header fallback role (tested).
+
+### Beta-gate env (do before TestFlight deploy)
+
+```bash
+# REQUIRED in prod — all non-/health routes 401 without it:
+npx wrangler secret put INTERNAL_BETA_TOKEN   # paste a long random token
+
+# Reserved for pass 2, unused by the beta gate:
+# npx wrangler secret put BETTER_AUTH_SECRET
+
+# D1: wrangler.toml still has `database_id = "local-smidgen-placeholder"` —
+# replace it with the real id from `npx wrangler d1 create smidgen` before deploy.
+```
+
+### Curl
+
+```bash
+BASE=https://smidgen-api.pshippy-245.workers.dev
+TOKEN=$(cat ~/.smidgen-beta-token)   # value stored via `wrangler secret put INTERNAL_BETA_TOKEN`
+
+curl -s $BASE/health                                        # 200, no auth
+curl -s $BASE/recipes                                      # 401 {error:"unauthorized"}
+curl -s -H "Authorization: Bearer $TOKEN" $BASE/recipes    # 200
+curl -s -X POST $BASE/recipes \
+  -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -H 'x-role: owner' -d '{"title":"probe","servings":2}'   # 403 — x-role ignored in prod
+```
 
 ## Endpoints (exactly packages/contracts/openapi.yaml, plus 2 photo helpers)
 

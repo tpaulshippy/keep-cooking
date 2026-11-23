@@ -1,5 +1,10 @@
 # Smidgen — XcodeGen project spec (PASS 1: full Xcode project).
 # Generated project: apps/ios/Smidgen.xcodeproj (`xcodegen generate` from apps/ios).
+# WARNING: `xcodegen generate` REWRITES Config/Info-*.plist and
+# Config/AppGroups.entitlements from scratch (verified: custom keys like
+# NSExtension/NSCameraUsageDescription are wiped). Back up Config/ before
+# regenerating, then restore + re-apply. Long-term fix: move custom keys
+# into `info.properties`.
 # Toolchain: Xcode 27.2, iOS 17+ (iPhone+iPad), watchOS 10+.
 #
 # Decisions (recorded):
@@ -12,9 +17,10 @@
 #   AppIntent extension target was considered and rejected: triple the
 #   SwiftData model duplication for zero offline benefit; Shortcuts works
 #   from the app target on iOS 17+.
-# - App Groups: BOTH group.com.smidgen.share (ShareStore bridge, required)
-#   and group.com.smidgen.shared (WidgetSnapshotStore/WatchStore) are wired
-#   into app + both extensions + watch via one shared entitlements file.
+# - App Groups: SINGLE group group.com.smidgen.share (lane 1
+#   ios-packaging) shared by the app + both extensions + watch via one
+#   shared entitlements file (Config/AppGroups.entitlements). WidgetSnapshot
+#   and Watch payloads ride the same suite as the ShareStore bridge.
 # - Watch: real watchOS app target (SmidgenWatch, standalone, own scheme).
 #   NOT embedded in the iOS app (avoids Embed Watch Content fragility);
 #   pair at distribution time. If SDK pairing ever blocks, this target is
@@ -44,6 +50,15 @@ configs:
 
 settings:
   SWIFT_VERSION: '5.0'
+  # Lane 1 ios-packaging: automatic signing. TODO — replace YOUR_TEAM_ID with
+  # the real Apple Developer Portal Team ID (requires portal access).
+  CODE_SIGN_STYLE: Automatic
+  DEVELOPMENT_TEAM: YOUR_TEAM_ID
+  # Prod API URL seam (lane 1 ios-packaging): Info-App.plist exposes this as
+  # SMIDGEN_API_BASE_URL. Default preserves the current dev backend; override
+  # per-config (or via `xcodebuild SMIDGEN_API_BASE_URL=...`) for prod.
+  # TODO — flip the default to the prod URL once the backend ships.
+  SMIDGEN_API_BASE_URL: https://api.smidgen.local
 
 targets:
   Smidgen:
@@ -71,9 +86,10 @@ targets:
       - path: Sync
         includes: ['**/*.swift']
         excludes: ['**/*Tests.swift']
-      - path: Widgets
-        includes: ['**/*.swift']
-        excludes: ['**/*Tests.swift']
+      # Widgets: app compiles ONLY the Foundation-only snapshot reader
+      # (WidgetSnapshot.swift). SmidgenWidgets.swift (WidgetKit @main) must
+      # NOT compile into the app target — it lives in SmidgenWidgets only.
+      - path: Widgets/WidgetSnapshot.swift
       - path: ShareExtension/ShareStore.swift
       # Frozen contract seeds → bundle/Seed/*.json so first launch demos
       # offline (SeedLoader.loadBundledSeeds). Copied from
@@ -81,6 +97,11 @@ targets:
       - path: Seed
         includes: ['*.json']
         buildPhase: resources
+      # Privacy manifest → bundle root (one shared file, three upload targets).
+      - path: Config/PrivacyInfo.xcprivacy
+        buildPhase: resources
+      # App icon set skeleton (designer fills PNGs; see AppIcon.appiconset).
+      - path: App/Assets.xcassets
     dependencies:
       - target: SmidgenWidgets
       - target: SmidgenShare
@@ -101,6 +122,9 @@ targets:
       - path: Widgets/SmidgenWidgets.swift
       - path: Widgets/WidgetSnapshot.swift
       - path: Core/Models.swift
+      # Privacy manifest → extension bundle root.
+      - path: Config/PrivacyInfo.xcprivacy
+        buildPhase: resources
     info:
       path: Config/Info-Widgets.plist
     entitlements:
@@ -116,6 +140,9 @@ targets:
     sources:
       - path: ShareExtension/ShareViewController.swift
       - path: ShareExtension/ShareStore.swift
+      # Privacy manifest → extension bundle root.
+      - path: Config/PrivacyInfo.xcprivacy
+        buildPhase: resources
     info:
       path: Config/Info-Share.plist
     entitlements:

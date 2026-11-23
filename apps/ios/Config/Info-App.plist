@@ -20,5 +20,13 @@
 	<string>1</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Take a photo of a cookbook page to scan its text.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Pick a photo of a cookbook page to scan its text.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>SMIDGEN_API_BASE_URL</key>
+	<string>$(SMIDGEN_API_BASE_URL)</string>
 </dict>
 </plist>

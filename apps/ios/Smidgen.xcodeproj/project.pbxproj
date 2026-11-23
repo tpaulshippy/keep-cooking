@@ -40,10 +40,10 @@
 		6FE57C1CFCD71EEE8F3F5588 /* SyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DFAC576FA69697C63244F82 /* SyncEngine.swift */; };
 		723BC5F8FED26ECCD3C508AA /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = C29A1009A84B444254CD7415 /* Models.swift */; };
 		72CA7C1D0663A5B300E5267B /* IngestStepsHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8153F56D9470B193FABE198B /* IngestStepsHeader.swift */; };
+		74B07327301878C41EADB0D7 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 081C173788EB54C1887C759B /* PrivacyInfo.xcprivacy */; };
 		74B95D4285DA26EE819EB998 /* recipe-09.json in Resources */ = {isa = PBXBuildFile; fileRef = 0BC2356A8A6B5CCF643B2EE4 /* recipe-09.json */; };
 		750149833151AC518E782B34 /* recipe-05.json in Resources */ = {isa = PBXBuildFile; fileRef = D0EF6E12864FACB70E57AC71 /* recipe-05.json */; };
 		7553C5DF1D37390EB1269795 /* recipe-12.json in Resources */ = {isa = PBXBuildFile; fileRef = 92B2640C9446D486B82020C3 /* recipe-12.json */; };
-		75B0B7C6E49626C4CF19A10D /* SmidgenWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F17874BF113DCEB362D9890 /* SmidgenWidgets.swift */; };
 		7B67307E52514309B9ABFB92 /* recipe-10.json in Resources */ = {isa = PBXBuildFile; fileRef = 54B839B01456D8C3342CC1EF /* recipe-10.json */; };
 		7DA9369B70FE123F051B1C28 /* ShareViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = EACF5E755C544FFBD1793665 /* ShareViews.swift */; };
 		800694335C558E4E1D5C0F3E /* WidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BFCDD47F7C8B01DA19454C4 /* WidgetSnapshot.swift */; };
@@ -53,6 +53,7 @@
 		934D962D9B2A3B30E32D0DE9 /* ClipModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFEB426C01662481C2053D24 /* ClipModels.swift */; };
 		9471C5981825961CC5D242D4 /* SmidgenWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = BF6EC7BDD478141917C9716C /* SmidgenWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		9744F866974A8FAD9CE097F3 /* SmidgenShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 1962776F2E60FB4A81CFB17A /* SmidgenShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		981AA7A4860CC2263AE538E0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AB13E4BF125192FE69877AD1 /* Assets.xcassets */; };
 		98AAAACCB25B688D74178172 /* WatchViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C25E4C252A28F46E2F7A52E /* WatchViews.swift */; };
 		A29DDD2522297EC01BE779E3 /* IngredientParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACD36CEE15F0BF13B0F9EF70 /* IngredientParserTests.swift */; };
 		A4D5D3B0FEAA90EA5AB9E853 /* StepTimerParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B399F5950B23BA7D5BCE68A9 /* StepTimerParser.swift */; };
@@ -66,6 +67,7 @@
 		B96072184B3458205049DCF6 /* RecipeScaler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A40A587E766B41D3A54B7F6 /* RecipeScaler.swift */; };
 		BB6B390FA7D1D1989E407270 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07E5FB27D9CF0231028F34A7 /* ShareViewController.swift */; };
 		BDAD86049920B986C8DABB53 /* ShareStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58C98BED44DCA47F717AD78C /* ShareStore.swift */; };
+		BFA236C7FF1C7EE09E3C534A /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 081C173788EB54C1887C759B /* PrivacyInfo.xcprivacy */; };
 		C52B861C0EB3CC7E9EFDA0E4 /* recipe-01.json in Resources */ = {isa = PBXBuildFile; fileRef = C5B29FCFDD174F2D17C2DB1A /* recipe-01.json */; };
 		C737EAD11B56D34CF2D22EEC /* WidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BFCDD47F7C8B01DA19454C4 /* WidgetSnapshot.swift */; };
 		D69B64F308EF648A7093EFA9 /* OCRScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2A8C22786FA68F1E6CC4BC9 /* OCRScanView.swift */; };
@@ -75,6 +77,7 @@
 		E1FE845FA17465C0B4A9D4E1 /* SmidgenIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1848936A3CC5C47FA2D3B258 /* SmidgenIntents.swift */; };
 		E22F6B1A7E63A2926DFA1F6E /* CaptionsImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97BCB550D9FF7CD4530BD6D1 /* CaptionsImportView.swift */; };
 		E3C48E8CF0791DCCD3666AF9 /* StepTimerParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B399F5950B23BA7D5BCE68A9 /* StepTimerParser.swift */; };
+		ED161FD915352262442B6E53 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 081C173788EB54C1887C759B /* PrivacyInfo.xcprivacy */; };
 		EFBA33FAABB8583B8F213106 /* IngredientParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F6210C0ADC1C8C59178469B /* IngredientParser.swift */; };
 		F0ADD184F26E0FC03B726023 /* SyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DFAC576FA69697C63244F82 /* SyncEngine.swift */; };
 		F9ED426AE428745C2D331DF3 /* LibrarySearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 387AFE136C2733428BD24526 /* LibrarySearch.swift */; };
@@ -127,6 +130,7 @@
 /* Begin PBXFileReference section */
 		001753EFE47673C0075BB23A /* PlanViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanViews.swift; sourceTree = "<group>"; };
 		07E5FB27D9CF0231028F34A7 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		081C173788EB54C1887C759B /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		0BC2356A8A6B5CCF643B2EE4 /* recipe-09.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "recipe-09.json"; sourceTree = "<group>"; };
 		0D99477653F956F97223685A /* SmidgenUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SmidgenUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		131B72E0EC3EB6EC5CC0F146 /* DemoFlows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoFlows.swift; sourceTree = "<group>"; };
@@ -165,6 +169,7 @@
 		97BCB550D9FF7CD4530BD6D1 /* CaptionsImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptionsImportView.swift; sourceTree = "<group>"; };
 		A5C9C6D250C6D1A9CA3C5206 /* recipe-14-dupe.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "recipe-14-dupe.json"; sourceTree = "<group>"; };
 		A9C3A3E566A0A70144AE964C /* SyncEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncEngineTests.swift; sourceTree = "<group>"; };
+		AB13E4BF125192FE69877AD1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		ACD36CEE15F0BF13B0F9EF70 /* IngredientParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngredientParserTests.swift; sourceTree = "<group>"; };
 		AD2D2E5F94BD0192C7510A5D /* IngestHumanPolishTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngestHumanPolishTests.swift; sourceTree = "<group>"; };
 		AF0D65674E4F4F8E8F8177F5 /* recipe-11.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "recipe-11.json"; sourceTree = "<group>"; };
@@ -212,6 +217,7 @@
 			isa = PBXGroup;
 			children = (
 				AA62B4E6B7298B23A2F3D3DD /* App */,
+				4BB77DD470AD2E88165AB9FD /* Config */,
 				A442A0E05D010B382F4C34B9 /* Core */,
 				00E0DCAD91AA78061FAAB894 /* Export */,
 				ABE8863E83BE63BE8C7FCFE0 /* Features */,
@@ -270,6 +276,14 @@
 			path = Shop;
 			sourceTree = "<group>";
 		};
+		4BB77DD470AD2E88165AB9FD /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				081C173788EB54C1887C759B /* PrivacyInfo.xcprivacy */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
 		6838D55237B323809A3C6089 /* Sync */ = {
 			isa = PBXGroup;
 			children = (
@@ -307,6 +321,7 @@
 		AA62B4E6B7298B23A2F3D3DD /* App */ = {
 			isa = PBXGroup;
 			children = (
+				AB13E4BF125192FE69877AD1 /* Assets.xcassets */,
 				131B72E0EC3EB6EC5CC0F146 /* DemoFlows.swift */,
 				78CF752BEB5799714C262738 /* SmidgenApp.swift */,
 			);
@@ -402,6 +417,7 @@
 			buildConfigurationList = 205D898BFDBC8069A63252E6 /* Build configuration list for PBXNativeTarget "SmidgenWidgets" */;
 			buildPhases = (
 				D052AF6E704693676ACEDBA1 /* Sources */,
+				A474F259DDBBCF70F7A6D3CE /* Resources */,
 			);
 			buildRules = (
 			);
@@ -437,6 +453,7 @@
 			buildConfigurationList = F64DE936C2266B7F6B6059CD /* Build configuration list for PBXNativeTarget "SmidgenShare" */;
 			buildPhases = (
 				31E2CDA18EC6A100C956146F /* Sources */,
+				1422797AF0C15E86E9F52BDB /* Resources */,
 			);
 			buildRules = (
 			);
@@ -513,8 +530,30 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
+					2D8DC5E2DA8580B726A90525 = {
+						DevelopmentTeam = YOUR_TEAM_ID;
+						ProvisioningStyle = Automatic;
+					};
 					3156AFF12ED28E0E8B5EE845 = {
+						DevelopmentTeam = YOUR_TEAM_ID;
+						ProvisioningStyle = Automatic;
 						TestTargetID = 66CA8E96D620A6C26E2D74CA;
+					};
+					659DE4328200EAFFB75D9049 = {
+						DevelopmentTeam = YOUR_TEAM_ID;
+						ProvisioningStyle = Automatic;
+					};
+					66CA8E96D620A6C26E2D74CA = {
+						DevelopmentTeam = YOUR_TEAM_ID;
+						ProvisioningStyle = Automatic;
+					};
+					9FC61F18F2DD7581ED2D729C = {
+						DevelopmentTeam = YOUR_TEAM_ID;
+						ProvisioningStyle = Automatic;
+					};
+					BEAAC64E6BC5929C7017A4A6 = {
+						DevelopmentTeam = YOUR_TEAM_ID;
+						ProvisioningStyle = Automatic;
 					};
 				};
 			};
@@ -543,10 +582,28 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		1422797AF0C15E86E9F52BDB /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BFA236C7FF1C7EE09E3C534A /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A474F259DDBBCF70F7A6D3CE /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				74B07327301878C41EADB0D7 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E9464B19BFEC4DA33CDC9AC5 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				981AA7A4860CC2263AE538E0 /* Assets.xcassets in Resources */,
+				ED161FD915352262442B6E53 /* PrivacyInfo.xcprivacy in Resources */,
 				C52B861C0EB3CC7E9EFDA0E4 /* recipe-01.json in Resources */,
 				4260F2818B66978FCBE653B3 /* recipe-02.json in Resources */,
 				8A92CF52EC0D85C5E052E333 /* recipe-03.json in Resources */,
@@ -654,7 +711,6 @@
 				15F5E222D96C0BF5A0B2758A /* ShopViews.swift in Sources */,
 				6240CEA7264FE38CB4E6D33B /* SmidgenApp.swift in Sources */,
 				E1FE845FA17465C0B4A9D4E1 /* SmidgenIntents.swift in Sources */,
-				75B0B7C6E49626C4CF19A10D /* SmidgenWidgets.swift in Sources */,
 				E3C48E8CF0791DCCD3666AF9 /* StepTimerParser.swift in Sources */,
 				6FE57C1CFCD71EEE8F3F5588 /* SyncEngine.swift in Sources */,
 				800694335C558E4E1D5C0F3E /* WidgetSnapshot.swift in Sources */,
@@ -775,8 +831,10 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = YOUR_TEAM_ID;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -791,6 +849,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SMIDGEN_API_BASE_URL = "https://api.smidgen.local";
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
@@ -947,8 +1006,10 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = YOUR_TEAM_ID;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -970,6 +1031,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SMIDGEN_API_BASE_URL = "https://api.smidgen.local";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;

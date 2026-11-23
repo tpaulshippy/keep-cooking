@@ -50,7 +50,7 @@ public struct NowCookingPayload: Sendable, Codable {
 }
 
 public enum WatchStore {
-    public static let suiteName = "group.com.smidgen.shared"
+    public static let suiteName = "group.com.smidgen.share"
     public static let nowCookingKey = "smidgen.nowcooking.v1"
 
     /// Never throws: missing/corrupt payload yields nil (views show empty state).

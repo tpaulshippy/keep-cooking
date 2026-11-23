@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { MemoryStore, newId, type Store, type SyncEnvelopeWire } from './store';
 import { D1Store } from './d1store';
-import { authAttach, getUser, requireOwnerRole, requireWriteRole } from './auth';
+import { authAttach, createBetaGate, getUser, isProdBaseUrl, requireOwnerRole, requireWriteRole } from './auth';
 import { clipRecipe } from './clip';
 import { scaleRecipe } from './scale';
 import { signKey, variantKeys, DEFAULT_SIGNED_URL_TTL_SECONDS } from './photos';
@@ -26,7 +26,8 @@ export interface Env {
   PHOTOS?: unknown;
   APP_VERSION?: string;
   PUBLIC_BASE_URL?: string;
-  BETTER_AUTH_SECRET?: string;
+  BETTER_AUTH_SECRET?: string; // reserved for pass 2 (real Apple auth); unused by the beta gate
+  INTERNAL_BETA_TOKEN?: string; // required in prod: `wrangler secret put INTERNAL_BETA_TOKEN`
 }
 
 const VERSION = '0.1.0';
@@ -50,19 +51,30 @@ export function resolveStore(env: Env): Store {
   return devMemory;
 }
 
-export function createApp(store: Store, opts: { version?: string; baseUrl?: string; secret?: string } = {}) {
+export function createApp(
+  store: Store,
+  opts: { version?: string; baseUrl?: string; secret?: string; betaToken?: string; prod?: boolean } = {},
+) {
   const app = new Hono<{ Variables: { store: Store } }>();
   const version = opts.version ?? VERSION;
   const baseUrl = (opts.baseUrl ?? 'https://api.smidgen.local').replace(/\/$/, '');
   const secret = opts.secret ?? 'dev-only-change-me';
+  // Prod detection: explicit override wins, else derived from baseUrl
+  // (workers.dev / any non-local host => prod). Dev keeps the header stub.
+  const prod = opts.prod ?? isProdBaseUrl(baseUrl);
+  const betaToken = opts.betaToken;
 
   // PII-safe access log: method + pathname + status + ms only.
+  // Never log headers (Authorization, x-user-*, cookies) or bodies.
   app.use('*', async (c, next) => {
     const t0 = Date.now();
     await next();
     const path = new URL(c.req.url).pathname;
     console.log(JSON.stringify({ m: c.req.method, p: path, s: c.res.status, ms: Date.now() - t0 }));
   });
+  // Prod beta gate runs BEFORE authAttach: /health stays open, everything
+  // else needs `Authorization: Bearer <INTERNAL_BETA_TOKEN>` (401 otherwise).
+  app.use('*', createBetaGate({ betaToken, prod }));
   app.use('*', authAttach);
   app.use('*', async (c, next) => {
     c.set('store' as never, store as never);
@@ -395,6 +407,8 @@ export default {
       version: env.APP_VERSION ?? VERSION,
       baseUrl: env.PUBLIC_BASE_URL ?? 'https://api.smidgen.local',
       secret: env.BETTER_AUTH_SECRET ?? 'dev-only-change-me',
+      betaToken: env.INTERNAL_BETA_TOKEN,
+      // prod derived from PUBLIC_BASE_URL via isProdBaseUrl (workers.dev => prod)
     });
     return app.fetch(request);
   },

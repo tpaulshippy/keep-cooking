@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Single shared privacy manifest (lane 1 ios-packaging). Referenced as
+	     a resource from the Smidgen app, SmidgenWidgets, and SmidgenShare
+	     targets in project.yml; the watch target is intentionally out of the
+	     upload set so it has no entry. No tracking, no collected data types. -->
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<!-- CA92.1: read/write defaults scoped to this app / its App
+				     Group (WidgetSnapshotStore, WatchStore, ShareStore). -->
+				<string>CA92.1</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<!-- C617.1: file timestamps surfaced to the user (e.g. list /
+				     snapshot "updated" display). -->
+				<string>C617.1</string>
+			</array>
+		</dict>
+		<!-- NOTE: UIDevice.identifierForVendor (device-id fallback in ingest/
+		     library flows) requires NO manifest reason — it is not a
+		     required-reason API. Listed here only so reviewers don't go
+		     looking for it. -->
+	</array>
+</dict>
+</plist>

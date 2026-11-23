@@ -46,8 +46,16 @@ public struct CaptionsImportView: View {
 
     var baseURL: URL
 
-    public init(baseURL: URL = URL(string: "https://api.smidgen.local")!) {
-        self.baseURL = baseURL
+    private static func defaultBaseURL() -> URL {
+        if let s = Bundle.main.object(forInfoDictionaryKey: "SMIDGEN_API_BASE_URL") as? String,
+           !s.isEmpty, let url = URL(string: s) {
+            return url
+        }
+        return URL(string: "https://api.smidgen.local")!
+    }
+
+    public init(baseURL: URL? = nil) {
+        self.baseURL = baseURL ?? Self.defaultBaseURL()
     }
 
     private var stepIndex: Int {

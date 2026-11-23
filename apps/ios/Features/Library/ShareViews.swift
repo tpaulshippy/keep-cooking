@@ -125,7 +125,15 @@ public struct CookbookShareView: View {
     }
 
     private static func defaultBaseURL() -> String {
-        UserDefaults.standard.string(forKey: "smidgen.apiBaseURL") ?? "http://localhost:8787"
+        if let override = UserDefaults.standard.string(forKey: "smidgen.apiBaseURL"),
+           !override.isEmpty {
+            return override
+        }
+        if let s = Bundle.main.object(forInfoDictionaryKey: "SMIDGEN_API_BASE_URL") as? String,
+           !s.isEmpty {
+            return s
+        }
+        return "http://localhost:8787"
     }
 
     private func createShare() async {

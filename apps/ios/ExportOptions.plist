@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Lane 1 ios-packaging: app-store export skeleton. Upload set is app +
+	     widgets + share ONLY — the watch target (SmidgenWatch) stays in-tree
+	     but is NOT uploaded (pair at distribution time). -->
+	<key>method</key>
+	<string>app-store</string>
+	<!-- TODO(lane-1-ios-packaging): replace with the real Apple Developer
+	     Portal Team ID. Requires Apple portal access — unverified. -->
+	<key>teamID</key>
+	<string>YOUR_TEAM_ID</string>
+	<key>provisioningProfiles</key>
+	<dict>
+		<!-- TODO(lane-1-ios-packaging): replace values with the real
+		     App Store provisioning profile names from the portal. -->
+		<key>org.smidgen.app</key>
+		<string>Smidgen App Store</string>
+		<key>org.smidgen.app.widgets</key>
+		<string>Smidgen Widgets App Store</string>
+		<key>org.smidgen.app.share</key>
+		<string>Smidgen Share App Store</string>
+	</dict>
+	<key>uploadBitcode</key>
+	<false/>
+	<key>uploadSymbols</key>
+	<true/>
+</dict>
+</plist>

@@ -47,7 +47,7 @@ public struct TodaySnapshot: Sendable, Codable {
 // MARK: - Store
 
 public enum WidgetSnapshotStore {
-    public static let suiteName = "group.com.smidgen.shared"
+    public static let suiteName = "group.com.smidgen.share"
     public static let snapshotKey = "smidgen.snapshot.v1"
 
     public static func write(_ snapshot: TodaySnapshot, defaults: UserDefaults? = UserDefaults(suiteName: suiteName)) {
