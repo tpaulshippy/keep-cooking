@@ -35,6 +35,10 @@ final class CookTests: XCTestCase {
         XCTAssertEqual(fractionDisplayString(for: 6), "6") // 4 cups @1.5x
         XCTAssertEqual(fractionDisplayString(for: 0.5), "½")
         XCTAssertEqual(fractionDisplayString(for: 0.25), "¼")
+        // Servings labels must never use %.1g (2.5 -> "2", 12.5 -> "1e+01").
+        XCTAssertEqual(fractionDisplayString(for: 2.5), "2½")
+        XCTAssertEqual(fractionDisplayString(for: 12.5), "12½")
+        XCTAssertEqual(fractionDisplayString(for: 4), "4")
     }
 
     func testScaledDisplay4to6() {

@@ -44,6 +44,20 @@ func guessAisle(for name: String) -> String {
     return ""
 }
 
+/// Resolves a stored photo value to a loadable remote URL.
+///
+/// Stored `photoThumb` values are relative R2 keys (e.g.
+/// `photos/<id>/thumb.jpg`) and there is no public-URL resolver wired yet, so
+/// those return nil and photos render as placeholders. Absolute http(s) URLs
+/// pass through for forward-compat.
+private func photoURL(forKey key: String?) -> URL? {
+    guard let key, !key.isEmpty,
+          let url = URL(string: key),
+          url.scheme == "http" || url.scheme == "https"
+    else { return nil }
+    return url
+}
+
 // MARK: - Recipes tab (live list → detail → cook / add-to-list)
 
 struct RecipeLibraryView: View {
@@ -59,19 +73,10 @@ struct RecipeLibraryView: View {
     }
 
     private var filtered: [Recipe] {
-        recipes.filter { recipe in
-            let matchesCategory = selectedCategory == nil
-                || recipe.categories.contains(selectedCategory!)
-            if !matchesCategory { return false }
-            let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-            if q.isEmpty { return true }
-            let hay = ([recipe.title, recipe.recipeDescription, recipe.source]
-                + recipe.categories
-                + recipe.ingredients.map { $0.name }
-                + recipe.steps.map { $0.text })
-                .joined(separator: " ").lowercased()
-            return q.lowercased().split(whereSeparator: \.isWhitespace).allSatisfy { hay.contains($0) }
-        }
+        // Single source of truth for search behavior — see LibrarySearch.swift.
+        filterRecipes(recipes, filter: AdvancedFilter(
+            query: searchText,
+            categories: selectedCategory.map { [$0] } ?? []))
     }
 
     var body: some View {
@@ -164,9 +169,7 @@ struct RecipeLibraryView: View {
 
     private func recipeThumb(for recipe: Recipe) -> some View {
         Group {
-            if let key = recipe.photoThumb, !key.isEmpty, key.hasPrefix("http"),
-               let url = URL(string: key)
-            {
+            if let url = photoURL(forKey: recipe.photoThumb) {
                 AsyncImage(url: url) { phase in
                     switch phase {
                     case .success(let img): img.resizable().scaledToFill()
@@ -197,9 +200,7 @@ struct RecipeLibraryView: View {
         ]
         if let total = totalMinutes(for: recipe) { parts.append("\(total) min") }
         if recipe.servings > 0 {
-            let s = recipe.servings.truncatingRemainder(dividingBy: 1) == 0
-                ? String(Int(recipe.servings)) : String(format: "%.1g", recipe.servings)
-            parts.append("Serves \(s)")
+            parts.append("Serves \(fractionDisplayString(for: recipe.servings))")
         }
         let cats = recipe.categories.prefix(2).joined(separator: " · ")
         if !cats.isEmpty { parts.append(cats) }
@@ -218,6 +219,9 @@ struct RecipeLibraryView: View {
     private func tombstone(at offsets: IndexSet) {
         for i in offsets {
             filtered[i].deleted = true
+            // Sync is last-write-wins on updatedAt: bump it so this delete
+            // tombstone beats a remote copy (mirrors applyMerge in LibraryViews).
+            filtered[i].updatedAt = Date()
         }
         try? context.save()
     }
@@ -300,16 +304,6 @@ struct RecipeDetailView: View {
                     }
                 }
             }
-            if let addedMessage {
-                Section {
-                    HStack {
-                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                        Text(addedMessage).foregroundStyle(.primary)
-                    }
-                    .padding(.vertical, 4)
-                    .accessibilityIdentifier("added-confirm")
-                }
-            }
             Section("Ingredients (\(sortedIngredients.count))") {
                 ForEach(sortedIngredients) { ing in
                     Button {
@@ -355,7 +349,8 @@ struct RecipeDetailView: View {
                         },
                         steps: recipe.steps.map {
                             CookModeView.StepSnapshot(id: $0.id, position: $0.position, text: $0.text)
-                        })
+                        },
+                        initialServings: servings)
                 } label: {
                     Label("Cook", systemImage: "frying.pan")
                         .font(.headline)
@@ -373,6 +368,17 @@ struct RecipeDetailView: View {
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("add-to-list-button")
             }
+            // Confirmation sits directly under the button that triggers it.
+            if let addedMessage {
+                Section {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                        Text(addedMessage).foregroundStyle(.primary)
+                    }
+                    .padding(.vertical, 4)
+                    .accessibilityIdentifier("added-confirm")
+                }
+            }
         }
         .navigationTitle(recipe.title)
         .navigationBarTitleDisplayMode(.inline)
@@ -380,15 +386,12 @@ struct RecipeDetailView: View {
     }
 
     private var servingsDisplay: String {
-        servings.truncatingRemainder(dividingBy: 1) == 0
-            ? String(Int(servings)) : String(format: "%.1g", servings)
+        fractionDisplayString(for: servings)
     }
 
     @ViewBuilder
     private var heroHeader: some View {
-        if let key = recipe.photoThumb, !key.isEmpty, key.hasPrefix("http"),
-           let url = URL(string: key)
-        {
+        if let url = photoURL(forKey: recipe.photoThumb) {
             AsyncImage(url: url) { phase in
                 switch phase {
                 case .success(let img):
@@ -417,7 +420,7 @@ struct RecipeDetailView: View {
         let deviceId = currentDeviceId()
         let inputs = recipe.ingredients.map { ing in
             PlanGroceryInput(name: ing.name, quantity: ing.quantity, unit: ing.unit,
-                baseServings: recipe.servings, targetServings: nil, recipeId: recipe.id)
+                baseServings: recipe.servings, targetServings: servings, recipeId: recipe.id)
         }
         let lines = aggregateWeekToList(inputs)
         let list: ShoppingList
