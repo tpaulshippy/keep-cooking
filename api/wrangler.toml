@@ -1,0 +1,19 @@
+name = "smidgen-api"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+
+[vars]
+APP_VERSION = "0.1.0"
+# Better Auth stub: production sets a real secret via `wrangler secret put BETTER_AUTH_SECRET`.
+BETTER_AUTH_SECRET = "dev-only-change-me"
+PUBLIC_BASE_URL = "https://api.smidgen.local"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "smidgen"
+# Replace with the real id from `wrangler d1 create smidgen` before first deploy.
+database_id = "local-smidgen-placeholder"
+
+[[r2_buckets]]
+binding = "PHOTOS"
+bucket_name = "smidgen-photos"

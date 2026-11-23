@@ -1,0 +1,27 @@
+{
+  "name": "smidgen-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "deploy:dry": "wrangler deploy --dry-run",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "seed": "bun run seed.ts --generate-sql",
+    "db:apply:local": "wrangler d1 execute smidgen --local --file=./drizzle/0001_init.sql",
+    "db:seed:local": "wrangler d1 execute smidgen --local --file=./drizzle/seed.sql"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.36.4",
+    "hono": "^4.6.20",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "@types/node": "^26.6.6",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
