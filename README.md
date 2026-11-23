@@ -23,10 +23,49 @@ No subscriptions. No self-hosted Docker. Own your recipes.
 - Not Apple-only paid like Mela ($6.99) or sub-locked like Paprika 4 Premium ($14.99/yr)
 - Not a web app skinned as iOS
 
-## Stack (planned)
+## Stack (v0.1-smidgen, all lanes merged)
 
-- App: SwiftUI (iOS 17+), SwiftData + CloudKit mirror for offline
-- API: Hono on Cloudflare Workers, OpenAPI at `/openapi.json`
-- DB: D1 (SQLite) via Drizzle, R2 for photos
-- Auth: Better Auth on D1 (email + Sign in with Apple)
-- Format: plain JSON + Markdown export, Paprika / Mela importers
+- App: SwiftUI (iOS 17+), SwiftData + CloudKit mirror stub, SyncEngine (outbox, LWW + tombstones)
+- API: Hono on Cloudflare Workers, OpenAPI at `/openapi.json` (byte-matches contracts)
+- DB: D1 (SQLite) via Drizzle, R2 for photos (thumb/1024/original)
+- Auth: Better Auth on D1 (email + Apple; header stub in dev)
+- Format: JSON + Markdown + self-contained Schema.org HTML export
+
+## Deploy (free tier: 1 Worker + 1 D1 + 1 R2)
+
+```bash
+npx wrangler d1 create smidgen
+npx wrangler r2 bucket create smidgen-photos
+npm run deploy --prefix api   # migrations + seed + deploy
+```
+
+## Architecture
+
+```
+[iPhone/iPad SwiftUI] --HTTPS--> [Hono Worker] --Drizzle--> [D1 SQLite]
+   SwiftData offline-first  SyncEnvelope LWW       R2 photos (signed <15min)
+   Share Sheet / Widgets / Watch / Intents          feed.ics / export json|md|html
+```
+
+Contracts: `packages/contracts/` (`openapi.yaml` + `openapi.json`, `schema.sql`,
+`SyncEnvelope`, `ClipReport`, `PHOTO_VARIANTS.md`, 15 seeds). CI `contract-check`
+runs on PR. No lane may change contracts without orchestrator approval.
+
+## Budget (free tier headroom)
+
+| Resource | Quota | Usage (beta) |
+|---|---|---|
+| Workers req | 100k/day | ~2k/day |
+| D1 storage | 5GB | ~50MB |
+| R2 storage | 10GB | ~1GB |
+
+## Status
+
+- Lane 1 API: 41 vitest green, `wrangler deploy --dry-run` pass
+- Lane 2 Sync: typechecks clean, 2-device convergence, offline demo (see `apps/ios/SYNC_TEST.md`)
+- Lane 3 Ingest: 6-input demo notes, parser tests
+- Lane 4 Cook/Plan/Shop: scaling + timer + aggregation tests
+- Lane 5 Library/System: 3 seeded dupes caught, EXPORT_SAMPLES validated
+
+Demos: `IngestDemoNotes.md`, `SCREEN_RECORDING_NOTES.md`, `EXPORT_SAMPLES/`
+(GIFs TODO — record airplane-mode + plan→list flows).
