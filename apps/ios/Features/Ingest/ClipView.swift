@@ -8,39 +8,6 @@
 import SwiftUI
 import SwiftData
 
-private struct ClipStepsHeader: View {
-    var current: Int
-    private let steps = ["Add", "Review", "Save"]
-    var body: some View {
-        HStack(spacing: 0) {
-            ForEach(steps.indices, id: \.self) { i in
-                VStack(spacing: 4) {
-                    Circle()
-                        .fill(i <= current ? Color.accentColor : Color.secondary.opacity(0.25))
-                        .frame(width: 22, height: 22)
-                        .overlay(
-                            Text("\(i + 1)")
-                                .font(.caption2.bold())
-                                .foregroundStyle(i <= current ? .white : .secondary)
-                        )
-                    Text(steps[i])
-                        .font(.caption2)
-                        .foregroundStyle(i == current ? .primary : .secondary)
-                }
-                if i < steps.count - 1 {
-                    Rectangle()
-                        .fill(Color.secondary.opacity(0.25))
-                        .frame(height: 1)
-                        .padding(.horizontal, 6)
-                        .padding(.bottom, 16)
-                }
-            }
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Step \(current + 1) of 3: \(steps[current])")
-    }
-}
-
 public struct ClipView: View {
     @Environment(\.modelContext) private var context
 
@@ -78,7 +45,7 @@ public struct ClipView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
-                    ClipStepsHeader(current: stepIndex)
+                    IngestStepsHeader(current: stepIndex)
                         .padding(.top, 8)
 
                     VStack(alignment: .leading, spacing: 10) {
@@ -125,9 +92,21 @@ public struct ClipView: View {
                             Text("Check the details — edit anything before saving.")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
-                            Text("Checked on this device.")
+                            Text("Ready to review.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            if let warnings = report?.warnings, !warnings.isEmpty {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    ForEach(warnings, id: \.self) { warning in
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "exclamationmark.triangle")
+                                            Text(clipWarningText(for: warning))
+                                        }
+                                        .font(.caption)
+                                        .foregroundStyle(.orange)
+                                    }
+                                }
+                            }
                             TextField("Title", text: $title)
                                 .textFieldStyle(.roundedBorder)
                                 .focused($focused, equals: .title)
@@ -157,7 +136,7 @@ public struct ClipView: View {
                                 .font(.headline)
                             Button("Save recipe") { save() }
                                 .buttonStyle(.borderedProminent)
-                                .disabled(!canSave)
+                                .disabled(!canSave || savedMessage != nil)
                             if !canSave {
                                 Text("Add a title to save.")
                                     .font(.caption)
@@ -214,7 +193,9 @@ public struct ClipView: View {
             }.joined(separator: "\n")
             stepLines = (rep.recipe.steps ?? []).map { $0.text }.joined(separator: "\n")
         } catch {
-            self.error = "Couldn't clip that link. Check the address and try again."
+            print("Clip failed: \(error)")
+            self.error = clipServerErrorMessage(for: error)
+                ?? "Couldn't clip that link. Check the address and try again."
         }
     }
 
@@ -250,8 +231,13 @@ public struct ClipView: View {
             m.recipe = recipe
             context.insert(m)
         }
-        try? context.save()
-        savedMessage = "Saved “\(recipe.title)” (\(parsed.count) ingredients, \(steps.count) steps)"
+        do {
+            try context.save()
+            savedMessage = "Saved “\(recipe.title)” (\(parsed.count) ingredients, \(steps.count) steps)"
+        } catch {
+            print("Clip save failed: \(error)")
+            self.error = "Couldn't save that recipe. Try again."
+        }
         focused = nil
     }
 

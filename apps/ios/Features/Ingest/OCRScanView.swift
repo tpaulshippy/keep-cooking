@@ -84,40 +84,7 @@ public enum OCRSplitter {
     }
 }
 
-// MARK: - Progress header (private to this file)
-
-private struct OCRStepsHeader: View {
-    var current: Int
-    private let steps = ["Add", "Review", "Save"]
-    var body: some View {
-        HStack(spacing: 0) {
-            ForEach(steps.indices, id: \.self) { i in
-                VStack(spacing: 4) {
-                    Circle()
-                        .fill(i <= current ? Color.accentColor : Color.secondary.opacity(0.25))
-                        .frame(width: 22, height: 22)
-                        .overlay(
-                            Text("\(i + 1)")
-                                .font(.caption2.bold())
-                                .foregroundStyle(i <= current ? .white : .secondary)
-                        )
-                    Text(steps[i])
-                        .font(.caption2)
-                        .foregroundStyle(i == current ? .primary : .secondary)
-                }
-                if i < steps.count - 1 {
-                    Rectangle()
-                        .fill(Color.secondary.opacity(0.25))
-                        .frame(height: 1)
-                        .padding(.horizontal, 6)
-                        .padding(.bottom, 16)
-                }
-            }
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Step \(current + 1) of 3: \(steps[current])")
-    }
-}
+// MARK: - Progress header (shared IngestStepsHeader; see IngestStepsHeader.swift)
 
 #if os(iOS)
 private struct CameraPicker: UIViewControllerRepresentable {
@@ -160,6 +127,7 @@ public struct OCRScanView: View {
     @State private var notice: String?
     @State private var savedMessage: String?
     @State private var selectedPhoto: PhotosPickerItem?
+    @State private var hasPickedPhoto = false
     @State private var isScanning = false
     @State private var showCamera = false
 
@@ -182,7 +150,7 @@ public struct OCRScanView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
-                    OCRStepsHeader(current: stepIndex)
+                    IngestStepsHeader(current: stepIndex)
                         .padding(.top, 8)
 
                     // Step 1 — Add
@@ -194,7 +162,7 @@ public struct OCRScanView: View {
                             .foregroundStyle(.secondary)
                         HStack(spacing: 10) {
                             PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                                Label(selectedPhoto == nil ? "Choose photo" : "Choose a different photo", systemImage: "photo")
+                                Label(hasPickedPhoto ? "Choose a different photo" : "Choose photo", systemImage: "photo")
                             }
                             .buttonStyle(.bordered)
                             #if os(iOS)
@@ -276,7 +244,7 @@ public struct OCRScanView: View {
                         }
                         Button("Save recipe") { save() }
                             .buttonStyle(.borderedProminent)
-                            .disabled(!canSave)
+                            .disabled(!canSave || savedMessage != nil)
                             .accessibilityIdentifier("ocr-save")
                         if !canSave {
                             Text("Add a title to save.")
@@ -316,7 +284,10 @@ public struct OCRScanView: View {
             #endif
             .onChange(of: selectedPhoto) { _, item in
                 guard let item else { return }
+                hasPickedPhoto = true
                 Task {
+                    // Reset so re-selecting the same photo fires onChange again.
+                    defer { selectedPhoto = nil }
                     if let data = try? await item.loadTransferable(type: Data.self) {
                         await recognize(data: data)
                     } else {
@@ -378,8 +349,13 @@ public struct OCRScanView: View {
             m.recipe = recipe
             context.insert(m)
         }
-        try? context.save()
-        savedMessage = "Saved “\(recipe.title)”"
+        do {
+            try context.save()
+            savedMessage = "Saved “\(recipe.title)”"
+        } catch {
+            print("OCR save failed: \(error)")
+            notice = "Couldn't save that recipe. Try again."
+        }
         focused = nil
     }
 }

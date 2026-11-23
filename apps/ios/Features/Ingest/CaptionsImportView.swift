@@ -22,39 +22,6 @@ public enum SocialPlatform: String, CaseIterable, Identifiable {
     }
 }
 
-private struct CaptionStepsHeader: View {
-    var current: Int
-    private let steps = ["Add", "Review", "Save"]
-    var body: some View {
-        HStack(spacing: 0) {
-            ForEach(steps.indices, id: \.self) { i in
-                VStack(spacing: 4) {
-                    Circle()
-                        .fill(i <= current ? Color.accentColor : Color.secondary.opacity(0.25))
-                        .frame(width: 22, height: 22)
-                        .overlay(
-                            Text("\(i + 1)")
-                                .font(.caption2.bold())
-                                .foregroundStyle(i <= current ? .white : .secondary)
-                        )
-                    Text(steps[i])
-                        .font(.caption2)
-                        .foregroundStyle(i == current ? .primary : .secondary)
-                }
-                if i < steps.count - 1 {
-                    Rectangle()
-                        .fill(Color.secondary.opacity(0.25))
-                        .frame(height: 1)
-                        .padding(.horizontal, 6)
-                        .padding(.bottom, 16)
-                }
-            }
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Step \(current + 1) of 3: \(steps[current])")
-    }
-}
-
 public struct CaptionsImportView: View {
     @Environment(\.modelContext) private var context
 
@@ -93,7 +60,7 @@ public struct CaptionsImportView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
-                    CaptionStepsHeader(current: stepIndex)
+                    IngestStepsHeader(current: stepIndex)
                         .padding(.top, 8)
 
                     VStack(alignment: .leading, spacing: 10) {
@@ -149,7 +116,7 @@ public struct CaptionsImportView: View {
                             Text("Check the details — edit anything before saving.")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
-                            Text("Checked on this device.")
+                            Text("Ready to review.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             TextField("Title", text: $title)
@@ -181,7 +148,7 @@ public struct CaptionsImportView: View {
                                 .font(.headline)
                             Button("Save recipe") { save() }
                                 .buttonStyle(.borderedProminent)
-                                .disabled(!canSave)
+                                .disabled(!canSave || savedMessage != nil)
                             if !canSave {
                                 Text("Add a title to save.")
                                     .font(.caption)
@@ -251,7 +218,9 @@ public struct CaptionsImportView: View {
                 : ings.map { $0.display ?? $0.name }.joined(separator: "\n")
             stepLines = (rep.recipe.steps ?? []).map { $0.text }.joined(separator: "\n")
         } catch {
-            self.error = "Couldn't import that caption. Check the text and try again."
+            print("Caption import failed: \(error)")
+            self.error = clipServerErrorMessage(for: error)
+                ?? "Couldn't import that caption. Check the text and try again."
         }
     }
 
@@ -285,8 +254,13 @@ public struct CaptionsImportView: View {
             m.recipe = recipe
             context.insert(m)
         }
-        try? context.save()
-        savedMessage = "Saved “\(recipe.title)” from \(platform.rawValue)"
+        do {
+            try context.save()
+            savedMessage = "Saved “\(recipe.title)” from \(platform.rawValue)"
+        } catch {
+            print("Caption save failed: \(error)")
+            self.error = "Couldn't save that recipe. Try again."
+        }
         focused = nil
     }
 }
