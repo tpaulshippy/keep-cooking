@@ -1,758 +1,851 @@
 {
-  "openapi": "3.1.0",
-  "info": {
-    "title": "Smidgen API",
-    "version": "0.1.0",
-    "description": "Single Hono Worker + D1 + R2. MIT only. See packages/contracts/README.md."
-  },
-  "servers": [
-    {
-      "url": "https://api.smidgen.local"
-    }
-  ],
-  "paths": {
-    "/health": {
-      "get": {
-        "operationId": "health",
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
+  "components": {
+    "parameters": {
+      "HouseholdId": {
+        "in": "query",
+        "name": "householdId",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "IdParam": {
+        "in": "path",
+        "name": "id",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "schemas": {
+      "ClipReport": {
+        "properties": {
+          "confidence": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "recipe": {
+            "$ref": "#/components/schemas/RecipeInput"
+          },
+          "sourceUrl": {
+            "type": "string"
+          },
+          "strategy": {
+            "enum": [
+              "jsonld",
+              "reader",
+              "caption",
+              "ocr"
+            ],
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "strategy",
+          "recipe"
+        ],
+        "type": "object"
+      },
+      "ClipRequest": {
+        "anyOf": [
+          {
+            "required": [
+              "url"
+            ]
+          },
+          {
+            "required": [
+              "caption"
+            ]
+          }
+        ],
+        "properties": {
+          "caption": {
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "url",
+              "tiktok",
+              "instagram",
+              "youtube",
+              "ocr",
+              "clipboard"
+            ],
+            "type": "string"
+          },
+          "url": {
+            "format": "uri",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "EncryptedEnvelope": {
+        "description": "E2E v2 wrapper around a SyncEnvelope. Server stores bytes only; see docs/e2e-v1.md. v1 SyncEnvelope is unchanged.",
+        "properties": {
+          "alg": {
+            "const": "AES-GCM-256",
+            "description": "cipher (locked)",
+            "type": "string"
+          },
+          "ciphertext": {
+            "AES-GCM-256(raw-ciphertext + 16-byte tag) over canonical JSON of the v1 envelope payload": null,
+            "description": "base64",
+            "type": "string"
+          },
+          "deleted": {
+            "default": false,
+            "type": "boolean"
+          },
+          "deviceId": {
+            "type": "string"
+          },
+          "entity": {
+            "description": "standalone ingredient/step envelopes are rejected (fold into the parent recipe pre-encrypt)",
+            "enum": [
+              "recipe",
+              "list",
+              "pantryItem",
+              "plan",
+              "menu"
+            ],
+            "type": "string"
+          },
+          "householdHash": {
+            "description": "hex(SHA256(\"smidgen-hh-v1\" || syncCode || householdId)); must equal the :hash path param",
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kid": {
+            "description": "opaque per-household key id; feeds the HKDF info string",
+            "type": "string"
+          },
+          "nonce": {
+            "12 random bytes": null,
+            "description": "base64",
+            "fresh per envelope (AES-GCM)": null,
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "v": {
+            "const": 2,
+            "description": "envelope version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "v",
+          "alg",
+          "kid",
+          "householdHash",
+          "id",
+          "entity",
+          "updatedAt",
+          "deviceId",
+          "nonce",
+          "ciphertext"
+        ],
+        "type": "object"
+      },
+      "Household": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "owner",
+              "member",
+              "viewer"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "Ingredient": {
+        "properties": {
+          "display": {
+            "description": "fraction-rounded string e.g. 1 1/2 cups",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "quantity": {
+            "nullable": true,
+            "type": "number"
+          },
+          "recipeId": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "IngredientInput": {
+        "properties": {
+          "display": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "quantity": {
+            "nullable": true,
+            "type": "number"
+          },
+          "unit": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "ListItem": {
+        "properties": {
+          "aisle": {
+            "type": "string"
+          },
+          "checked": {
+            "default": false,
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "string"
+          },
+          "recipeId": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "ListItemInput": {
+        "properties": {
+          "aisle": {
+            "type": "string"
+          },
+          "checked": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "string"
+          },
+          "recipeId": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "Menu": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SyncEnvelope"
+          },
+          {
+            "properties": {
+              "entries": {
+                "items": {
                   "properties": {
-                    "ok": {
-                      "type": "boolean"
+                    "dayOffset": {
+                      "type": "integer"
                     },
-                    "version": {
+                    "meal": {
                       "type": "string"
+                    },
+                    "recipeId": {
+                      "type": "string"
+                    },
+                    "servings": {
+                      "type": "number"
                     }
-                  }
-                }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "householdId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
               }
-            }
+            },
+            "type": "object"
           }
-        }
-      }
-    },
-    "/openapi.json": {
-      "get": {
-        "operationId": "openapi",
-        "responses": {
-          "200": {
-            "description": "OpenAPI JSON (must match packages/contracts/openapi.json)"
+        ]
+      },
+      "MenuInput": {
+        "properties": {
+          "entries": {
+            "items": {
+              "properties": {
+                "dayOffset": {
+                  "type": "integer"
+                },
+                "meal": {
+                  "type": "string"
+                },
+                "recipeId": {
+                  "type": "string"
+                },
+                "servings": {
+                  "type": "number"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "householdId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
           }
-        }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "PantryItem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SyncEnvelope"
+          },
+          {
+            "properties": {
+              "barcode": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "format": "date",
+                "nullable": true,
+                "type": "string"
+              },
+              "householdId": {
+                "type": "string"
+              },
+              "location": {
+                "type": "string"
+              },
+              "lowThreshold": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "quantity": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        ]
+      },
+      "PantryItemInput": {
+        "properties": {
+          "barcode": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date",
+            "nullable": true,
+            "type": "string"
+          },
+          "householdId": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "lowThreshold": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "PhotoKeys": {
+        "description": "R2 keys. URL signing <15min. Variants thumb/1024/original.",
+        "properties": {
+          "large1024": {
+            "type": "string"
+          },
+          "original": {
+            "type": "string"
+          },
+          "thumb": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Plan": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SyncEnvelope"
+          },
+          {
+            "properties": {
+              "date": {
+                "format": "date",
+                "type": "string"
+              },
+              "householdId": {
+                "type": "string"
+              },
+              "meal": {
+                "enum": [
+                  "breakfast",
+                  "lunch",
+                  "dinner",
+                  "snack"
+                ],
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              },
+              "recipeId": {
+                "nullable": true,
+                "type": "string"
+              },
+              "servings": {
+                "type": "number"
+              }
+            },
+            "type": "object"
+          }
+        ]
+      },
+      "PlanInput": {
+        "properties": {
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "householdId": {
+            "type": "string"
+          },
+          "meal": {
+            "enum": [
+              "breakfast",
+              "lunch",
+              "dinner",
+              "snack"
+            ],
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "recipeId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "servings": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "date",
+          "meal"
+        ],
+        "type": "object"
+      },
+      "Recipe": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SyncEnvelope"
+          },
+          {
+            "properties": {
+              "categories": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "cookMinutes": {
+                "type": "integer"
+              },
+              "description": {
+                "type": "string"
+              },
+              "householdId": {
+                "type": "string"
+              },
+              "ingredients": {
+                "items": {
+                  "$ref": "#/components/schemas/Ingredient"
+                },
+                "type": "array"
+              },
+              "photoKeys": {
+                "$ref": "#/components/schemas/PhotoKeys"
+              },
+              "prepMinutes": {
+                "type": "integer"
+              },
+              "rating": {
+                "maximum": 5,
+                "minimum": 0,
+                "type": "number"
+              },
+              "servings": {
+                "type": "number"
+              },
+              "source": {
+                "type": "string"
+              },
+              "sourceUrl": {
+                "type": "string"
+              },
+              "steps": {
+                "items": {
+                  "$ref": "#/components/schemas/Step"
+                },
+                "type": "array"
+              },
+              "title": {
+                "type": "string"
+              },
+              "totalMinutes": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "title",
+              "servings"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "RecipeInput": {
+        "properties": {
+          "categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "cookMinutes": {
+            "type": "integer"
+          },
+          "description": {
+            "type": "string"
+          },
+          "householdId": {
+            "type": "string"
+          },
+          "ingredients": {
+            "items": {
+              "$ref": "#/components/schemas/IngredientInput"
+            },
+            "type": "array"
+          },
+          "photoKeys": {
+            "$ref": "#/components/schemas/PhotoKeys"
+          },
+          "prepMinutes": {
+            "type": "integer"
+          },
+          "rating": {
+            "maximum": 5,
+            "minimum": 0,
+            "type": "number"
+          },
+          "servings": {
+            "default": 4,
+            "type": "number"
+          },
+          "source": {
+            "type": "string"
+          },
+          "sourceUrl": {
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/StepInput"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "type": "object"
+      },
+      "ShareLink": {
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "url": {
+            "format": "uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "url"
+        ],
+        "type": "object"
+      },
+      "ShoppingList": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SyncEnvelope"
+          },
+          {
+            "properties": {
+              "householdId": {
+                "type": "string"
+              },
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/ListItem"
+                },
+                "type": "array"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        ]
+      },
+      "ShoppingListInput": {
+        "properties": {
+          "householdId": {
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ListItemInput"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "Step": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "recipeId": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "timers": {
+            "items": {
+              "$ref": "#/components/schemas/StepTimer"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "position",
+          "text"
+        ],
+        "type": "object"
+      },
+      "StepInput": {
+        "properties": {
+          "position": {
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "type": "object"
+      },
+      "StepTimer": {
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "seconds": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seconds",
+          "label"
+        ],
+        "type": "object"
+      },
+      "SyncEnvelope": {
+        "properties": {
+          "deleted": {
+            "default": false,
+            "type": "boolean"
+          },
+          "deviceId": {
+            "type": "string"
+          },
+          "entity": {
+            "enum": [
+              "recipe",
+              "ingredient",
+              "step",
+              "list",
+              "pantryItem",
+              "plan",
+              "menu"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "payload": {
+            "description": "entity JSON",
+            "type": "object"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "updatedAt",
+          "deviceId"
+        ],
+        "type": "object"
       }
-    },
+    }
+  },
+  "info": {
+    "description": "Single Hono Worker + D1 + R2. MIT only. See packages/contracts/README.md.",
+    "title": "Smidgen API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
     "/clip": {
       "post": {
         "operationId": "clipRecipe",
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ClipRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
-            "description": "parsed recipe",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ClipReport"
                 }
               }
-            }
-          }
-        }
-      }
-    },
-    "/recipes": {
-      "get": {
-        "operationId": "listRecipes",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/HouseholdId"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Recipe"
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "operationId": "createRecipe",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RecipeInput"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Recipe"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/recipes/{id}": {
-      "get": {
-        "operationId": "getRecipe",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/IdParam"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Recipe"
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "operationId": "updateRecipe",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/IdParam"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RecipeInput"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Recipe"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "deleteRecipe",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/IdParam"
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "deleted"
-          }
-        }
-      }
-    },
-    "/recipes/{id}/scale": {
-      "post": {
-        "operationId": "scaleRecipe",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/IdParam"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "servings"
-                ],
-                "properties": {
-                  "servings": {
-                    "type": "number",
-                    "minimum": 0.25,
-                    "maximum": 100
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "scaled ingredient quantities (fraction-rounded display strings)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Recipe"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/lists": {
-      "get": {
-        "operationId": "listShoppingLists",
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/ShoppingList"
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "operationId": "createShoppingList",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ShoppingListInput"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ShoppingList"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/lists/{id}": {
-      "get": {
-        "operationId": "getShoppingList",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/IdParam"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ShoppingList"
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "operationId": "updateShoppingList",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/IdParam"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ShoppingListInput"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ShoppingList"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "deleteShoppingList",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/IdParam"
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "deleted"
-          }
-        }
-      }
-    },
-    "/pantry": {
-      "get": {
-        "operationId": "listPantry",
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/PantryItem"
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "operationId": "createPantryItem",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PantryItemInput"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PantryItem"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/pantry/{id}": {
-      "put": {
-        "operationId": "updatePantryItem",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/IdParam"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PantryItemInput"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PantryItem"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "deletePantryItem",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/IdParam"
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "deleted"
-          }
-        }
-      }
-    },
-    "/plans": {
-      "get": {
-        "operationId": "listPlans",
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Plan"
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "operationId": "createPlan",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PlanInput"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Plan"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/plans/{id}": {
-      "get": {
-        "operationId": "getPlan",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/IdParam"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Plan"
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "operationId": "updatePlan",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/IdParam"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PlanInput"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Plan"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "deletePlan",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/IdParam"
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "deleted"
-          }
-        }
-      }
-    },
-    "/menus": {
-      "get": {
-        "operationId": "listMenus",
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Menu"
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "operationId": "createMenu",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/MenuInput"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Menu"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/menus/{id}": {
-      "get": {
-        "operationId": "getMenu",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/IdParam"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Menu"
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "operationId": "updateMenu",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/IdParam"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/MenuInput"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Menu"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "deleteMenu",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/IdParam"
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "deleted"
-          }
-        }
-      }
-    },
-    "/plans/feed.ics": {
-      "get": {
-        "operationId": "planFeed",
-        "responses": {
-          "200": {
-            "description": "webcal feed",
-            "content": {
-              "text/calendar": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/share/cookbook": {
-      "post": {
-        "operationId": "shareCookbook",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "householdId",
-                  "recipeIds"
-                ],
-                "properties": {
-                  "householdId": {
-                    "type": "string"
-                  },
-                  "recipeIds": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "expiresInDays": {
-                    "type": "integer",
-                    "default": 30
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "share link",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ShareLink"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/export/{id}.json": {
-      "get": {
-        "operationId": "exportJson",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/IdParam"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "JSON export",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Recipe"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/export/{id}.md": {
-      "get": {
-        "operationId": "exportMd",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/IdParam"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Markdown export",
-            "content": {
-              "text/markdown": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
+            },
+            "description": "parsed recipe"
           }
         }
       }
@@ -767,14 +860,733 @@
         ],
         "responses": {
           "200": {
-            "description": "self-contained Schema.org HTML",
             "content": {
               "text/html": {
                 "schema": {
                   "type": "string"
                 }
               }
+            },
+            "description": "self-contained Schema.org HTML"
+          }
+        }
+      }
+    },
+    "/export/{id}.json": {
+      "get": {
+        "operationId": "exportJson",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Recipe"
+                }
+              }
+            },
+            "description": "JSON export"
+          }
+        }
+      }
+    },
+    "/export/{id}.md": {
+      "get": {
+        "operationId": "exportMd",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Markdown export"
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "version": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "ok"
+          }
+        }
+      }
+    },
+    "/lists": {
+      "get": {
+        "operationId": "listShoppingLists",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ShoppingList"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "ok"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createShoppingList",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShoppingListInput"
+              }
             }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShoppingList"
+                }
+              }
+            },
+            "description": "created"
+          }
+        }
+      }
+    },
+    "/lists/{id}": {
+      "delete": {
+        "operationId": "deleteShoppingList",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdParam"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "deleted"
+          }
+        }
+      },
+      "get": {
+        "operationId": "getShoppingList",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShoppingList"
+                }
+              }
+            },
+            "description": "ok"
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateShoppingList",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdParam"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShoppingListInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShoppingList"
+                }
+              }
+            },
+            "description": "ok"
+          }
+        }
+      }
+    },
+    "/menus": {
+      "get": {
+        "operationId": "listMenus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Menu"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "ok"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createMenu",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MenuInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Menu"
+                }
+              }
+            },
+            "description": "created"
+          }
+        }
+      }
+    },
+    "/menus/{id}": {
+      "delete": {
+        "operationId": "deleteMenu",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdParam"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "deleted"
+          }
+        }
+      },
+      "get": {
+        "operationId": "getMenu",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Menu"
+                }
+              }
+            },
+            "description": "ok"
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateMenu",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdParam"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MenuInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Menu"
+                }
+              }
+            },
+            "description": "ok"
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "operationId": "openapi",
+        "responses": {
+          "200": {
+            "description": "OpenAPI JSON (must match packages/contracts/openapi.json)"
+          }
+        }
+      }
+    },
+    "/pantry": {
+      "get": {
+        "operationId": "listPantry",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PantryItem"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "ok"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createPantryItem",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PantryItemInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PantryItem"
+                }
+              }
+            },
+            "description": "created"
+          }
+        }
+      }
+    },
+    "/pantry/{id}": {
+      "delete": {
+        "operationId": "deletePantryItem",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdParam"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "deleted"
+          }
+        }
+      },
+      "put": {
+        "operationId": "updatePantryItem",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdParam"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PantryItemInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PantryItem"
+                }
+              }
+            },
+            "description": "ok"
+          }
+        }
+      }
+    },
+    "/plans": {
+      "get": {
+        "operationId": "listPlans",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Plan"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "ok"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createPlan",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Plan"
+                }
+              }
+            },
+            "description": "created"
+          }
+        }
+      }
+    },
+    "/plans/feed.ics": {
+      "get": {
+        "operationId": "planFeed",
+        "responses": {
+          "200": {
+            "content": {
+              "text/calendar": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "webcal feed"
+          }
+        }
+      }
+    },
+    "/plans/{id}": {
+      "delete": {
+        "operationId": "deletePlan",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdParam"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "deleted"
+          }
+        }
+      },
+      "get": {
+        "operationId": "getPlan",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Plan"
+                }
+              }
+            },
+            "description": "ok"
+          }
+        }
+      },
+      "put": {
+        "operationId": "updatePlan",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdParam"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Plan"
+                }
+              }
+            },
+            "description": "ok"
+          }
+        }
+      }
+    },
+    "/recipes": {
+      "get": {
+        "operationId": "listRecipes",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HouseholdId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Recipe"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "ok"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createRecipe",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecipeInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Recipe"
+                }
+              }
+            },
+            "description": "created"
+          }
+        }
+      }
+    },
+    "/recipes/{id}": {
+      "delete": {
+        "operationId": "deleteRecipe",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdParam"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "deleted"
+          }
+        }
+      },
+      "get": {
+        "operationId": "getRecipe",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Recipe"
+                }
+              }
+            },
+            "description": "ok"
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateRecipe",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdParam"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecipeInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Recipe"
+                }
+              }
+            },
+            "description": "ok"
+          }
+        }
+      }
+    },
+    "/recipes/{id}/scale": {
+      "post": {
+        "operationId": "scaleRecipe",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdParam"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "servings": {
+                    "maximum": 100,
+                    "minimum": 0.25,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "servings"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Recipe"
+                }
+              }
+            },
+            "description": "scaled ingredient quantities (fraction-rounded display strings)"
+          }
+        }
+      }
+    },
+    "/share/cookbook": {
+      "post": {
+        "operationId": "shareCookbook",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "expiresInDays": {
+                    "default": 30,
+                    "type": "integer"
+                  },
+                  "householdId": {
+                    "type": "string"
+                  },
+                  "recipeIds": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "householdId",
+                  "recipeIds"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareLink"
+                }
+              }
+            },
+            "description": "share link"
           }
         }
       }
@@ -784,27 +1596,27 @@
         "operationId": "syncPull",
         "parameters": [
           {
-            "name": "since",
             "in": "query",
+            "name": "since",
             "schema": {
-              "type": "string",
-              "format": "date-time"
+              "format": "date-time",
+              "type": "string"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "envelopes changed since timestamp",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/SyncEnvelope"
-                  }
+                  },
+                  "type": "array"
                 }
               }
-            }
+            },
+            "description": "envelopes changed since timestamp"
           }
         }
       }
@@ -813,952 +1625,143 @@
       "post": {
         "operationId": "syncPush",
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "type": "array",
                 "items": {
                   "$ref": "#/components/schemas/SyncEnvelope"
-                }
+                },
+                "type": "array"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
-            "description": "server-won conflicts (empty = all accepted)",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/SyncEnvelope"
-                  }
+                  },
+                  "type": "array"
                 }
               }
-            }
+            },
+            "description": "server-won conflicts (empty = all accepted)"
           }
         }
       }
     },
     "/v2/sync/{hash}": {
-      "parameters": [
-        {
-          "name": "hash",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "pattern": "^[0-9a-f]{64}$"
-          },
-          "description": "hex householdHash (see docs/e2e-v1.md)"
+      "delete": {
+        "operationId": "e2eWipe",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "wiped": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "wiped"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "wiped row count"
+          }
         }
-      ],
+      },
       "get": {
         "operationId": "e2ePull",
         "parameters": [
           {
-            "name": "since",
             "in": "query",
+            "name": "since",
             "schema": {
-              "type": "string",
-              "format": "date-time"
+              "format": "date-time",
+              "type": "string"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "encrypted envelopes changed since timestamp",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/EncryptedEnvelope"
-                  }
+                  },
+                  "type": "array"
                 }
               }
-            }
+            },
+            "description": "encrypted envelopes changed since timestamp"
           }
         }
       },
+      "parameters": [
+        {
+          "description": "hex householdHash (see docs/e2e-v1.md)",
+          "in": "path",
+          "name": "hash",
+          "required": true,
+          "schema": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        }
+      ],
       "put": {
         "operationId": "e2ePush",
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "type": "array",
                 "items": {
                   "$ref": "#/components/schemas/EncryptedEnvelope"
-                }
+                },
+                "type": "array"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
-            "description": "stored ids (stale writes are idempotent no-ops)",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
+                  "properties": {
+                    "stored": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
                   "required": [
                     "stored"
                   ],
-                  "properties": {
-                    "stored": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    }
-                  }
+                  "type": "object"
                 }
               }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "e2eWipe",
-        "responses": {
-          "200": {
-            "description": "wiped row count",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "wiped"
-                  ],
-                  "properties": {
-                    "wiped": {
-                      "type": "integer"
-                    }
-                  }
-                }
-              }
-            }
+            },
+            "description": "stored ids (stale writes are idempotent no-ops)"
           }
         }
       }
     }
   },
-  "components": {
-    "parameters": {
-      "IdParam": {
-        "name": "id",
-        "in": "path",
-        "required": true,
-        "schema": {
-          "type": "string"
-        }
-      },
-      "HouseholdId": {
-        "name": "householdId",
-        "in": "query",
-        "schema": {
-          "type": "string"
-        }
-      }
-    },
-    "schemas": {
-      "SyncEnvelope": {
-        "type": "object",
-        "required": [
-          "id",
-          "updatedAt",
-          "deviceId"
-        ],
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "deviceId": {
-            "type": "string"
-          },
-          "deleted": {
-            "type": "boolean",
-            "default": false
-          },
-          "entity": {
-            "type": "string",
-            "enum": [
-              "recipe",
-              "ingredient",
-              "step",
-              "list",
-              "pantryItem",
-              "plan",
-              "menu"
-            ]
-          },
-          "payload": {
-            "type": "object",
-            "description": "entity JSON"
-          }
-        }
-      },
-      "EncryptedEnvelope": {
-        "type": "object",
-        "description": "E2E v2 wrapper around a SyncEnvelope. Server stores bytes only; see docs/e2e-v1.md. v1 SyncEnvelope is unchanged.",
-        "required": [
-          "v",
-          "alg",
-          "kid",
-          "householdHash",
-          "id",
-          "entity",
-          "updatedAt",
-          "deviceId",
-          "nonce",
-          "ciphertext"
-        ],
-        "properties": {
-          "v": {
-            "type": "integer",
-            "const": 2,
-            "description": "envelope version"
-          },
-          "alg": {
-            "type": "string",
-            "const": "AES-GCM-256",
-            "description": "cipher (locked)"
-          },
-          "kid": {
-            "type": "string",
-            "description": "opaque per-household key id; feeds the HKDF info string"
-          },
-          "householdHash": {
-            "type": "string",
-            "description": "hex(SHA256(\"smidgen-hh-v1\" || syncCode || householdId)); must equal the :hash path param",
-            "pattern": "^[0-9a-f]{64}$"
-          },
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "entity": {
-            "type": "string",
-            "enum": [
-              "recipe",
-              "list",
-              "pantryItem",
-              "plan",
-              "menu"
-            ],
-            "description": "standalone ingredient/step envelopes are rejected (fold into the parent recipe pre-encrypt)"
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "deviceId": {
-            "type": "string"
-          },
-          "deleted": {
-            "type": "boolean",
-            "default": false
-          },
-          "nonce": {
-            "type": "string",
-            "description": "base64, 12 random bytes, fresh per envelope (AES-GCM)"
-          },
-          "ciphertext": {
-            "type": "string",
-            "description": "base64, AES-GCM-256(raw-ciphertext + 16-byte tag) over canonical JSON of the v1 envelope payload"
-          }
-        }
-      },
-      "ClipRequest": {
-        "type": "object",
-        "properties": {
-          "url": {
-            "type": "string",
-            "format": "uri"
-          },
-          "caption": {
-            "type": "string"
-          },
-          "source": {
-            "type": "string",
-            "enum": [
-              "url",
-              "tiktok",
-              "instagram",
-              "youtube",
-              "ocr",
-              "clipboard"
-            ]
-          }
-        },
-        "anyOf": [
-          {
-            "required": [
-              "url"
-            ]
-          },
-          {
-            "required": [
-              "caption"
-            ]
-          }
-        ]
-      },
-      "ClipReport": {
-        "type": "object",
-        "required": [
-          "strategy",
-          "recipe"
-        ],
-        "properties": {
-          "strategy": {
-            "type": "string",
-            "enum": [
-              "jsonld",
-              "reader",
-              "caption",
-              "ocr"
-            ]
-          },
-          "confidence": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
-          },
-          "warnings": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "sourceUrl": {
-            "type": "string"
-          },
-          "recipe": {
-            "$ref": "#/components/schemas/RecipeInput"
-          }
-        }
-      },
-      "Recipe": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/SyncEnvelope"
-          },
-          {
-            "type": "object",
-            "required": [
-              "title",
-              "servings"
-            ],
-            "properties": {
-              "title": {
-                "type": "string"
-              },
-              "description": {
-                "type": "string"
-              },
-              "servings": {
-                "type": "number"
-              },
-              "prepMinutes": {
-                "type": "integer"
-              },
-              "cookMinutes": {
-                "type": "integer"
-              },
-              "totalMinutes": {
-                "type": "integer"
-              },
-              "rating": {
-                "type": "number",
-                "minimum": 0,
-                "maximum": 5
-              },
-              "source": {
-                "type": "string"
-              },
-              "sourceUrl": {
-                "type": "string"
-              },
-              "categories": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "photoKeys": {
-                "$ref": "#/components/schemas/PhotoKeys"
-              },
-              "ingredients": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/Ingredient"
-                }
-              },
-              "steps": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/Step"
-                }
-              },
-              "householdId": {
-                "type": "string"
-              }
-            }
-          }
-        ]
-      },
-      "RecipeInput": {
-        "type": "object",
-        "required": [
-          "title"
-        ],
-        "properties": {
-          "title": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "servings": {
-            "type": "number",
-            "default": 4
-          },
-          "prepMinutes": {
-            "type": "integer"
-          },
-          "cookMinutes": {
-            "type": "integer"
-          },
-          "rating": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 5
-          },
-          "source": {
-            "type": "string"
-          },
-          "sourceUrl": {
-            "type": "string"
-          },
-          "categories": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "photoKeys": {
-            "$ref": "#/components/schemas/PhotoKeys"
-          },
-          "ingredients": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/IngredientInput"
-            }
-          },
-          "steps": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/StepInput"
-            }
-          },
-          "householdId": {
-            "type": "string"
-          }
-        }
-      },
-      "Ingredient": {
-        "type": "object",
-        "required": [
-          "id",
-          "name"
-        ],
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "name": {
-            "type": "string"
-          },
-          "quantity": {
-            "type": "number",
-            "nullable": true
-          },
-          "unit": {
-            "type": "string"
-          },
-          "display": {
-            "type": "string",
-            "description": "fraction-rounded string e.g. 1 1/2 cups"
-          },
-          "position": {
-            "type": "integer"
-          },
-          "recipeId": {
-            "type": "string"
-          }
-        }
-      },
-      "IngredientInput": {
-        "type": "object",
-        "required": [
-          "name"
-        ],
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "quantity": {
-            "type": "number",
-            "nullable": true
-          },
-          "unit": {
-            "type": "string"
-          },
-          "display": {
-            "type": "string"
-          },
-          "position": {
-            "type": "integer"
-          }
-        }
-      },
-      "Step": {
-        "type": "object",
-        "required": [
-          "id",
-          "position",
-          "text"
-        ],
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "position": {
-            "type": "integer"
-          },
-          "text": {
-            "type": "string"
-          },
-          "timers": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/StepTimer"
-            }
-          },
-          "recipeId": {
-            "type": "string"
-          }
-        }
-      },
-      "StepInput": {
-        "type": "object",
-        "required": [
-          "text"
-        ],
-        "properties": {
-          "position": {
-            "type": "integer"
-          },
-          "text": {
-            "type": "string"
-          }
-        }
-      },
-      "StepTimer": {
-        "type": "object",
-        "required": [
-          "seconds",
-          "label"
-        ],
-        "properties": {
-          "seconds": {
-            "type": "integer"
-          },
-          "label": {
-            "type": "string"
-          }
-        }
-      },
-      "ShoppingList": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/SyncEnvelope"
-          },
-          {
-            "type": "object",
-            "properties": {
-              "name": {
-                "type": "string"
-              },
-              "householdId": {
-                "type": "string"
-              },
-              "items": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/ListItem"
-                }
-              }
-            }
-          }
-        ]
-      },
-      "ShoppingListInput": {
-        "type": "object",
-        "required": [
-          "name"
-        ],
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "householdId": {
-            "type": "string"
-          },
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ListItemInput"
-            }
-          }
-        }
-      },
-      "ListItem": {
-        "type": "object",
-        "required": [
-          "id",
-          "name"
-        ],
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "name": {
-            "type": "string"
-          },
-          "quantity": {
-            "type": "string"
-          },
-          "aisle": {
-            "type": "string"
-          },
-          "checked": {
-            "type": "boolean",
-            "default": false
-          },
-          "recipeId": {
-            "type": "string",
-            "nullable": true
-          }
-        }
-      },
-      "ListItemInput": {
-        "type": "object",
-        "required": [
-          "name"
-        ],
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "quantity": {
-            "type": "string"
-          },
-          "aisle": {
-            "type": "string"
-          },
-          "checked": {
-            "type": "boolean"
-          },
-          "recipeId": {
-            "type": "string",
-            "nullable": true
-          }
-        }
-      },
-      "PantryItem": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/SyncEnvelope"
-          },
-          {
-            "type": "object",
-            "properties": {
-              "name": {
-                "type": "string"
-              },
-              "quantity": {
-                "type": "string"
-              },
-              "location": {
-                "type": "string"
-              },
-              "expiresAt": {
-                "type": "string",
-                "format": "date",
-                "nullable": true
-              },
-              "lowThreshold": {
-                "type": "string"
-              },
-              "barcode": {
-                "type": "string"
-              },
-              "householdId": {
-                "type": "string"
-              }
-            }
-          }
-        ]
-      },
-      "PantryItemInput": {
-        "type": "object",
-        "required": [
-          "name"
-        ],
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "quantity": {
-            "type": "string"
-          },
-          "location": {
-            "type": "string"
-          },
-          "expiresAt": {
-            "type": "string",
-            "format": "date",
-            "nullable": true
-          },
-          "lowThreshold": {
-            "type": "string"
-          },
-          "barcode": {
-            "type": "string"
-          },
-          "householdId": {
-            "type": "string"
-          }
-        }
-      },
-      "Plan": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/SyncEnvelope"
-          },
-          {
-            "type": "object",
-            "properties": {
-              "date": {
-                "type": "string",
-                "format": "date"
-              },
-              "meal": {
-                "type": "string",
-                "enum": [
-                  "breakfast",
-                  "lunch",
-                  "dinner",
-                  "snack"
-                ]
-              },
-              "recipeId": {
-                "type": "string",
-                "nullable": true
-              },
-              "note": {
-                "type": "string"
-              },
-              "servings": {
-                "type": "number"
-              },
-              "householdId": {
-                "type": "string"
-              }
-            }
-          }
-        ]
-      },
-      "PlanInput": {
-        "type": "object",
-        "required": [
-          "date",
-          "meal"
-        ],
-        "properties": {
-          "date": {
-            "type": "string",
-            "format": "date"
-          },
-          "meal": {
-            "type": "string",
-            "enum": [
-              "breakfast",
-              "lunch",
-              "dinner",
-              "snack"
-            ]
-          },
-          "recipeId": {
-            "type": "string",
-            "nullable": true
-          },
-          "note": {
-            "type": "string"
-          },
-          "servings": {
-            "type": "number"
-          },
-          "householdId": {
-            "type": "string"
-          }
-        }
-      },
-      "Menu": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/SyncEnvelope"
-          },
-          {
-            "type": "object",
-            "properties": {
-              "name": {
-                "type": "string"
-              },
-              "householdId": {
-                "type": "string"
-              },
-              "entries": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "dayOffset": {
-                      "type": "integer"
-                    },
-                    "meal": {
-                      "type": "string"
-                    },
-                    "recipeId": {
-                      "type": "string"
-                    },
-                    "servings": {
-                      "type": "number"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        ]
-      },
-      "MenuInput": {
-        "type": "object",
-        "required": [
-          "name"
-        ],
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "householdId": {
-            "type": "string"
-          },
-          "entries": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "dayOffset": {
-                  "type": "integer"
-                },
-                "meal": {
-                  "type": "string"
-                },
-                "recipeId": {
-                  "type": "string"
-                },
-                "servings": {
-                  "type": "number"
-                }
-              }
-            }
-          }
-        }
-      },
-      "PhotoKeys": {
-        "type": "object",
-        "description": "R2 keys. URL signing <15min. Variants thumb/1024/original.",
-        "properties": {
-          "original": {
-            "type": "string"
-          },
-          "large1024": {
-            "type": "string"
-          },
-          "thumb": {
-            "type": "string"
-          }
-        }
-      },
-      "Household": {
-        "type": "object",
-        "required": [
-          "id",
-          "name"
-        ],
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "name": {
-            "type": "string"
-          },
-          "role": {
-            "type": "string",
-            "enum": [
-              "owner",
-              "member",
-              "viewer"
-            ]
-          }
-        }
-      },
-      "ShareLink": {
-        "type": "object",
-        "required": [
-          "id",
-          "url"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "url": {
-            "type": "string",
-            "format": "uri"
-          },
-          "expiresAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      }
+  "servers": [
+    {
+      "url": "https://api.smidgen.local"
     }
-  }
+  ]
 }
