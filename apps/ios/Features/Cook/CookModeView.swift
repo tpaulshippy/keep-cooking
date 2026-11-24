@@ -10,6 +10,13 @@ import Foundation
 /// Cook mode for one recipe. Caller passes live SwiftData values as plain
 /// snapshots so this view stays store-agnostic (works with @Query or previews).
 public struct CookModeView: View {
+    /// Set while a session is on screen (appear/disappear); nav intents
+    /// require it so they never claim a step change when no live session
+    /// can consume the handoff. Single source of truth — CookModeView and
+    /// KeepCookingIntents both read this, never a string-literal copy
+    /// (same pattern as VoiceCookManager.pendingCommandKey).
+    public static let sessionActiveKey = "cook.sessionActive"
+
     public struct IngredientSnapshot: Hashable, Sendable {
         public var id: String
         public var name: String
@@ -116,7 +123,7 @@ public struct CookModeView: View {
             session.loadTimers(from: steps.map { $0.text })
             // Mark the session active so Shortcuts nav intents accept
             // handoffs while Cook mode can consume them (cleared below).
-            UserDefaults.standard.set(true, forKey: "cook.sessionActive")
+            UserDefaults.standard.set(true, forKey: Self.sessionActiveKey)
             // Sync voice scale from any restored servings before wiring.
             session.scale = factor
             // Wire voice callbacks (idempotent per appearance).
@@ -137,7 +144,7 @@ public struct CookModeView: View {
         }
         .onDisappear {
             KeepAwake.disable()
-            UserDefaults.standard.set(false, forKey: "cook.sessionActive")
+            UserDefaults.standard.set(false, forKey: Self.sessionActiveKey)
             // Cancel both view-started timers and voice-started ones (the
             // manager retains those ids in `scheduledTimerIds`).
             CookActivityStub.cancel(ids: scheduledIds + voiceManager.scheduledTimerIds)

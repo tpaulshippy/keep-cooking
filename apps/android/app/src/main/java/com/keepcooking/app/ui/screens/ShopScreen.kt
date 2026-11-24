@@ -1,5 +1,6 @@
 package com.keepcooking.app.ui.screens
 
+import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,6 +27,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -211,6 +214,12 @@ private fun ListsContentRoom(container: AppContainer) {
     val drafts = remember { mutableStateMapOf<String, String>() }
     var collapsedChecked by remember { mutableStateOf(setOf<String>()) }
     var newListName by remember { mutableStateOf("") }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    fun reportError(message: String) {
+        Log.e("ShopScreen", message)
+        scope.launch { snackbarHostState.showSnackbar(message) }
+    }
 
     suspend fun reload() {
         lists = db.shoppingLists().liveLists()
@@ -244,6 +253,7 @@ private fun ListsContentRoom(container: AppContainer) {
                                     put("id", item.id)
                                     put("name", item.name)
                                     put("quantity", item.quantity)
+                                    put("aisle", item.aisle)
                                     put("checked", item.checked)
                                     item.recipeId?.let { put("recipeId", it) }
                                 }
@@ -266,10 +276,15 @@ private fun ListsContentRoom(container: AppContainer) {
                 val now = System.currentTimeMillis()
                 val did = deviceId.ifEmpty { container.syncEngine.deviceId() }
                 db.listItems().upsertAll(listOf(item.copy(checked = !item.checked, updatedAt = now, deviceId = did)))
+                // Bump the parent list so its envelope wins last-write-wins
+                // against older remote envelopes (same as addItem/createList).
+                db.shoppingLists().liveLists().firstOrNull { it.id == listId }?.let { parent ->
+                    db.shoppingLists().upsertAll(listOf(parent.copy(updatedAt = now, deviceId = did)))
+                }
                 reload()
                 enqueueList(listId)
                 refreshSnapshot()
-            }
+            }.onFailure { reportError("Couldn't update \"${item.name}\" (${it.message}).") }
         }
     }
 
@@ -293,7 +308,7 @@ private fun ListsContentRoom(container: AppContainer) {
                 reload()
                 enqueueList(list.id)
                 refreshSnapshot()
-            }
+            }.onFailure { reportError("Couldn't add item (${it.message}).") }
         }
     }
 
@@ -312,23 +327,23 @@ private fun ListsContentRoom(container: AppContainer) {
                 reload()
                 enqueueList(list.id)
                 refreshSnapshot()
-            }
+            }.onFailure { reportError("Couldn't create list (${it.message}).") }
         }
     }
 
     Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (lists.isEmpty()) {
             Text("No lists yet. Add a week to a list from the Plan tab.")
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = newListName,
-                    onValueChange = { newListName = it },
-                    label = { Text("New list name") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                )
-                Button(onClick = { createList() }) { Text("Create") }
-            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = newListName,
+                onValueChange = { newListName = it },
+                label = { Text("New list name") },
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+            )
+            Button(onClick = { createList() }) { Text("Create") }
         }
         lists.forEach { list ->
             val items = itemsByList[list.id].orEmpty().filterNot { it.deleted }
@@ -393,6 +408,7 @@ private fun ListsContentRoom(container: AppContainer) {
                 ) { Text("Add") }
             }
         }
+        SnackbarHost(hostState = snackbarHostState)
         Spacer(Modifier.height(56.dp))
     }
 }
@@ -492,6 +508,7 @@ private fun PantryContentRoom(container: AppContainer) {
     var showScanner by remember { mutableStateOf(false) }
     var manualCode by remember { mutableStateOf("") }
     var lastScan by remember { mutableStateOf<String?>(null) }
+    var pantryError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(db) {
         deviceId = runCatching { container.syncEngine.deviceId() }.getOrDefault("")
@@ -510,6 +527,7 @@ private fun PantryContentRoom(container: AppContainer) {
                 )
                 db.pantry().upsertAll(listOf(row))
                 lastScan = code
+                pantryError = null
                 items = db.pantry().liveItems()
                 container.syncEngine.enqueue(
                     SyncEnvelopeDto(
@@ -527,6 +545,10 @@ private fun PantryContentRoom(container: AppContainer) {
                         },
                     ),
                 )
+            }.onFailure {
+                val message = "Couldn't save scanned item ($it)."
+                Log.e("ShopScreen", message)
+                pantryError = message
             }
         }
     }
@@ -546,6 +568,7 @@ private fun PantryContentRoom(container: AppContainer) {
             OutlinedButton(onClick = { showScanner = true }) { Text("Scan") }
         }
         lastScan?.let { Text("Scanned: $it", style = MaterialTheme.typography.labelMedium) }
+        pantryError?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error) }
         Text("Needs attention", style = MaterialTheme.typography.titleSmall)
         if (flagged.isEmpty()) Text("Nothing expiring or low.", color = MaterialTheme.colorScheme.secondary)
         flagged.forEach { PantryRow(it) }

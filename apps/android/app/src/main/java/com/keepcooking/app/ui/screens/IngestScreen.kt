@@ -66,7 +66,7 @@ data class IngestDraft(
 fun IngestScreen(
     baseUrl: String = "https://keep-cooking-api.pshippy-245.workers.dev/",
     clipboardText: String? = null,
-    onSaveRecipe: (IngestDraft) -> String = { "Saved “${it.title}”" },
+    onSaveRecipe: suspend (IngestDraft) -> String = { "Saved “${it.title}”" },
 ) {
     var tab by remember { mutableStateOf(0) }
     var bannerUrl by remember(clipboardText) {
@@ -108,7 +108,7 @@ fun IngestScreen(
 private fun ClipTab(
     baseUrl: String,
     prefill: String?,
-    onSaveRecipe: (IngestDraft) -> String,
+    onSaveRecipe: suspend (IngestDraft) -> String,
 ) {
     var urlText by remember(prefill) { mutableStateOf(prefill ?: "") }
     var report by remember { mutableStateOf<ClipReport?>(null) }
@@ -164,15 +164,17 @@ private fun ClipTab(
                     val canSave = isSavableTitle(title)
                     Button(
                         onClick = {
-                            savedMessage = onSaveRecipe(
-                                IngestDraft(
-                                    title = cleanTitle(title),
-                                    ingredientLines = ingredientLines.split("\n").map { it.trim() }.filter { it.isNotEmpty() },
-                                    stepLines = stepLines.split("\n").map { it.trim() }.filter { it.isNotEmpty() },
-                                    source = rep.recipe.source ?: "clip",
-                                    sourceUrl = rep.recipe.sourceUrl ?: urlText,
-                                ),
-                            )
+                            scope.launch {
+                                savedMessage = onSaveRecipe(
+                                    IngestDraft(
+                                        title = cleanTitle(title),
+                                        ingredientLines = ingredientLines.split("\n").map { it.trim() }.filter { it.isNotEmpty() },
+                                        stepLines = stepLines.split("\n").map { it.trim() }.filter { it.isNotEmpty() },
+                                        source = rep.recipe.source ?: "clip",
+                                        sourceUrl = rep.recipe.sourceUrl ?: urlText,
+                                    ),
+                                )
+                            }
                         },
                         enabled = canSave && savedMessage == null && !isLoading && !reportStale,
                     ) { Text("Save recipe") }
@@ -185,7 +187,7 @@ private fun ClipTab(
 }
 
 @Composable
-private fun CaptionsTab(baseUrl: String, onSaveRecipe: (IngestDraft) -> String) {
+private fun CaptionsTab(baseUrl: String, onSaveRecipe: suspend (IngestDraft) -> String) {
     var platform by remember { mutableStateOf(ClipSource.TIKTOK) }
     var linkText by remember { mutableStateOf("") }
     var captionText by remember { mutableStateOf("") }
@@ -264,15 +266,17 @@ private fun CaptionsTab(baseUrl: String, onSaveRecipe: (IngestDraft) -> String) 
                     val canSave = isSavableTitle(title)
                     Button(
                         onClick = {
-                            savedMessage = onSaveRecipe(
-                                IngestDraft(
-                                    title = cleanTitle(title),
-                                    ingredientLines = ingredientLines.split("\n").map { it.trim() }.filter { it.isNotEmpty() },
-                                    stepLines = stepLines.split("\n").map { it.trim() }.filter { it.isNotEmpty() },
-                                    source = "caption:${platform.raw.lowercase()}",
-                                    sourceUrl = linkText,
-                                ),
-                            )
+                            scope.launch {
+                                savedMessage = onSaveRecipe(
+                                    IngestDraft(
+                                        title = cleanTitle(title),
+                                        ingredientLines = ingredientLines.split("\n").map { it.trim() }.filter { it.isNotEmpty() },
+                                        stepLines = stepLines.split("\n").map { it.trim() }.filter { it.isNotEmpty() },
+                                        source = "caption:${platform.raw.lowercase()}",
+                                        sourceUrl = linkText,
+                                    ),
+                                )
+                            }
                         },
                         enabled = canSave && savedMessage == null && !isLoading && !reportStale,
                     ) { Text("Save recipe") }
@@ -285,7 +289,8 @@ private fun CaptionsTab(baseUrl: String, onSaveRecipe: (IngestDraft) -> String) 
 }
 
 @Composable
-private fun OcrTab(onSaveRecipe: (IngestDraft) -> String) {
+private fun OcrTab(onSaveRecipe: suspend (IngestDraft) -> String) {
+    val scope = rememberCoroutineScope()
     var recognizedText by remember { mutableStateOf("") }
     var title by remember { mutableStateOf("") }
     var ingredientLines by remember { mutableStateOf("") }
@@ -333,16 +338,18 @@ private fun OcrTab(onSaveRecipe: (IngestDraft) -> String) {
                 )
                 Button(
                     onClick = {
-                        savedMessage = onSaveRecipe(
-                            IngestDraft(
-                                title = cleanTitle(title),
-                                ingredientLines = ingredientLines.split("\n").map { it.trim() }.filter { it.isNotEmpty() },
-                                stepLines = stepLines.split("\n").map { it.trim() }.filter { it.isNotEmpty() },
-                                source = "ocr",
-                                sourceUrl = "",
-                            ),
-                        )
-                        notice = null
+                        scope.launch {
+                            savedMessage = onSaveRecipe(
+                                IngestDraft(
+                                    title = cleanTitle(title),
+                                    ingredientLines = ingredientLines.split("\n").map { it.trim() }.filter { it.isNotEmpty() },
+                                    stepLines = stepLines.split("\n").map { it.trim() }.filter { it.isNotEmpty() },
+                                    source = "ocr",
+                                    sourceUrl = "",
+                                ),
+                            )
+                            notice = null
+                        }
                     },
                     enabled = canSave && savedMessage == null,
                 ) { Text("Save recipe") }

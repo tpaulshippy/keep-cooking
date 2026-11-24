@@ -1,6 +1,10 @@
 package com.keepcooking.app.ui.screens
 
+import android.Manifest
+import android.os.Build
 import android.view.View
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -58,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.keepcooking.app.cook.CookActivityStub
 import com.keepcooking.app.cook.CookSession
+import com.keepcooking.app.cook.CookTimerPermissions
 import com.keepcooking.app.cook.KeepAwake
 import com.keepcooking.app.cook.ScaleVoiceCommand
 import com.keepcooking.app.cook.VoiceCommand
@@ -110,7 +115,8 @@ fun CookScreen(onExit: () -> Unit = {}) {
     val session = remember { CookSession(stepCount = steps.size).also { it.loadTimers(steps.map { s -> s.text }) } }
     val context = LocalContext.current
 
-    // Publish the Now Cooking payload so the watch companion + widgets can follow along.
+    // Publish the Now Cooking payload so the watch companion can follow along.
+    // (Widgets never read this payload — they render SnapshotWriter snapshots.)
     LaunchedEffect(Unit) {
         runCatching {
             WatchStore.writeNowCooking(
@@ -124,6 +130,11 @@ fun CookScreen(onExit: () -> Unit = {}) {
             )
         }
     }
+    // Clear the payload on session exit (any exit: back nav, tab switch,
+    // StopCooking) so a stale recipe doesn't linger on the watch.
+    DisposableEffect(Unit) {
+        onDispose { runCatching { WatchStore.clear(context) } }
+    }
     var stepIndex by remember { mutableStateOf(0) }
     var targetServings by remember { mutableStateOf(baseServings) }
     var ingredientsExpanded by remember { mutableStateOf(true) }
@@ -135,6 +146,30 @@ fun CookScreen(onExit: () -> Unit = {}) {
     var listening by remember { mutableStateOf(false) }
     var voiceInput by remember { mutableStateOf("") }
     val scheduledIds = remember { mutableStateListOf<String>() }
+
+    // POST_NOTIFICATIONS (API 33+) is off by default: request it before the UI
+    // promises alerts, and gate alert copy on the real alarm state.
+    var notificationsGranted by remember { mutableStateOf(CookTimerPermissions.notificationsGranted(context)) }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted -> notificationsGranted = granted }
+    fun ensureNotificationPermission() {
+        if (CookTimerPermissions.notificationsGranted(context)) {
+            notificationsGranted = true
+            return
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+    // Honest timer copy: promise an alert only when one can actually fire.
+    fun timerStartedCopy(label: String?): String =
+        if (CookActivityStub.hasRealAlarms(context)) {
+            if (label == null) "Timer started — we'll alert you."
+            else "Timer started for $label — we'll alert you."
+        } else {
+            "Timer noted — enable notifications for alerts."
+        }
 
     val factor = scaleFactor(baseServings, targetServings)
     val progress = (stepIndex + 1).toFloat() / steps.size.coerceAtLeast(1)
@@ -221,20 +256,22 @@ fun CookScreen(onExit: () -> Unit = {}) {
                 if (cmd.listName == null) "Added to your list." else "Added to your ${cmd.listName} list.",
             )
             is VoiceCommand.StartTimer -> {
+                ensureNotificationPermission()
                 if (cmd.seconds == null) {
                     val t = session.timers.firstOrNull()
                     if (t == null) speak("No timers in these steps.")
                     else {
-                        scheduledIds += CookActivityStub.schedule(listOf(t))
+                        scheduledIds += CookActivityStub.schedule(context, listOf(t))
                         scheduledCount = scheduledIds.size
-                        speak("Timer started for ${t.label}.")
+                        speak(timerStartedCopy(t.label))
                     }
                 } else {
                     scheduledIds += CookActivityStub.schedule(
+                        context,
                         listOf(com.keepcooking.app.cook.ParsedTimer(cmd.seconds, cmd.label ?: "Voice timer")),
                     )
                     scheduledCount = scheduledIds.size
-                    speak("Timer started.")
+                    speak(timerStartedCopy(null))
                 }
             }
             VoiceCommand.StopSpeaking -> speak("")
@@ -388,17 +425,34 @@ fun CookScreen(onExit: () -> Unit = {}) {
                                 Text(durationString(timer.seconds), style = MaterialTheme.typography.bodySmall)
                             }
                             Button(onClick = {
-                                scheduledIds += CookActivityStub.schedule(listOf(timer))
+                                ensureNotificationPermission()
+                                scheduledIds += CookActivityStub.schedule(context, listOf(timer))
                                 scheduledCount = scheduledIds.size
                             }) { Text("Start") }
                         }
                     }
                     Button(onClick = {
-                        scheduledIds.addAll(CookActivityStub.schedule(session.timers))
+                        ensureNotificationPermission()
+                        scheduledIds.addAll(CookActivityStub.schedule(context, session.timers))
                         scheduledCount = scheduledIds.size
                     }, modifier = Modifier.fillMaxWidth()) { Text("Start all timers") }
                 }
                 if (scheduledCount > 0) Text("$scheduledCount timer(s) scheduled", style = MaterialTheme.typography.labelSmall)
+                if (!notificationsGranted) {
+                    Text(
+                        "Timer noted — enable notifications for alerts.",
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+                if (!CookTimerPermissions.canScheduleExact(context)) {
+                    Text(
+                        "Exact alarms aren't granted, so timers may fire late.",
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                    TextButton(onClick = {
+                        runCatching { context.startActivity(CookTimerPermissions.exactAlarmSettingsIntent()) }
+                    }) { Text("Allow exact alarms") }
+                }
             } }
 
             // Keep-awake pill.

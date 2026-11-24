@@ -219,7 +219,10 @@ private fun voiceCompoundWordNumber(words: List<String>): Double? {
 
 /** Sums every duration segment in free text ("1 hour 30 minutes" -> 5400). Numeric ranges use the UPPER bound. */
 private fun voiceTimerSeconds(text: String): Int? {
-    var total = 0L
+    // Double accumulator: huge spoken durations (e.g. "9999999999 hours")
+    // would wrap a Long past the 1..43200 range check; Double holds them until
+    // the same range test below rejects them.
+    var total = 0.0
     var found = false
     val numeric = Regex(
         """(\d+(?:\.\d+)?)\s*(?:(?:[-–]|to)\s*(\d+(?:\.\d+)?))?\s*(hours?|hrs?|minutes?|mins?|seconds?|secs?)\b""",
@@ -230,7 +233,7 @@ private fun voiceTimerSeconds(text: String): Int? {
         val secondStr = m.groupValues[2]
         val numStr = if (secondStr.isNotEmpty()) secondStr else m.groupValues[1]
         val unit = m.groupValues[3].lowercase()
-        voiceSecondsRaw(numStr.toDoubleOrNull() ?: continue, unit)?.let { total += it; found = true }
+        voiceSecondsRaw(numStr.toDoubleOrNull() ?: continue, unit)?.let { total += it.toDouble(); found = true }
     }
     val consumedRanges = consumed.map { it.range }
     // Char spans of whitespace-separated tokens, to avoid double-counting numeric hits.
@@ -259,7 +262,7 @@ private fun voiceTimerSeconds(text: String): Int? {
         }
         for (length in window.size downTo 1) {
             val num = voiceCompoundWordNumber(window.takeLast(length)) ?: continue
-            voiceSecondsRaw(num, token)?.let { total += it; found = true }
+            voiceSecondsRaw(num, token)?.let { total += it.toDouble(); found = true }
             break
         }
     }

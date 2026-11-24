@@ -71,31 +71,31 @@ private suspend fun saveIngestDraft(container: AppContainer, draft: IngestDraft)
             deviceId = deviceId,
         ),
     )
-    db.ingredients().upsertAll(
-        draft.ingredientLines.mapIndexed { i, line ->
-            IngredientEntity(
-                id = UUID.randomUUID().toString(),
-                recipeId = id,
-                name = line,
-                display = line,
-                position = i,
-                updatedAt = now,
-                deviceId = deviceId,
-            )
-        },
-    )
-    db.steps().upsertAll(
-        draft.stepLines.mapIndexed { i, line ->
-            StepEntity(
-                id = UUID.randomUUID().toString(),
-                recipeId = id,
-                position = i,
-                text = line,
-                updatedAt = now,
-                deviceId = deviceId,
-            )
-        },
-    )
+    // Stable child identities: each ingredient/step id is minted once and reused
+    // in both the Room rows and the sync payload copies below.
+    val ingredientRows = draft.ingredientLines.mapIndexed { i, line ->
+        IngredientEntity(
+            id = UUID.randomUUID().toString(),
+            recipeId = id,
+            name = line,
+            display = line,
+            position = i,
+            updatedAt = now,
+            deviceId = deviceId,
+        )
+    }
+    db.ingredients().upsertAll(ingredientRows)
+    val stepRows = draft.stepLines.mapIndexed { i, line ->
+        StepEntity(
+            id = UUID.randomUUID().toString(),
+            recipeId = id,
+            position = i,
+            text = line,
+            updatedAt = now,
+            deviceId = deviceId,
+        )
+    }
+    db.steps().upsertAll(stepRows)
     container.syncEngine.enqueue(
         SyncEnvelopeDto(
             id = id,
@@ -113,12 +113,12 @@ private suspend fun saveIngestDraft(container: AppContainer, draft: IngestDraft)
                 put(
                     "ingredients",
                     JsonArray(
-                        draft.ingredientLines.mapIndexed { i, line ->
+                        ingredientRows.map { row ->
                             buildJsonObject {
-                                put("id", UUID.randomUUID().toString())
-                                put("name", line)
-                                put("display", line)
-                                put("position", i)
+                                put("id", row.id)
+                                put("name", row.name)
+                                put("display", row.display)
+                                put("position", row.position)
                             }
                         },
                     ),
@@ -126,11 +126,11 @@ private suspend fun saveIngestDraft(container: AppContainer, draft: IngestDraft)
                 put(
                     "steps",
                     JsonArray(
-                        draft.stepLines.mapIndexed { i, line ->
+                        stepRows.map { row ->
                             buildJsonObject {
-                                put("id", UUID.randomUUID().toString())
-                                put("position", i)
-                                put("text", line)
+                                put("id", row.id)
+                                put("position", row.position)
+                                put("text", row.text)
                             }
                         },
                     ),
@@ -166,11 +166,12 @@ private suspend fun applyDuplicateMerge(
         ),
     )
     // Union ingredient display names into the survivor.
-    val existing = db.ingredients().forRecipe(plan.survivorId)
+    val survivorIngredients = db.ingredients().forRecipe(plan.survivorId)
+    val existing = survivorIngredients
         .map { it.name.lowercase().trim() }.toSet()
     val missing = plan.mergedIngredientNames.filter { it.lowercase().trim() !in existing }
     if (missing.isNotEmpty()) {
-        val pos = (db.ingredients().forRecipe(plan.survivorId).maxOfOrNull { it.position } ?: -1) + 1
+        val pos = (survivorIngredients.maxOfOrNull { it.position } ?: -1) + 1
         db.ingredients().upsertAll(
             missing.mapIndexed { i, name ->
                 IngredientEntity(
@@ -185,14 +186,39 @@ private suspend fun applyDuplicateMerge(
             },
         )
     }
+    // Union absorbed recipes' steps into the survivor (dedup by normalized text).
+    // NavGraph owns the merge write, so the transfer lives here — not in the UI layer.
+    val survivorSteps = db.steps().forRecipe(plan.survivorId)
+    val seenStepTexts = survivorSteps.map { it.text.lowercase().trim() }.toMutableSet()
+    var stepPos = (survivorSteps.maxOfOrNull { it.position } ?: -1) + 1
+    val absorbedSteps = mutableListOf<StepEntity>()
+    for (loserId in plan.absorbedIds) {
+        for (step in db.steps().forRecipe(loserId)) {
+            val key = step.text.lowercase().trim()
+            if (key.isNotEmpty() && seenStepTexts.add(key)) {
+                absorbedSteps.add(
+                    StepEntity(
+                        id = UUID.randomUUID().toString(),
+                        recipeId = plan.survivorId,
+                        position = stepPos++,
+                        text = step.text,
+                        updatedAt = now,
+                        deviceId = deviceId,
+                    ),
+                )
+            }
+        }
+    }
+    if (absorbedSteps.isNotEmpty()) db.steps().upsertAll(absorbedSteps)
     // Tombstone the absorbed losers so sync converges.
+    val mergedAtIso = Instant.ofEpochMilli(now).toString()
     for (loserId in plan.absorbedIds) {
         db.recipes().byId(loserId)?.let { loser ->
             db.recipes().upsert(loser.copy(deleted = true, updatedAt = now, deviceId = deviceId))
             container.syncEngine.enqueue(
                 SyncEnvelopeDto(
                     id = loserId,
-                    updatedAt = Instant.ofEpochMilli(now).toString(),
+                    updatedAt = mergedAtIso,
                     deviceId = deviceId,
                     deleted = true,
                     entity = "recipe",
@@ -204,6 +230,64 @@ private suspend fun applyDuplicateMerge(
             )
         }
     }
+    // Enqueue the full merged survivor envelope — loser tombstones alone leave
+    // other devices without the merged title/categories/ingredients/steps.
+    // Child ids are re-read from Room so payload copies match the rows exactly.
+    val updatedSurvivor = db.recipes().byId(plan.survivorId) ?: return
+    val finalIngredients = db.ingredients().forRecipe(plan.survivorId)
+    val finalSteps = db.steps().forRecipe(plan.survivorId)
+    val survivorCats = runCatching {
+        Json.parseToJsonElement(updatedSurvivor.categoriesJson)
+            .jsonArray.map { it.jsonPrimitive.content }
+    }.getOrDefault(emptyList())
+    container.syncEngine.enqueue(
+        SyncEnvelopeDto(
+            id = plan.survivorId,
+            updatedAt = mergedAtIso,
+            deviceId = deviceId,
+            entity = "recipe",
+            payload = buildJsonObject {
+                put("id", plan.survivorId)
+                put("householdId", updatedSurvivor.householdId)
+                put("title", updatedSurvivor.title)
+                put("recipeDescription", updatedSurvivor.recipeDescription)
+                put("servings", updatedSurvivor.servings)
+                updatedSurvivor.prepMinutes?.let { put("prepMinutes", it) }
+                updatedSurvivor.cookMinutes?.let { put("cookMinutes", it) }
+                updatedSurvivor.rating?.let { put("rating", it) }
+                put("source", updatedSurvivor.source)
+                put("sourceUrl", updatedSurvivor.sourceUrl)
+                put("categories", JsonArray(survivorCats.map { JsonPrimitive(it) }))
+                updatedSurvivor.photoOriginal?.let { put("photoOriginal", it) }
+                updatedSurvivor.photoThumb?.let { put("photoThumb", it) }
+                put(
+                    "ingredients",
+                    JsonArray(
+                        finalIngredients.map { ing ->
+                            buildJsonObject {
+                                put("id", ing.id)
+                                put("name", ing.name)
+                                put("display", ing.display)
+                                put("position", ing.position)
+                            }
+                        },
+                    ),
+                )
+                put(
+                    "steps",
+                    JsonArray(
+                        finalSteps.map { step ->
+                            buildJsonObject {
+                                put("id", step.id)
+                                put("position", step.position)
+                                put("text", step.text)
+                            }
+                        },
+                    ),
+                )
+            },
+        ),
+    )
 }
 
 /** App nav graph. Views never touch the network directly — they call SyncEngine via ViewModels. */
@@ -279,7 +363,35 @@ fun KeepCookingNav() {
                     onMerge = { _, plan ->
                         scope.launch {
                             runCatching { applyDuplicateMerge(container, plan) }
-                            rows = rows.filterNot { it.recipeId in plan.absorbedIds }
+                            // Refresh the survivor row from Room so the merged title,
+                            // categories, ingredients, steps, rating and photos show
+                            // immediately; drop the tombstoned losers.
+                            rows = runCatching {
+                                val updated = container.db.recipes().byId(plan.survivorId)
+                                rows.mapNotNull { row ->
+                                    when {
+                                        row.recipeId in plan.absorbedIds -> null
+                                        row.recipeId == plan.survivorId && updated != null -> {
+                                            val ings = container.db.ingredients().forRecipe(row.recipeId)
+                                            val steps = container.db.steps().forRecipe(row.recipeId)
+                                            val cats = runCatching {
+                                                Json.parseToJsonElement(updated.categoriesJson)
+                                                    .jsonArray.map { it.jsonPrimitive.content }
+                                            }.getOrDefault(row.categories)
+                                            row.copy(
+                                                title = updated.title,
+                                                categories = cats,
+                                                ingredientNames = ings.map { it.name },
+                                                stepTexts = steps.map { it.text },
+                                                rating = updated.rating ?: row.rating,
+                                                photoOriginal = updated.photoOriginal,
+                                                photoThumb = updated.photoThumb,
+                                            )
+                                        }
+                                        else -> row
+                                    }
+                                }
+                            }.getOrDefault(rows.filterNot { it.recipeId in plan.absorbedIds })
                         }
                     },
                 )
@@ -298,10 +410,17 @@ fun KeepCookingNav() {
                 IngestScreen(
                     clipboardText = clipText,
                     onSaveRecipe = { draft ->
-                        scope.launch {
-                            runCatching { saveIngestDraft(container, draft) }
-                        }
-                        "Saved “${draft.title}”"
+                        // Room/outbox writes await here (called from a coroutine)
+                        // so a failure surfaces in the Ingest UI instead of a
+                        // premature "Saved".
+                        runCatching { saveIngestDraft(container, draft) }
+                            .fold(
+                                onSuccess = { "Saved “${draft.title}”" },
+                                onFailure = { e ->
+                                    "Couldn't save “${draft.title}” " +
+                                        "(${e.message ?: "unknown error"}). Try again."
+                                },
+                            )
                     },
                 )
             }

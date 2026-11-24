@@ -13,6 +13,14 @@ import java.nio.charset.StandardCharsets
  *     quantities scaled (plan.servings vs recipe.servings) and summed by
  *     (lowercased name + unit). Display strings use scaler fractions.
  *   - [planFeedSubscribeUrl]: https://.../plans/feed.ics -> webcal:// subscribe URL.
+ *
+ * INTENTIONAL DIVERGENCE from iOS aggregateWeekToList (cubic round-2 P2;
+ * mirroring to Swift deferred — do not "fix" one side without the other):
+ * null-quantity (unmeasured) dedupe is per (name, unit) here, but per
+ * name only on iOS (it ignores the unit when checking for an existing
+ * unmeasured line). E.g. "Salt" by weight vs by volume stay two lines on
+ * Android but collapse to the first occurrence's line on iOS. Android is
+ * stricter (more granular); measured-line merging is identical.
  */
 
 /** One recipe's contribution to a shopping list. */

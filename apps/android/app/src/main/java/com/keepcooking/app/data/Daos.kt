@@ -33,6 +33,10 @@ interface IngredientDao {
 
     @Query("DELETE FROM ingredients WHERE recipeId = :recipeId")
     suspend fun deleteForRecipe(recipeId: String)
+
+    /** Targeted delete for full-set shell reconciliation (keeps per-child LWW survivors). */
+    @Query("DELETE FROM ingredients WHERE recipeId = :recipeId AND id = :id")
+    suspend fun deleteById(recipeId: String, id: String)
 }
 
 @Dao
@@ -45,6 +49,10 @@ interface StepDao {
 
     @Query("DELETE FROM steps WHERE recipeId = :recipeId")
     suspend fun deleteForRecipe(recipeId: String)
+
+    /** Targeted delete for full-set shell reconciliation (keeps per-child LWW survivors). */
+    @Query("DELETE FROM steps WHERE recipeId = :recipeId AND id = :id")
+    suspend fun deleteById(recipeId: String, id: String)
 }
 
 @Dao

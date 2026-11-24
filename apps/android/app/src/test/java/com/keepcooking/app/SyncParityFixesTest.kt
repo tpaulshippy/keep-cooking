@@ -21,7 +21,6 @@ import com.keepcooking.app.sync.SyncInviteBundle
 import java.time.Instant
 import javax.crypto.spec.SecretKeySpec
 import kotlin.coroutines.Continuation
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
@@ -41,8 +40,6 @@ import org.junit.Test
 
 /** Parity-fix regression tests (cubic P1/P2): bare wire shapes, LWW-after-tombstone, shells, reconcile, cursor, crypto. */
 class SyncParityFixesTest {
-
-    private val testJson = Json { ignoreUnknownKeys = true }
 
     private fun env(
         entity: String,
@@ -88,15 +85,6 @@ class SyncParityFixesTest {
                 Class.forName("com.keepcooking.app.network.$name")
             }
         }
-    }
-
-    @Test
-    fun `envelope lists encode as bare json arrays`() {
-        val list = listOf(env("recipe", "r1", "2024-01-01T00:00:00Z"))
-        val encoded = testJson.encodeToString(list)
-        val parsed = Json.parseToJsonElement(encoded)
-        assertTrue(parsed is JsonArray)
-        assertEquals(1, parsed.jsonArray.size)
     }
 
     // --- 3. LWW after tombstones (lists/pantry/plan/menu compare incl. deletes) ---

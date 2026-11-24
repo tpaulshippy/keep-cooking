@@ -53,9 +53,19 @@ object ShareHandler {
         return arr
     }
 
-    /** Drain + return the first non-blank URL (Ingest clip prefill). */
-    fun drainFirst(context: Context): String? =
-        drain(context).firstOrNull { it.isNotBlank() }
+    /** Return the first non-blank pending URL, preserving the rest of the queue. */
+    fun drainFirst(context: Context): String? {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val current = prefs.getStringSet(PENDING_KEY, emptySet())!!.toList()
+        val first = current.firstOrNull { it.isNotBlank() } ?: run {
+            if (current.isNotEmpty()) prefs.edit().remove(PENDING_KEY).apply()
+            return null
+        }
+        val rest = current.filterNot { it == first }.toSet()
+        if (rest.isEmpty()) prefs.edit().remove(PENDING_KEY).apply()
+        else prefs.edit().putStringSet(PENDING_KEY, rest).apply()
+        return first
+    }
 
     fun pending(context: Context): List<String> =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

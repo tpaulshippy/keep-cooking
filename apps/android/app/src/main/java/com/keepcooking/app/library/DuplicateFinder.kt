@@ -10,6 +10,18 @@ package com.keepcooking.app.library
  *   (c) stripped copy-markers agree ("Copy of X", "X (1)"), or
  *   (d) explicit reference ("dup of 09" names the other record), or
  *   (e) content signature Jaccard >= 0.8 with >= 6 content tokens per side.
+ *
+ * INTENTIONAL DIVERGENCE from iOS DuplicateFinder.swift (cubic round-2 P2;
+ * mirroring to Swift deferred — do not "fix" one side without the other):
+ *   - Blank titles: Android requires non-empty normalized titles on BOTH
+ *     sides before applying the title signals (a); iOS applies them
+ *     unconditionally, so two blank/punctuation-only titles match there
+ *     (jaccard([],[]) == 1.0). Android is stricter (never matches blanks).
+ *   - Exact-match references: Android's referencesOther only matches when
+ *     the fragment equals the other's full normalized title or an id
+ *     suffix; iOS additionally accepts a title-token hit or a title
+ *     substring (len >= 3), e.g. "dup of choc" matches "Chocolate Chip
+ *     Cookies" on iOS but not on Android. Android is stricter.
  */
 
 /** Minimal surface the finder needs. */

@@ -35,7 +35,8 @@ private enum CookPendingHandoff {
     /// Set while a CookModeView session is on screen (appear/disappear);
     /// nav intents require it so they never claim a step change when no
     /// live session can consume the handoff.
-    static let sessionActiveKey = "cook.sessionActive"
+    /// Single source of truth: CookModeView.sessionActiveKey.
+    static let sessionActiveKey = CookModeView.sessionActiveKey
 
     static func write(_ value: String) {
         UserDefaults.standard.set(value, forKey: key)
@@ -205,8 +206,8 @@ struct AddToListIntent: AppIntent {
 // LIMITATION: AppIntent extensions run in a separate process with no access
 // to the live in-memory CookSession / CookVoiceManager. These intents are
 // therefore handoff-based: each one requires an active Cook session
-// (`CookPendingHandoff.requireActiveSession`, backed by the
-// "cook.sessionActive" flag CookModeView sets on appear/disappear) and then
+// (`CookPendingHandoff.requireActiveSession`, backed by the shared
+// CookModeView.sessionActiveKey flag CookModeView sets on appear/disappear) and then
 // writes UserDefaults.standard key "cook.pendingCommand" — "next" /
 // "previous" / "repeat" / "crossoff:<normalized-name>" — and opens the app
 // (openAppWhenRun=true) where the live session consumes + clears the

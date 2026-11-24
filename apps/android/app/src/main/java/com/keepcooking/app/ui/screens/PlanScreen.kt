@@ -117,7 +117,7 @@ fun PlanScreen(container: AppContainer? = null) {
         menus = db.menus().liveMenus()
         val recs = db.recipes().liveRecipes()
         recipesById = recs.associateBy { it.id }
-        ingredientsByRecipe = recs.associate { it.id to db.ingredients().forRecipe(it.id) }
+        ingredientsByRecipe = recs.associate { it.id to db.ingredients().forRecipe(it.id).filterNot { ing -> ing.deleted } }
     }
 
     suspend fun refreshSnapshot() {
@@ -206,19 +206,25 @@ fun PlanScreen(container: AppContainer? = null) {
                             )
                         }
                     } else {
-                        val name = plan.note.ifBlank {
-                            plan.recipeId?.let { recipesById[it]?.title } ?: plan.mealRaw
+                        // Blank plan shells (no note and no resolvable recipe
+                        // title) are skipped — falling back to mealRaw here
+                        // created grocery lines literally named "dinner".
+                        val recipeTitle = plan.recipeId?.let { recipesById[it]?.title }.orEmpty()
+                        val name = plan.note.ifBlank { recipeTitle }
+                        if (name.isBlank()) {
+                            emptyList()
+                        } else {
+                            listOf(
+                                PlanGroceryInput(
+                                    name = name,
+                                    quantity = null,
+                                    unit = "",
+                                    baseServings = 4.0,
+                                    targetServings = plan.servings,
+                                    recipeId = plan.recipeId,
+                                ),
+                            )
                         }
-                        listOf(
-                            PlanGroceryInput(
-                                name = name,
-                                quantity = null,
-                                unit = "",
-                                baseServings = 4.0,
-                                targetServings = plan.servings,
-                                recipeId = plan.recipeId,
-                            ),
-                        )
                     }
                 }
                 val lines = aggregateWeekToList(inputs)
@@ -226,18 +232,36 @@ fun PlanScreen(container: AppContainer? = null) {
                     aggResult = "Nothing planned this week."
                     return@launch
                 }
-                val list = db.shoppingLists().liveLists().firstOrNull()
+                // Always target the list named "Weekly shop" (creating it when
+                // absent) instead of the most-recently-updated list, so
+                // multi-list households get deterministic results.
+                val liveLists = db.shoppingLists().liveLists().filterNot { it.deleted }
+                val list = liveLists.firstOrNull { it.name == "Weekly shop" }
                     ?: ShoppingListEntity(
                         id = UUID.randomUUID().toString(), householdId = "hh-demo",
                         name = "Weekly shop", updatedAt = now, deviceId = did,
                     ).also { db.shoppingLists().upsertAll(listOf(it)) }
-                val items = lines.map { line ->
+                // Reconcile before inserting so repeated taps don't duplicate
+                // lines (fresh UUIDs never match). Choice: insert-only-missing,
+                // matched by lowercase name + provenance recipeId; quantities
+                // are display strings ("1½ cup") so re-summing would require
+                // fragile parsing. To re-scale a week, clear the list first.
+                val existingKeys = db.listItems().forList(list.id)
+                    .filterNot { it.deleted }
+                    .map { it.name.lowercase() to it.recipeId }
+                    .toSet()
+                val fresh = lines.filterNot { (it.name.lowercase() to it.recipeIds.firstOrNull()) in existingKeys }
+                if (fresh.isEmpty()) {
+                    aggResult = "${list.name} is already up to date (${lines.size} line(s))."
+                    return@launch
+                }
+                val items = fresh.map { line ->
                     ListItemEntity(
                         id = UUID.randomUUID().toString(),
                         listId = list.id,
                         name = line.name,
                         quantity = if (line.totalQuantity != null) {
-                            "${line.totalQuantity} ${line.unit}".trim()
+                            "${fractionDisplayString(line.totalQuantity)} ${line.unit}".trim()
                         } else {
                             line.unit
                         },
@@ -268,6 +292,7 @@ fun PlanScreen(container: AppContainer? = null) {
                                             put("id", item.id)
                                             put("name", item.name)
                                             put("quantity", item.quantity)
+                                            put("aisle", item.aisle)
                                             put("checked", item.checked)
                                             item.recipeId?.let { put("recipeId", it) }
                                         }
@@ -278,20 +303,23 @@ fun PlanScreen(container: AppContainer? = null) {
                     ),
                 )
                 refreshSnapshot()
-                aggResult = "${lines.size} line(s) saved to ${list.name}: ${lines.joinToString { it.display }}"
+                aggResult = "${fresh.size} line(s) saved to ${list.name}: ${fresh.joinToString { it.display }}"
             }.onFailure {
                 aggResult = "Couldn't add week to list (${it.message})."
             }
         }
     }
 
-    val entries = remember {
-        val monday = LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-        listOf(
-            DemoPlanEntry("p1", monday, "dinner", "Weeknight Pasta", "", 4.0),
-            DemoPlanEntry("p2", monday.plusDays(1), "dinner", "Tacos", "", 6.0),
-            DemoPlanEntry("p3", monday.plusDays(3), "lunch", null, "Leftovers", null),
-            DemoPlanEntry("p4", monday.plusDays(5), "breakfast", "Pancakes", "", 2.0),
+    // Rendered calendar entries derive from Room `plans` (reactive to menu
+    // applies / sync) instead of hard-coded demo entries.
+    val entries: List<DemoPlanEntry> = plans.filterNot { it.deleted }.map { plan ->
+        DemoPlanEntry(
+            id = plan.id,
+            date = plan.localDate(),
+            meal = plan.mealRaw,
+            recipeTitle = plan.recipeId?.let { recipesById[it]?.title },
+            note = plan.note,
+            servings = plan.servings,
         )
     }
     val demoMenus = remember {
@@ -448,6 +476,8 @@ fun PlanScreen(container: AppContainer? = null) {
                         OutlinedButton(onClick = {
                             runCatching {
                                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                            }.onFailure {
+                                aggResult = "No calendar app found to open the feed."
                             }
                         }) { Text("Open in Calendar") }
                     }

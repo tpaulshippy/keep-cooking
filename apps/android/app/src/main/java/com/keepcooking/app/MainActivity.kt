@@ -15,6 +15,7 @@ import com.keepcooking.app.share.ShareHandler
 import com.keepcooking.app.shortcuts.AppShortcuts
 import com.keepcooking.app.ui.theme.KeepCookingTheme
 import com.keepcooking.app.widgets.SnapshotWriter
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
@@ -30,10 +31,18 @@ class MainActivity : ComponentActivity() {
         container.seedIfNeeded()
         // Only handle the launch intent once — rotation recreates the activity
         // with the same intent, which must not re-enqueue shortcut work.
-        if (savedInstanceState == null) handleIncoming(intent)
-        // Refresh widget/watch snapshot after setup (covers seed + plan/list writes).
-        lifecycleScope.launch {
-            runCatching { SnapshotWriter.refresh(this@MainActivity, container.db) }
+        if (savedInstanceState == null) {
+            val shortcutWork = handleIncoming(intent)
+            // Refresh the widget/watch snapshot only AFTER shortcut work completes,
+            // so an ADD_TO_LIST shortcut's Room write is visible to the widget.
+            lifecycleScope.launch {
+                runCatching { shortcutWork?.join() }
+                runCatching { SnapshotWriter.refresh(this@MainActivity, container.db) }
+            }
+        } else {
+            lifecycleScope.launch {
+                runCatching { SnapshotWriter.refresh(this@MainActivity, container.db) }
+            }
         }
         setContent {
             KeepCookingTheme {
@@ -53,8 +62,8 @@ class MainActivity : ComponentActivity() {
         handleIncoming(intent)
     }
 
-    private fun handleIncoming(intent: Intent?) {
-        if (intent == null) return
+    private fun handleIncoming(intent: Intent?): Job? {
+        if (intent == null) return null
         // 1. Shared URL/text → pending clip intake for Ingest/Clip.
         ShareHandler.extractFrom(intent)?.let { ShareHandler.enqueue(this, it) }
         // 2. App shortcut actions → Room writes (offline; sync picks them up).
@@ -75,7 +84,7 @@ class MainActivity : ComponentActivity() {
                 AppShortcuts.EXTRA_ITEM to intent.getStringExtra(AppShortcuts.EXTRA_ITEM),
                 AppShortcuts.EXTRA_QUANTITY to intent.getStringExtra(AppShortcuts.EXTRA_QUANTITY),
             )
-            lifecycleScope.launch {
+            return lifecycleScope.launch {
                 val deviceId = container.syncEngine.deviceId()
                 val message = AppShortcuts.handleShortcutAction(
                     this@MainActivity, container.db, deviceId, action, extras,
@@ -83,5 +92,6 @@ class MainActivity : ComponentActivity() {
                 message?.let { Toast.makeText(this@MainActivity, it, Toast.LENGTH_LONG).show() }
             }
         }
+        return null
     }
 }

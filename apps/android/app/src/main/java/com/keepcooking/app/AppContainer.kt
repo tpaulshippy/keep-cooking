@@ -1,6 +1,8 @@
 package com.keepcooking.app
 
 import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.room.Room
 import com.keepcooking.app.data.AppDatabase
@@ -42,6 +44,13 @@ class AppContainer(private val context: Context) {
     }
 
     val recipeExporter: RecipeExporter by lazy { RecipeExporter(context) }
+
+    /**
+     * Shared "keepcooking" DataStore. Screens must reuse this instead of declaring
+     * their own `preferencesDataStore(name = "keepcooking")` delegate — two live
+     * instances on one file diverge (stale reads) and risk write corruption.
+     */
+    val appDataStore: DataStore<Preferences> by lazy { context.prefsDataStore }
 
     /** E2E metadata store (non-secret) + secret store (syncCode only) — parity with iOS E2EKeyStore. */
     val e2eMetaStore by lazy { context.e2eMetaDataStore }

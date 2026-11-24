@@ -104,8 +104,10 @@ class SyncEngine(
 
         // 1. Pull + LWW-apply. Pulled winners reconcile against the outbox:
         //    a pending row the winner supersedes (same id, winner newer-or-equal)
-        //    is dropped instead of being pushed back up.
-        val since = dataStore.data.map { it[KEY_LAST_SYNC] }.first()
+        //    is dropped instead of being pushed back up. The cursor overlaps by
+        //    one tick (strict `updatedAt >` server filter would otherwise skip
+        //    later envelopes sharing the cursor timestamp); replay is safe via LWW.
+        val since = pullSinceValue()
         val household = "hh-demo"
         val pulled = api.pull(auth, since, household)
         var applied = 0
@@ -269,17 +271,26 @@ class SyncEngine(
      * its local row when it wins that per-child LWW. Tombstone markers
      * (deleted == true, sealed by older clients) are never resurrected —
      * tombstones fold by absence.
+     *
+     * Deletion by absence ONLY when the shell declares the incoming array a
+     * COMPLETE set ([shellChildSetIsFull]): local rows missing from a declared-
+     * full set are deleted when the set's stamp (shell header [remoteTs]) wins
+     * the per-child LWW against the local row. Partial shells (unmarked —
+     * every shell this client synthesizes) merge present children only, so a
+     * sparse update can never wipe unrelated rows.
      */
     private suspend fun mergeShellChildren(env: SyncEnvelopeDto, remoteTs: Long) {
         val p = env.payload
         val did = env.deviceId
         val incomingIngs = p["ingredients"]?.takeIf { it != JsonNull }?.jsonArray.orEmpty()
-        if (incomingIngs.isNotEmpty()) {
+        if (incomingIngs.isNotEmpty() || shellChildSetIsFull(p, "ingredients")) {
             val existing = database.ingredients().forRecipe(env.id).associateBy { it.id }
             val writes = mutableListOf<IngredientEntity>()
+            val seen = mutableSetOf<String>()
             for (el in incomingIngs) {
                 val o = runCatching { el.jsonObject }.getOrNull() ?: continue
                 val id = o["id"]?.takeIf { it != JsonNull }?.jsonPrimitive?.content ?: continue
+                seen += id
                 val stamp = shellChildWriteStamp(o, existing[id]?.updatedAt, remoteTs) ?: continue
                 writes += IngredientEntity(
                     id = id,
@@ -294,14 +305,23 @@ class SyncEngine(
                 )
             }
             if (writes.isNotEmpty()) database.ingredients().upsertAll(writes)
+            if (shellChildSetIsFull(p, "ingredients")) {
+                for ((id, row) in existing) {
+                    if (id !in seen && remoteTs >= row.updatedAt) {
+                        database.ingredients().deleteById(env.id, id)
+                    }
+                }
+            }
         }
         val incomingSteps = p["steps"]?.takeIf { it != JsonNull }?.jsonArray.orEmpty()
-        if (incomingSteps.isNotEmpty()) {
+        if (incomingSteps.isNotEmpty() || shellChildSetIsFull(p, "steps")) {
             val existing = database.steps().forRecipe(env.id).associateBy { it.id }
             val writes = mutableListOf<StepEntity>()
+            val seen = mutableSetOf<String>()
             for ((i, el) in incomingSteps.withIndex()) {
                 val o = runCatching { el.jsonObject }.getOrNull() ?: continue
                 val id = o["id"]?.takeIf { it != JsonNull }?.jsonPrimitive?.content ?: continue
+                seen += id
                 val stamp = shellChildWriteStamp(o, existing[id]?.updatedAt, remoteTs) ?: continue
                 writes += StepEntity(
                     id = id,
@@ -316,6 +336,13 @@ class SyncEngine(
                 )
             }
             if (writes.isNotEmpty()) database.steps().upsertAll(writes)
+            if (shellChildSetIsFull(p, "steps")) {
+                for ((id, row) in existing) {
+                    if (id !in seen && remoteTs >= row.updatedAt) {
+                        database.steps().deleteById(env.id, id)
+                    }
+                }
+            }
         }
     }
 
@@ -568,6 +595,22 @@ fun outboxIdsSuperseded(pending: List<SyncEnvelopeDto>, winners: List<SyncEnvelo
 fun isFoldedShell(env: SyncEnvelopeDto): Boolean =
     env.payload["_foldedShell"]?.takeIf { it != JsonNull }?.jsonPrimitive?.booleanOrNull == true
 
+/**
+ * True when a shell payload declares its embedded [key] array ("ingredients" /
+ * "steps") a COMPLETE set. Only then may the receiver treat locally-present
+ * but remotely-absent rows as deletes, still gated by per-child LWW against
+ * the set's stamp (see mergeShellChildren). Partial shells carry no marker
+ * and merge present children only.
+ */
+fun shellChildSetIsFull(payload: JsonObject, key: String): Boolean {
+    val marker = when (key) {
+        "ingredients" -> "_fullIngredients"
+        "steps" -> "_fullSteps"
+        else -> return false
+    }
+    return payload[marker]?.takeIf { it != JsonNull }?.jsonPrimitive?.booleanOrNull == true
+}
+
 /** Embedded child stamp (epoch millis) for per-child LWW; unstamped legacy entries sort as [Long.MIN_VALUE]. */
 fun shellChildStamp(entry: JsonObject): Long =
     entry["updatedAt"]?.takeIf { it != JsonNull }?.jsonPrimitive?.content?.toLongOrNull() ?: Long.MIN_VALUE
@@ -743,6 +786,23 @@ private fun childParentId(env: SyncEnvelopeDto): String? =
 
 private fun e2eChildMillis(iso: String): Long = parseE2EWire(iso)
 
+/**
+ * Carries full-set markers through folding. A non-shell base is the sender's
+ * complete recipe snapshot, so the merged arrays stay complete and the
+ * receiver may reconcile deletions by absence ([shellChildSetIsFull]).
+ * Shells are partial by construction and never gain markers.
+ */
+private fun stampFullMarkers(base: SyncEnvelopeDto, listKey: String, payload: JsonObject): JsonObject {
+    if (isFoldedShell(base)) return payload
+    val carriesArray = base.payload[listKey]?.takeIf { it != JsonNull }?.let {
+        runCatching { it.jsonArray }.getOrNull()
+    } != null
+    if (!carriesArray) return payload
+    val marker = if (listKey == "ingredients") "_fullIngredients" else "_fullSteps"
+    if (payload[marker]?.takeIf { it != JsonNull }?.jsonPrimitive?.booleanOrNull == true) return payload
+    return JsonObject(payload.toMutableMap().apply { put(marker, JsonPrimitive(true)) })
+}
+
 private fun foldChild(child: SyncEnvelopeDto, parent: SyncEnvelopeDto): SyncEnvelopeDto {
     val listKey = if (child.entity == "ingredient") "ingredients" else "steps"
     val list = parent.payload[listKey]?.takeIf { it != JsonNull }?.jsonArray?.toMutableList()
@@ -765,7 +825,7 @@ private fun foldChild(child: SyncEnvelopeDto, parent: SyncEnvelopeDto): SyncEnve
                     put(listKey, JsonArray(next))
                 })
                 val bumped = if (child.updatedAt > parent.updatedAt) child.updatedAt else parent.updatedAt
-                return parent.copy(payload = newPayload, updatedAt = bumped)
+                return parent.copy(payload = stampFullMarkers(parent, listKey, newPayload), updatedAt = bumped)
             }
         }
         return parent
@@ -798,7 +858,7 @@ private fun foldChild(child: SyncEnvelopeDto, parent: SyncEnvelopeDto): SyncEnve
         put(listKey, JsonArray(next))
     })
     val bumped = if (child.updatedAt > parent.updatedAt) child.updatedAt else parent.updatedAt
-    return parent.copy(payload = newPayload, updatedAt = bumped)
+    return parent.copy(payload = stampFullMarkers(parent, listKey, newPayload), updatedAt = bumped)
 }
 
 /** Strips embedded entries still carrying `deleted == true` (sealed by older clients). */

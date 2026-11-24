@@ -54,7 +54,15 @@ class SeedLoader(
     private suspend fun insertSeed(text: String): Boolean {
         val root = json.parseToJsonElement(text).jsonObject
         val id = root.string("id") ?: UUID.randomUUID().toString()
-        if (db.recipes().byId(id) != null) return false
+        val existing = db.recipes().byId(id)
+        if (existing != null) {
+            // A crash between the parent write and the child writes used to
+            // leave a parent with no children forever (the early skip below).
+            // Room @Transaction can't span these DAOs from here, so heal the
+            // child rows before skipping instead.
+            repairSeedChildren(id, root, existing.deviceId)
+            return false
+        }
         val now = root.string("updatedAt")?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() }
             ?: System.currentTimeMillis()
 
@@ -78,8 +86,26 @@ class SeedLoader(
             deleted = root.bool("deleted") ?: false,
         )
         db.recipes().upsert(recipe)
+        db.ingredients().upsertAll(seedIngredients(root, id, now, recipe.deviceId))
+        db.steps().upsertAll(seedSteps(root, id, now, recipe.deviceId))
+        return true
+    }
 
-        val ingredients = root["ingredients"]?.jsonArray.orEmpty().mapIndexed { i, el ->
+    /** Re-inserts child rows an interrupted seed never wrote (upserts are idempotent). */
+    private suspend fun repairSeedChildren(id: String, root: JsonObject, seedDeviceId: String) {
+        val now = System.currentTimeMillis()
+        val wantIngredients = seedIngredients(root, id, now, seedDeviceId)
+        if (wantIngredients.isNotEmpty() && db.ingredients().forRecipe(id).size < wantIngredients.size) {
+            db.ingredients().upsertAll(wantIngredients)
+        }
+        val wantSteps = seedSteps(root, id, now, seedDeviceId)
+        if (wantSteps.isNotEmpty() && db.steps().forRecipe(id).size < wantSteps.size) {
+            db.steps().upsertAll(wantSteps)
+        }
+    }
+
+    private fun seedIngredients(root: JsonObject, id: String, now: Long, seedDeviceId: String): List<IngredientEntity> =
+        root["ingredients"]?.jsonArray.orEmpty().mapIndexed { i, el ->
             val o = el.jsonObject
             IngredientEntity(
                 id = o.string("id") ?: UUID.randomUUID().toString(),
@@ -90,12 +116,12 @@ class SeedLoader(
                 display = o.string("display") ?: "",
                 position = o.int("position") ?: i,
                 updatedAt = now,
-                deviceId = recipe.deviceId,
+                deviceId = seedDeviceId,
             )
         }
-        db.ingredients().upsertAll(ingredients)
 
-        val steps = root["steps"]?.jsonArray.orEmpty().mapIndexed { i, el ->
+    private fun seedSteps(root: JsonObject, id: String, now: Long, seedDeviceId: String): List<StepEntity> =
+        root["steps"]?.jsonArray.orEmpty().mapIndexed { i, el ->
             val o = el.jsonObject
             StepEntity(
                 id = o.string("id") ?: UUID.randomUUID().toString(),
@@ -104,12 +130,9 @@ class SeedLoader(
                 text = o.string("text") ?: "",
                 timersJson = (o["timers"]?.jsonArray ?: JsonArray(emptyList())).toString(),
                 updatedAt = now,
-                deviceId = recipe.deviceId,
+                deviceId = seedDeviceId,
             )
         }
-        db.steps().upsertAll(steps)
-        return true
-    }
 
     // --- small JSON helpers (never throw) ---
     private fun JsonObject.string(key: String): String? =

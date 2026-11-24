@@ -7,7 +7,9 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
+import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import java.util.UUID
 
@@ -124,6 +126,15 @@ object KeepAwake {
  * [schedule] overload only mints stable IDs and records pending timers (kept
  * for unit tests and call sites without a Context).
  *
+ * Permission flow (lives in the Cook timer UI — CookScreen — not here: this
+ * file stays unit-testable with no Activity reference):
+ *   - POST_NOTIFICATIONS (API 33+, off by default): requested via an
+ *     ActivityResultLauncher before the UI promises alerts.
+ *   - SCHEDULE_EXACT_ALARM (API 31+): granted in Settings via
+ *     [CookTimerPermissions.exactAlarmSettingsIntent]; without it alarms fall
+ *     back to inexact (see armAlarm).
+ * [CookTimerPermissions] centralizes both checks so the UI can gate copy.
+ *
  * UI copy rule: claim a live alert ("Timer started — we'll alert you") only
  * when [CookActivityStub.hasRealAlarms] is true; otherwise use honest fallback
  * copy ("Timer noted — enable notifications for alerts") since the alarm may
@@ -219,12 +230,14 @@ object CookActivityStub {
     private fun armAlarm(context: Context, alarms: AlarmManager, id: String, timer: ParsedTimer) {
         val at = System.currentTimeMillis() + timer.seconds * 1000L
         val pi = timerPendingIntent(context, id, timer)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && alarms.canScheduleExactAlarms()) {
+        // Exact alarms need no grant below API 31; on S+ they need the user's
+        // SCHEDULE_EXACT_ALARM grant (see CookTimerPermissions). Without it use
+        // the best inexact fallback and show honest timer copy (see CookScreen).
+        // (minSdk 26: no pre-M branch — set() fallback would be unreachable.)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarms.canScheduleExactAlarms()) {
             alarms.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
         } else {
-            alarms.set(AlarmManager.RTC_WAKEUP, at, pi)
+            alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
         }
     }
 
@@ -242,6 +255,30 @@ object CookActivityStub {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
     }
+}
+
+/**
+ * Timer-permission checks shared by the Cook timer UI (CookScreen owns the
+ * ActivityResultLauncher flow; MainActivity owns none of it).
+ */
+object CookTimerPermissions {
+    /** POST_NOTIFICATIONS is install-granted below API 33; on 33+ check the runtime grant. */
+    fun notificationsGranted(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
+        return context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+    }
+
+    /** Exact alarms need no grant below API 31; on S+ check the Settings grant. */
+    fun canScheduleExact(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        val alarms = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return false
+        return alarms.canScheduleExactAlarms()
+    }
+
+    /** Opens the system exact-alarm grant screen (API 31+; no-op elsewhere). */
+    fun exactAlarmSettingsIntent(): Intent =
+        Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
 }
 
 /**

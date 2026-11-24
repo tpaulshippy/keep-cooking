@@ -108,7 +108,9 @@ class DuplicateFinderTest {
     }
 
     @Test fun `reference exact title matches`() {
-        val target = Stub("..000009", "Chocolate Chip Cookies")
-        assertTrue(isDuplicatePair(Stub("..000099", "dup of Chocolate Chip Cookies"), target))
+        // "Bread" vs "dup of Bread": Jaccard 1/3, edit similarity ~0.42,
+        // no content match — only the exact-reference branch can fire.
+        val target = Stub("t-bread", "Bread")
+        assertTrue(isDuplicatePair(Stub("r-dup", "dup of Bread"), target))
     }
 }

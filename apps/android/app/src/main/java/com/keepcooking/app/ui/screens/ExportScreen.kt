@@ -1,6 +1,8 @@
 package com.keepcooking.app.ui.screens
 
 import android.content.Intent
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,6 +30,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.keepcooking.app.AppContainer
@@ -83,11 +87,18 @@ fun ExportScreen(container: AppContainer, initialRecipeId: String = "") {
                     onValueChange = {},
                     readOnly = true,
                     trailingIcon = {
-                        IconButton(onClick = { expanded = !expanded }) {
+                        IconButton(
+                            onClick = { expanded = !expanded },
+                            modifier = Modifier.semantics { contentDescription = "Choose recipe" },
+                        ) {
                             Text(if (expanded) "▴" else "▾")
                         }
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { expanded = true },
+                    ),
                 )
                 DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                     recipes.forEach { (id, title) ->

@@ -36,13 +36,14 @@ private fun isCompoundGap(gap: String): Boolean {
 
 /**
  * Parses all durations out of a step text string.
- * Adjacent segments (separated only by whitespace/"and") sum into a single
+ * Adjacent segments (separated only by whitespace, "and", "+" or "&") sum into a single
  * timer; anything else (commas, words) starts a new timer whose label window
  * begins after the previous match.
  */
 fun parseTimers(from: String): List<ParsedTimer> {
     val out = mutableListOf<ParsedTimer>()
     var prevEnd = 0
+    var prevAccepted = false
     for (m in timerPattern.findAll(from)) {
         val firstStr = m.groupValues[1]
         val secondStr = m.groupValues[2]
@@ -63,15 +64,26 @@ fun parseTimers(from: String): List<ParsedTimer> {
         val gap = from.substring(prevEnd.coerceIn(0, from.length), start)
         val labelBoundary = prevEnd
         prevEnd = end
-        if (num == null || !num.isFinite()) continue
+        // A skipped (zero/unparseable) match still advances the label boundary
+        // so later labels stay tight, but it must NOT coalesce: only merge
+        // into the previous timer when the immediately preceding duration was
+        // accepted, otherwise later seconds join an unrelated earlier timer.
+        if (num == null || !num.isFinite()) {
+            prevAccepted = false
+            continue
+        }
         val seconds = kotlin.math.round(num * multiplier).toInt()
-        if (seconds <= 0) continue
-        if (out.isNotEmpty() && isCompoundGap(gap)) {
+        if (seconds <= 0) {
+            prevAccepted = false
+            continue
+        }
+        if (out.isNotEmpty() && prevAccepted && isCompoundGap(gap)) {
             val last = out.removeAt(out.lastIndex)
             out.add(last.copy(seconds = last.seconds + seconds))
         } else {
             out.add(ParsedTimer(seconds = seconds, label = labelBefore(matchStart = start, text = from, boundary = labelBoundary)))
         }
+        prevAccepted = true
     }
     return out
 }
