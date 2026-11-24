@@ -1,4 +1,4 @@
-# PASS 2 — Screen recordings of the real Smidgen app
+# PASS 2 — Screen recordings of the real Keep Cooking app
 
 Three MP4s of the REAL running app (no mockups), driven deterministically by
 a new XCUITest target while `simctl recordVideo` captures the simulator.
@@ -6,10 +6,10 @@ Branch: `xcode-full`. Only `apps/ios/**` + `docs/demos/**` touched.
 
 ## Device & OS
 
-- Simulator device for recordings: **Smidgen26** (created for this pass),
+- Simulator device for recordings: **KeepCooking26** (created for this pass),
   iPhone 16 Pro, **iOS 26.5** (`D54DE10D-E9FD-4E87-87C5-CCA9AF0BFB67`).
 - Build destination (per brief): `platform=iOS Simulator,OS=18.5,name=iPhone 16 Pro`
-  — `xcodebuild … -scheme Smidgen build` → **exit 0**.
+  — `xcodebuild … -scheme KeepCooking build` → **exit 0**.
 - Host: Xcode 27.2 (27B52), xcodegen 2.48.0, macOS 25G342.
 
 ### Why not 18.5 for the recording (honest deviation)
@@ -30,7 +30,7 @@ Genuine project fixes committed along the way (needed on every runtime):
 
 ## Driving decision
 
-**XCUITest, not scripted taps.** New `SmidgenUITests` target
+**XCUITest, not scripted taps.** New `KeepCookingUITests` target
 (`type: bundle.ui-testing`, in `project.yml`, generated via
 `xcodegen generate — no hand-edited pbxproj`) with
 `apps/ios/UITests/DemoFlowsUITests.swift`: three tests, one per video, with
@@ -47,20 +47,20 @@ git checkout xcode-full
 cd apps/ios && xcodegen generate          # picks up Seed resources + UITests target
 
 # build (OS=18.5 per brief)
-xcodebuild -project apps/ios/Smidgen.xcodeproj -scheme Smidgen \
+xcodebuild -project apps/ios/KeepCooking.xcodeproj -scheme KeepCooking \
   -destination 'platform=iOS Simulator,OS=18.5,name=iPhone 16 Pro' build   # exit 0
 
 # recording device (iOS 26.5 — see deviation note above)
-xcrun simctl create "Smidgen26" com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro \
+xcrun simctl create "KeepCooking26" com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro \
   com.apple.CoreSimulator.SimRuntime.iOS-26-5
 xcrun simctl boot D54DE10D-E9FD-4E87-87C5-CCA9AF0BFB67   # exit 0
 
 # video 1 (fresh install first)
 xcrun simctl uninstall D54DE10D-… org.smidgen.app        # exit 0
 nohup xcrun simctl io D54DE10D-… recordVideo docs/demos/offline-launch.mp4 &
-xcodebuild test -project apps/ios/Smidgen.xcodeproj -scheme SmidgenUITests \
-  -destination 'platform=iOS Simulator,name=Smidgen26' \
-  -only-testing:SmidgenUITests/DemoFlowsUITests/testOfflineLaunch   # passed (18.2s)
+xcodebuild test -project apps/ios/KeepCooking.xcodeproj -scheme KeepCookingUITests \
+  -destination 'platform=iOS Simulator,name=KeepCooking26' \
+  -only-testing:KeepCookingUITests/DemoFlowsUITests/testOfflineLaunch   # passed (18.2s)
 kill -INT <recordVideo pid>
 
 # videos 2, 3 — same pattern with testIngestSave / testPlanToList (both passed)
@@ -69,8 +69,8 @@ ffmpeg -i IN.mp4 -c:v libx264 -crf 23 -preset medium -pix_fmt yuv420p \
   -c:a aac -movflags +faststart OUT.mp4
 ```
 
-Unit suite (touched files it compiles): `xcodebuild test -scheme SmidgenTests
--destination 'platform=iOS Simulator,name=Smidgen26'` → **all passed**.
+Unit suite (touched files it compiles): `xcodebuild test -scheme KeepCookingTests
+-destination 'platform=iOS Simulator,name=KeepCooking26'` → **all passed**.
 
 ## What each video shows
 
@@ -98,4 +98,4 @@ Unit suite (touched files it compiles): `xcodebuild test -scheme SmidgenTests
   and the scaler UI is present. Pantry/barcode and webcal subscribe are not
   recorded (stub sheets / no Calendar in sim).
 - iOS 18.5 recording was impossible (installd/widgetkit, above); 18.5 build
-  verified green. The stray `Smidgen26` simulator is intentional test infra.
+  verified green. The stray `KeepCooking26` simulator is intentional test infra.

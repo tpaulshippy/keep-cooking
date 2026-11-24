@@ -1,11 +1,11 @@
-// Smidgen — Lane 3 Capture
+// Keep Cooking — Lane 3 Capture
 // apps/ios/ShareExtension/ShareViewController.swift
 //
 // Share Sheet: imports URL from Safari / IG / TikTok → host app via App Group.
 // Extension target links ShareStore; host app drains on foreground.
 //
 // Xcode setup (manual, one time):
-//  1. Add "Share Extension" target named SmidgenShare, link this file + ShareStore.swift.
+//  1. Add "Share Extension" target named KeepCookingShare, link this file + ShareStore.swift.
 //  2. Enable App Groups capability on BOTH targets: group.com.smidgen.share.
 //  3. NSExtensionActivationRule: NSExtensionActivationSupportsWebURLWithMaxCount = 1
 //     (+ NSExtensionActivationSupportsText for caption shares).
@@ -20,7 +20,7 @@ public final class ShareViewController: UIViewController {
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-        status.text = "Clipping to Smidgen…"
+        status.text = "Clipping to Keep Cooking…"
         status.textAlignment = .center
         status.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(status)
@@ -63,7 +63,7 @@ public final class ShareViewController: UIViewController {
             return done(message: "Nothing to share")
         }
         ShareStore.enqueue(url: s)
-        done(message: "Saved to Smidgen ✓")
+        done(message: "Saved to Keep Cooking ✓")
     }
 
     private func done(message: String) {

@@ -1,10 +1,10 @@
 # Intents — Notes
 
-`SmidgenIntents.swift`: 3 Shortcuts via AppIntents (`SmidgenShortcutsProvider`).
+`KeepCookingIntents.swift`: 3 Shortcuts via AppIntents (`KeepCookingShortcutsProvider`).
 
 | Intent | Phrase examples | Behavior (all offline-first) |
 |---|---|---|
-| Add Recipe | "Add miso salmon to Smidgen" | Creates recipe; each non-empty line of `ingredientsText` becomes an `Ingredient` row. Empty title throws a spoken message (no silent no-op). |
+| Add Recipe | "Add miso salmon to Keep Cooking" | Creates recipe; each non-empty line of `ingredientsText` becomes an `Ingredient` row. Empty title throws a spoken message (no silent no-op). |
 | Start Timer | "Start 10-minute pasta timer" | Validates 1–720 min; logs a `StepTimer` on a "Shortcut Timers" recipe step (visible in Cook mode) and returns the countdown dialog. |
 | Add to List | "Add milk to my shopping list" | Appends to the most-recently-updated list; creates "Shopping" if none exists. Empty item throws a spoken message. |
 

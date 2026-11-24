@@ -54,7 +54,7 @@ swiftc -frontend -parse apps/ios/Core/Models.swift       # etc.
 SDK=$(xcrun --show-sdk-path --sdk iphonesimulator)
 swiftc -typecheck -sdk "$SDK" -target arm64-apple-ios17.0-simulator \
   apps/ios/Core/Models.swift apps/ios/Core/SeedLoader.swift \
-  apps/ios/Sync/SyncEngine.swift apps/ios/App/SmidgenApp.swift
+  apps/ios/Sync/SyncEngine.swift apps/ios/App/KeepCookingApp.swift
 
 # Tests typecheck via xcodebuild once the target exists. CLI note: raw
 # swiftc cannot import XCTest's function-like macros (XCTAssertEqual…), so

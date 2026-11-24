@@ -1,4 +1,4 @@
-// Smidgen — Lane 4 Cook: session state + background stub (no persistence layer)
+// Keep Cooking — Lane 4 Cook: session state + background stub (no persistence layer)
 // Consumes Core/Models.swift + SyncEngine; adds no new persistence.
 //   - CookSession: @Observable step pager state (index, crossed-off steps,
 //     per-ingredient cross-off, active timers). Pure Swift, testable.
@@ -82,7 +82,7 @@ public enum CookActivityStub {
     /// Pure ID builder (no system calls) behind `schedule`: one UUID batch
     /// per call so per-timer starts passing one-element arrays never collide.
     /// Unit tests exercise this directly — `UNUserNotificationCenter` is
-    /// unavailable in the host-less SmidgenTests bundle.
+    /// unavailable in the host-less KeepCookingTests bundle.
     public static func makeIDs(for timers: [ParsedTimer]) -> [String] {
         let batch = UUID().uuidString
         return timers.enumerated().map { "cook-timer-\(batch)-\($0.offset)-\($0.element.seconds)" }
@@ -95,7 +95,7 @@ public enum CookActivityStub {
         let ids = makeIDs(for: timers)
         for (id, timer) in zip(ids, timers) {
             let content = UNMutableNotificationContent()
-            content.title = "Smidgen timer"
+            content.title = "Keep Cooking timer"
             content.body = "\(timer.label) — done!"
             content.sound = .default
             let trigger = UNTimeIntervalNotificationTrigger(

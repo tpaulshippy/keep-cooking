@@ -1,4 +1,4 @@
-// Smidgen — Lane 4 Plan: day/week/month views + reusable menus + add-week-to-list
+// Keep Cooking — Lane 4 Plan: day/week/month views + reusable menus + add-week-to-list
 // Consumes Core Plan/Menu/ShoppingList/ListItem via snapshots (no new
 // persistence, no auth/sync changes). iPad-compatible: NavigationStack
 // content that sits in the Lane 2 PadSplitView content column; week/month

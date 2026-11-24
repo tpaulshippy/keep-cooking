@@ -1,4 +1,4 @@
-// Smidgen — Lane 3 Capture
+// Keep Cooking — Lane 3 Capture
 // apps/ios/Features/Ingest/CaptionsImportView.swift
 //
 // Social caption import: TikTok / IG / YT link + caption paste

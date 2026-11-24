@@ -1,9 +1,9 @@
-// Smidgen — Lane 5 Organize
+// Keep Cooking — Lane 5 Organize
 // apps/ios/Widgets/WidgetSnapshot.swift
 //
 // Shared snapshot that powers Widgets + Watch + Shortcuts without touching
 // SwiftData outside the main app. The app writes it (see SnapshotWriter in
-// SmidgenWidgets.swift); extensions only read. Foundation only so watch,
+// KeepCookingWidgets.swift); extensions only read. Foundation only so watch,
 // widgets, and tests share the exact same decode path.
 //
 // Storage: App Group `group.com.smidgen.shared`, key `smidgen.snapshot.v1`.

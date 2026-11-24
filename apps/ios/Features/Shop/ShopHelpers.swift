@@ -1,4 +1,4 @@
-// Smidgen — Lane 4 Shop: aisle sorting + pantry helpers (pure)
+// Keep Cooking — Lane 4 Shop: aisle sorting + pantry helpers (pure)
 //   - aisleSortKey: canonical grocery order so lists group by aisle.
 //   - Pantry expiry/low-stock helpers for locations + expiry + low-stock UI.
 

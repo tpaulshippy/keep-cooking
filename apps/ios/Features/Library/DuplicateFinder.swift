@@ -1,4 +1,4 @@
-// Smidgen — Lane 5 Organize
+// Keep Cooking — Lane 5 Organize
 // apps/ios/Features/Library/DuplicateFinder.swift
 //
 // Fuzzy duplicate detection + merge. Foundation only (no SwiftData/SwiftUI)

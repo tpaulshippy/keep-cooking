@@ -1,5 +1,5 @@
 {
-  "name": "smidgen-api",
+  "name": "keep-cooking-api",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,9 +10,9 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "seed": "bun run seed.ts --generate-sql",
-    "db:apply:local": "npx wrangler d1 execute smidgen --local --file=./drizzle/0001_init.sql && npx wrangler d1 execute smidgen --local --file=./drizzle/0002_e2e_blobs.sql",
-    "db:apply:remote": "npx wrangler d1 execute smidgen --remote --file=./drizzle/0001_init.sql && npx wrangler d1 execute smidgen --remote --file=./drizzle/0002_e2e_blobs.sql",
-    "db:seed:local": "npx wrangler d1 execute smidgen --local --file=./drizzle/seed.sql"
+    "db:apply:local": "npx wrangler d1 execute keep-cooking --local --file=./drizzle/0001_init.sql && npx wrangler d1 execute keep-cooking --local --file=./drizzle/0002_e2e_blobs.sql",
+    "db:apply:remote": "npx wrangler d1 execute keep-cooking --remote --file=./drizzle/0001_init.sql && npx wrangler d1 execute keep-cooking --remote --file=./drizzle/0002_e2e_blobs.sql",
+    "db:seed:local": "npx wrangler d1 execute keep-cooking --local --file=./drizzle/seed.sql"
   },
   "dependencies": {
     "drizzle-orm": "^0.36.4",

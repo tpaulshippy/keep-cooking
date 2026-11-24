@@ -1,5 +1,5 @@
-# Smidgen — XcodeGen project spec (PASS 1: full Xcode project).
-# Generated project: apps/ios/Smidgen.xcodeproj (`xcodegen generate` from apps/ios).
+# Keep Cooking — XcodeGen project spec (PASS 1: full Xcode project).
+# Generated project: apps/ios/KeepCooking.xcodeproj (`xcodegen generate` from apps/ios).
 # WARNING: `xcodegen generate` REWRITES Config/Info-*.plist and
 # Config/AppGroups.entitlements from scratch (verified: custom keys like
 # NSExtension/NSCameraUsageDescription are wiped). Back up Config/ before
@@ -13,7 +13,7 @@
 # - Bundle IDs: app org.smidgen.app (seed); widgets org.smidgen.app.widgets;
 #   share org.smidgen.app.share; tests org.smidgen.app.tests;
 #   watch org.smidgen.app.watch.
-# - AppIntents live IN-APP (Intents/ in the Smidgen target). A separate
+# - AppIntents live IN-APP (Intents/ in the KeepCooking target). A separate
 #   AppIntent extension target was considered and rejected: triple the
 #   SwiftData model duplication for zero offline benefit; Shortcuts works
 #   from the app target on iOS 17+.
@@ -21,11 +21,11 @@
 #   ios-packaging) shared by the app + both extensions + watch via one
 #   shared entitlements file (Config/AppGroups.entitlements). WidgetSnapshot
 #   and Watch payloads ride the same suite as the ShareStore bridge.
-# - Watch: real watchOS app target (SmidgenWatch, standalone, own scheme).
+# - Watch: real watchOS app target (KeepCookingWatch, standalone, own scheme).
 #   NOT embedded in the iOS app (avoids Embed Watch Content fragility);
 #   pair at distribution time. If SDK pairing ever blocks, this target is
 #   the documented stub-host seam.
-# - Tests: standalone SmidgenTests unit-test bundle (NO app host) compiling
+# - Tests: standalone KeepCookingTests unit-test bundle (NO app host) compiling
 #   the *Tests.swift files plus the pure-logic sources they exercise
 #   (Foundation-only, plus ClipboardBanner/OCRScanView/Models for the
 #   ClipboardDetector/OCRSplitter/Recipe paths). Matches the files' own
@@ -35,7 +35,7 @@
 #   Plan/Recipe/ShoppingList without source edits.
 # - SWIFT_VERSION pinned to 5.0: the 36 files were validated with
 #   `swiftc -parse` only; Swift 6 strict concurrency is a later lane.
-name: Smidgen
+name: KeepCooking
 
 options:
   bundleIdPrefix: org.smidgen.app
@@ -66,10 +66,10 @@ settings:
   # Prod API URL seam (lane 1 ios-packaging): Info-App.plist exposes this as
   # SMIDGEN_API_BASE_URL. Default is the production Worker; override
   # per-config (or via `xcodebuild SMIDGEN_API_BASE_URL=...`) for local dev.
-  SMIDGEN_API_BASE_URL: https://smidgen-api.pshippy-245.workers.dev
+  SMIDGEN_API_BASE_URL: https://keep-cooking-api.pshippy-245.workers.dev
 
 targets:
-  Smidgen:
+  KeepCooking:
     type: application
     platform: iOS
     deploymentTarget: '17.0'
@@ -95,8 +95,8 @@ targets:
         includes: ['**/*.swift']
         excludes: ['**/*Tests.swift']
       # Widgets: app compiles ONLY the Foundation-only snapshot reader
-      # (WidgetSnapshot.swift). SmidgenWidgets.swift (WidgetKit @main) must
-      # NOT compile into the app target — it lives in SmidgenWidgets only.
+      # (WidgetSnapshot.swift). KeepCookingWidgets.swift (WidgetKit @main) must
+      # NOT compile into the app target — it lives in KeepCookingWidgets only.
       - path: Widgets/WidgetSnapshot.swift
       - path: ShareExtension/ShareStore.swift
       # Frozen contract seeds → bundle/Seed/*.json so first launch demos
@@ -111,8 +111,8 @@ targets:
       # App icon set skeleton (designer fills PNGs; see AppIcon.appiconset).
       - path: App/Assets.xcassets
     dependencies:
-      - target: SmidgenWidgets
-      - target: SmidgenShare
+      - target: KeepCookingWidgets
+      - target: KeepCookingShare
     info:
       path: Config/Info-App.plist
     entitlements:
@@ -122,12 +122,12 @@ targets:
       TARGETED_DEVICE_FAMILY: '1,2'
       INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: 'YES'
 
-  SmidgenWidgets:
+  KeepCookingWidgets:
     type: app-extension
     platform: iOS
     deploymentTarget: '17.0'
     sources:
-      - path: Widgets/SmidgenWidgets.swift
+      - path: Widgets/KeepCookingWidgets.swift
       - path: Widgets/WidgetSnapshot.swift
       - path: Core/Models.swift
       # Privacy manifest → extension bundle root.
@@ -143,7 +143,7 @@ targets:
       MARKETING_VERSION: '1.0'
       CURRENT_widgetsECT_VERSION: 1
 
-  SmidgenShare:
+  KeepCookingShare:
     type: app-extension
     platform: iOS
     deploymentTarget: '17.0'
@@ -163,7 +163,7 @@ targets:
       MARKETING_VERSION: '1.0'
       CURRENT_shareECT_VERSION: 1
 
-  SmidgenTests:
+  KeepCookingTests:
     type: bundle.unit-test
     platform: iOS
     deploymentTarget: '17.0'
@@ -200,7 +200,7 @@ targets:
       MARKETING_VERSION: '1.0'
       CURRENT_testsECT_VERSION: 1
 
-  SmidgenWatch:
+  KeepCookingWatch:
     type: application.watchapp2
     platform: watchOS
     deploymentTarget: '10.0'
@@ -219,14 +219,14 @@ targets:
   # PASS 2 demos: XCUITest bundle driving the three recorded flows
   # (offline-launch, ingest-save, plan-to-list) deterministically while
   # `xcrun simctl io booted recordVideo` captures the MP4s.
-  SmidgenUITests:
+  KeepCookingUITests:
     type: bundle.ui-testing
     platform: iOS
     deploymentTarget: '17.0'
     sources:
       - path: UITests
     dependencies:
-      - target: Smidgen
+      - target: KeepCooking
     info:
       path: Config/Info-Tests.plist
     settings:
@@ -234,28 +234,28 @@ targets:
       TARGETED_DEVICE_FAMILY: '1,2'
 
 # Schemes are explicit and shared (committed under
-# Smidgen.xcodeproj/xcshareddata/xcschemes/) so every clone and Xcode Cloud
-# resolves `-scheme Smidgen` identically. Keep this list in sync with targets.
+# KeepCooking.xcodeproj/xcshareddata/xcschemes/) so every clone and Xcode Cloud
+# resolves `-scheme KeepCooking` identically. Keep this list in sync with targets.
 schemes:
-  Smidgen:
+  KeepCooking:
     build:
       targets:
-        Smidgen: all
+        KeepCooking: all
     run:
       config: Debug
     archive:
       config: Release
-  SmidgenTests:
+  KeepCookingTests:
     build:
       targets:
-        SmidgenTests: all
+        KeepCookingTests: all
     test:
       config: Debug
       targets:
-        - SmidgenTests
-  SmidgenWatch:
+        - KeepCookingTests
+  KeepCookingWatch:
     build:
       targets:
-        SmidgenWatch: all
+        KeepCookingWatch: all
     run:
       config: Debug

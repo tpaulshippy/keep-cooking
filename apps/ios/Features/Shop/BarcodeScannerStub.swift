@@ -1,4 +1,4 @@
-// Smidgen — Lane 4 Shop: barcode scan stub via AVFoundation
+// Keep Cooking — Lane 4 Shop: barcode scan stub via AVFoundation
 // Seam for a real AVCaptureSession scanner. Today: a sheet with a stubbed
 // capture-preview placeholder + manual entry fallback. The AVFoundation
 // import + session scaffold stay so the real metadata-output wiring lands

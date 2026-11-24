@@ -52,7 +52,7 @@
 ## Clipboard + Share sheet (both feed ClipView)
 - Clipboard: copy any URL → foreground app → ClipboardBanner "Clip this link?
   [Clip] [Dismiss]" → Clip prefills URL (consent-gated, dismissable).
-- Share sheet: Safari/IG/TikTok → Share → Smidgen → ShareViewController writes
+- Share sheet: Safari/IG/TikTok → Share → Keep Cooking Share → ShareViewController writes
   URL to App Group `group.com.smidgen.share` → host drains via
   `ShareStore.drain()` on foreground into ClipView.
 

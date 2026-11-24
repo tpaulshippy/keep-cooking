@@ -1,4 +1,4 @@
--- Smidgen D1 schema v0.1.0 — must stay 1:1 with SwiftData models + openapi.yaml
+-- Keep Cooking D1 schema v0.1.0 — must stay 1:1 with SwiftData models + openapi.yaml
 -- Sync: id TEXT PK (uuid), updated_at TEXT ISO8601, device_id TEXT, deleted INTEGER 0/1 (tombstone), last-write-wins on updated_at.
 
 CREATE TABLE IF NOT EXISTS households (

@@ -7,7 +7,7 @@ import { z } from 'zod';
 // Standalone ingredient/step envelopes are rejected (fold into the parent
 // recipe envelope pre-encrypt); per-id delete travels as deleted=true tombstone.
 
-/** Domain separator prefix for household-hash derivation (utf8 concat). */
+/** Domain separator prefix for household-hash derivation (utf8 concat). legacy stable identifier, do not rename. */
 export const HOUSEHOLD_HASH_PREFIX = 'smidgen-hh-v1';
 
 /** Path-param guard: lowercase 64-hex SHA-256 digest. */

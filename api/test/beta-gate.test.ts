@@ -7,7 +7,7 @@ const BETA = 'beta-secret-123';
 function prodApp() {
   const store = new MemoryStore();
   const app = createApp(store, {
-    baseUrl: 'https://smidgen-api.pshippy-245.workers.dev', // prod host => gate on
+    baseUrl: 'https://keep-cooking-api.pshippy-245.workers.dev', // prod host => gate on
     secret: 'test-secret',
     betaToken: BETA,
   });
@@ -16,7 +16,7 @@ function prodApp() {
 
 function devApp() {
   const store = new MemoryStore();
-  const app = createApp(store, { baseUrl: 'https://api.smidgen.local', secret: 'test-secret' });
+  const app = createApp(store, { baseUrl: 'https://api.keepcooking.local', secret: 'test-secret' });
   return { app, store };
 }
 
@@ -81,7 +81,7 @@ describe('prod beta gate (internal TestFlight)', () => {
   it('prod with no beta token configured fails closed (401 even with bearer)', async () => {
     const store = new MemoryStore();
     const app = createApp(store, {
-      baseUrl: 'https://smidgen-api.pshippy-245.workers.dev',
+      baseUrl: 'https://keep-cooking-api.pshippy-245.workers.dev',
       secret: 'test-secret',
       // no betaToken
     });

@@ -1,4 +1,4 @@
-// Smidgen — Lane 3 Capture
+// Keep Cooking — Lane 3 Capture
 // apps/ios/Features/Ingest/IngredientParser.swift
 //
 // Single-line ingredient parser shared by Clip preview, caption import,

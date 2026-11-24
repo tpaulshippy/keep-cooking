@@ -1,4 +1,4 @@
-// Smidgen — Lane 2 iOS Foundation
+// Keep Cooking — Lane 2 iOS Foundation
 // apps/ios/Core/SeedLoader.swift
 //
 // Loads frozen contract seeds (packages/contracts/seed/*.json, 15 recipes)

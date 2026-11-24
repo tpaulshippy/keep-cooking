@@ -1,5 +1,5 @@
-// Smidgen — Lane 5 Organize
-// apps/ios/Widgets/SmidgenWidgets.swift
+// Keep Cooking — Lane 5 Organize
+// apps/ios/Widgets/KeepCookingWidgets.swift
 //
 // WidgetKit: Today Plan widget (today's meals) + List Progress widget
 // (shopping-list completion). Both read the shared TodaySnapshot written by
@@ -175,7 +175,7 @@ public enum SnapshotWriter {
 }
 
 @main
-struct SmidgenWidgetsBundle: WidgetBundle {
+struct KeepCookingWidgetsBundle: WidgetBundle {
     var body: some Widget {
         TodayPlanWidget()
         ListProgressWidget()

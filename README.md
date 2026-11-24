@@ -1,8 +1,10 @@
-# Smidgen
+# Keep Cooking
 
 A permissive open-source Paprika replacement — native iOS, backed by Cloudflare free tier.
 
 No subscriptions. No self-hosted Docker. Own your recipes.
+
+GitHub: github.com/tpaulshippy/keep-cooking · Domain: KeepCooking.app
 
 ## Goals
 
@@ -16,14 +18,14 @@ No subscriptions. No self-hosted Docker. Own your recipes.
 - **Native iOS:** SwiftUI iPhone + iPad, Share Sheet importer, widgets, Shortcuts, Apple Watch. No PWA wrapper, no Electron
 - **Cloudflare free backend:** Workers + D1 + R2. One Worker, one D1 DB, one R2 bucket — fits in the free tier (100k req/day, 5GB D1, 10GB R2). No Docker, no Postgres to babysit, no VPS. `wrangler d1 create + r2 bucket create + deploy`
 
-## What Smidgen is not
+## What Keep Cooking is not
 
 - Not AGPL like Mealie / Tandoor / KitchenOwl / RecipeSage
 - Not source-available like Tandoor (+ Commons Clause) or dual-licensed like RecipeSage
 - Not Apple-only paid like Mela ($6.99) or sub-locked like Paprika 4 Premium ($14.99/yr)
 - Not a web app skinned as iOS
 
-## Stack (v0.1-smidgen, all lanes merged)
+## Stack (v0.1-keepcooking, all lanes merged)
 
 - App: SwiftUI (iOS 17+), SwiftData + CloudKit mirror stub, SyncEngine (outbox, LWW + tombstones)
 - API: Hono on Cloudflare Workers, OpenAPI at `/openapi.json` (byte-matches contracts)
@@ -34,8 +36,8 @@ No subscriptions. No self-hosted Docker. Own your recipes.
 ## Deploy (free tier: 1 Worker + 1 D1 + 1 R2)
 
 ```bash
-npx wrangler d1 create smidgen
-npx wrangler r2 bucket create smidgen-photos
+npx wrangler d1 create keep-cooking
+npx wrangler r2 bucket create keep-cooking-photos
 npm run deploy --prefix api   # migrations + seed + deploy
 ```
 
@@ -71,4 +73,4 @@ Demos (real simulator recordings, iOS 26.5 iPhone 16 Pro): `docs/demos/offline-l
 (15 seeds, kill + relaunch persists), `ingest-save.mp4` (OCR scan → parse → save),
 `plan-to-list.mp4` (week plan → aggregated aisle-sorted list → check-off → cook mode).
 See `docs/demos/NOTES.md` for commands + honest gaps. Full XcodeGen project:
-`apps/ios/project.yml` → `Smidgen.xcodeproj` (app + widgets + share + watch + unit/UITests).
+`apps/ios/project.yml` → `KeepCooking.xcodeproj` (app + widgets + share + watch + unit/UITests).

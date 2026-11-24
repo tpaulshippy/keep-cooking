@@ -1,4 +1,4 @@
-// Smidgen — Lane 5 Organize
+// Keep Cooking — Lane 5 Organize
 // apps/ios/Features/Library/ShareViews.swift
 //
 // Share UI: household invites + cookbook share links (Lane 1

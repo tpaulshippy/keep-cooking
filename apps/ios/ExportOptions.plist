@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<!-- TestFlight / App Store export. Upload set is app + widgets + share
-	     ONLY — SmidgenWatch (org.smidgen.app.watch) stays in-tree but is NOT
+	     ONLY — KeepCookingWatch (org.smidgen.app.watch) stays in-tree but is NOT
 	     uploaded (pair at distribution time).
 	     Local archive-testflight.sh uses automatic signing (lets Xcode fetch
 	     profiles with -allowProvisioningUpdates); Xcode Cloud uses
@@ -22,11 +22,11 @@
 		<!-- TODO: replace values with the real App Store provisioning
 		     profile names from the portal (requires portal access). -->
 		<key>org.smidgen.app</key>
-		<string>Smidgen App Store</string>
+		<string>Keep Cooking App Store</string>
 		<key>org.smidgen.app.widgets</key>
-		<string>Smidgen Widgets App Store</string>
+		<string>Keep Cooking Widgets App Store</string>
 		<key>org.smidgen.app.share</key>
-		<string>Smidgen Share App Store</string>
+		<string>Keep Cooking Share App Store</string>
 	</dict>
 	<key>uploadSymbols</key>
 	<true/>

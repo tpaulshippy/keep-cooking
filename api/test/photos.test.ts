@@ -14,7 +14,7 @@ describe('photos', () => {
 
   it('signed URL expiry is < 15min and verifies', async () => {
     const now = Date.now();
-    const s = await signKey('photos/abc/original.jpg', { secret: 's', baseUrl: 'https://api.smidgen.local', ttlSeconds: 3600 });
+    const s = await signKey('photos/abc/original.jpg', { secret: 's', baseUrl: 'https://api.keepcooking.local', ttlSeconds: 3600 });
     const expMs = new Date(s.expiresAt).getTime();
     expect(expMs - now).toBeLessThan(MAX_SIGNED_URL_TTL_SECONDS * 1000);
     const u = new URL(s.url);

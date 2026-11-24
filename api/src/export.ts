@@ -61,7 +61,7 @@ export function plansToIcs(plans: Plan[], lookupTitle: (recipeId: string | null)
       const d = p.date.replace(/-/g, '');
       return [
         'BEGIN:VEVENT',
-        `UID:${p.id}@smidgen`,
+        `UID:${p.id}@smidgen`, // legacy stable identifier, do not rename (existing calendar subscriptions dedupe on UID)
         `DTSTAMP:${stamp}`,
         `DTSTART;VALUE=DATE:${d}`,
         `SUMMARY:${escIcs(`${p.meal}: ${title}`)}`,
@@ -70,5 +70,5 @@ export function plansToIcs(plans: Plan[], lookupTitle: (recipeId: string | null)
         .filter(Boolean)
         .join('\r\n');
     });
-  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Smidgen//Meal Plans//EN', ...events, 'END:VCALENDAR'].join('\r\n') + '\r\n';
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Keep Cooking//Meal Plans//EN', ...events, 'END:VCALENDAR'].join('\r\n') + '\r\n';
 }

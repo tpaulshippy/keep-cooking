@@ -1,10 +1,10 @@
-// Smidgen — Lane 5 Organize
+// Keep Cooking — Lane 5 Organize
 // apps/ios/Features/Library/LibraryModels.swift
 //
 // Lane 5-owned SwiftData models + share DTOs. Core/Models.swift is untouched:
 // Recipe/Ingredient/Step conform to the Lane 5 search/dupe protocols here via
 // extensions only. New @Model types (Cookbook, SavedSearch) must be registered
-// in SmidgenApp.modelTypes alongside the Lane 2 list.
+// in KeepCookingApp.modelTypes alongside the Lane 2 list.
 
 import Foundation
 import SwiftData
@@ -121,7 +121,7 @@ public struct HouseholdInvite: Sendable, Codable, Identifiable {
     }
 
     public var isExpired: Bool { Date() > expiresAt || useCount >= maxUses }
-    /// Deep link redeemed by SmidgenApp.onOpenURL (route stub in README).
+    /// Deep link redeemed by KeepCookingApp.onOpenURL (route stub in README).
     public var inviteURL: URL? { URL(string: "smidgen://invite/\(code)") }
 
     public static func make(householdId: String) -> HouseholdInvite {

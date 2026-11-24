@@ -1,9 +1,9 @@
 #!/bin/zsh
-# Archive Smidgen and export for TestFlight (App Store distribution).
+# Archive KeepCooking and export for TestFlight (App Store distribution).
 # Local fallback when Xcode Cloud is unavailable.
 #
 # Upload set: app + widgets + share ONLY (org.smidgen.app, .widgets, .share).
-# NOTE: SmidgenWatch (org.smidgen.app.watch) is a standalone watchOS app and
+# NOTE: KeepCookingWatch (org.smidgen.app.watch) is a standalone watchOS app and
 # is intentionally NOT uploaded (pair at distribution time).
 #
 # Env (all overridable):
@@ -18,7 +18,7 @@
 #
 # Automatic signing is forced on the command line (CODE_SIGN_STYLE=Automatic
 # + DEVELOPMENT_TEAM) rather than verseloop's single-target manual style,
-# because Smidgen archives appex targets (widgets/share) that need their own
+# because KeepCooking archives appex targets (widgets/share) that need their own
 # managed profiles.
 set -euo pipefail
 cd "$(dirname "$0")/.."   # apps/ios
@@ -28,9 +28,9 @@ cd "$(dirname "$0")/.."   # apps/ios
 : "${ASC_KEY_ID:?set ASC_KEY_ID to your App Store Connect API key ID}"
 : "${ASC_ISSUER_ID:?set ASC_ISSUER_ID to your App Store Connect issuer ID}"
 : "${ASC_KEY_PATH:?set ASC_KEY_PATH to your .p8 private key path}"
-ARCHIVE="build/Smidgen.xcarchive"
+ARCHIVE="build/KeepCooking.xcarchive"
 xcodebuild archive \
-  -project Smidgen.xcodeproj -scheme Smidgen \
+  -project KeepCooking.xcodeproj -scheme KeepCooking \
   -configuration Release -destination 'generic/platform=iOS' \
   -archivePath "$ARCHIVE" \
   CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM="$TEAM_ID" \

@@ -1,4 +1,4 @@
-// Smidgen — Lane 2 iOS Foundation
+// Keep Cooking — Lane 2 iOS Foundation
 // apps/ios/Sync/SyncEngineTests.swift
 //
 // XCTest coverage for the pure sync core:

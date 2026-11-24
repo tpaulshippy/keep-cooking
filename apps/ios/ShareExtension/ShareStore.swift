@@ -1,4 +1,4 @@
-// Smidgen — Lane 3 Capture
+// Keep Cooking — Lane 3 Capture
 // apps/ios/ShareExtension/ShareStore.swift
 //
 // App Group bridge between ShareExtension and host app.

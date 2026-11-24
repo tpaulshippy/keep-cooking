@@ -5,7 +5,7 @@ import { seedStore } from '../seed';
 export async function makeApp(opts: { seed?: boolean } = {}) {
   const store = new MemoryStore();
   if (opts.seed !== false) await seedStore(store);
-  const app = createApp(store, { baseUrl: 'https://api.smidgen.local', secret: 'test-secret' });
+  const app = createApp(store, { baseUrl: 'https://api.keepcooking.local', secret: 'test-secret' });
   return { app, store };
 }
 

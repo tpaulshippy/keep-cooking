@@ -1,4 +1,4 @@
-// Smidgen — Lane 5 Organize
+// Keep Cooking — Lane 5 Organize
 // apps/ios/Features/Library/DuplicateFinderTests.swift
 //
 // XCTest suite for DuplicateFinder (pure Foundation — no SwiftData).

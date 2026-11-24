@@ -36,15 +36,15 @@ jobs:
           # wrangler.toml ships a database_id placeholder: resolve the real id
           # by name (creating the database on first run) and inject it, so the
           # schema apply + deploy below target a real DB. Mirrors bots worker.
-          DB_ID=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="smidgen") | .uuid // empty')
+          DB_ID=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="keep-cooking") | .uuid // empty')
           if [ -z "$DB_ID" ]; then
             # (No --json on `d1 create` in wrangler >= 4.16x: create, then re-list.)
-            npx wrangler d1 create smidgen
-            DB_ID=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="smidgen") | .uuid // empty')
+            npx wrangler d1 create keep-cooking
+            DB_ID=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="keep-cooking") | .uuid // empty')
           fi
           sed -i "s/database_id = \".*\"/database_id = \"$DB_ID\"/" wrangler.toml
           # Idempotent: succeeds on first run, no-op (|| true) after that.
-          npx wrangler r2 bucket create smidgen-photos || true
+          npx wrangler r2 bucket create keep-cooking-photos || true
 
       - name: Deploy Worker API
         env:
@@ -57,7 +57,7 @@ jobs:
           # Schema uses CREATE TABLE IF NOT EXISTS, so this is safe to re-run
           # on every deploy. Seed data (drizzle/seed.sql) is a one-time manual
           # step for demo content, not applied here.
-          npx wrangler d1 execute smidgen --remote --file=./drizzle/0001_init.sql
+          npx wrangler d1 execute keep-cooking --remote --file=./drizzle/0001_init.sql
           # Rotate the internal-TestFlight beta gate secret from the repo secret
           # (set once via `gh secret set INTERNAL_BETA_TOKEN`).
           if [ -n "$INTERNAL_BETA_TOKEN" ]; then
@@ -66,8 +66,8 @@ jobs:
           # Beta household access: the iOS app syncs as x-user-id `beta-user`
           # (pass 2 replaces this with Apple auth). Prod treats unknown users
           # as viewers (writes 403), so ensure the beta membership exists.
-          npx wrangler d1 execute smidgen --remote --command "INSERT INTO households (id, name) VALUES ('hh-demo', 'Smidgen') ON CONFLICT(id) DO NOTHING"
-          npx wrangler d1 execute smidgen --remote --command "INSERT INTO memberships (household_id, user_id, role) VALUES ('hh-demo', 'beta-user', 'owner') ON CONFLICT(household_id, user_id) DO UPDATE SET role = 'owner'"
+          npx wrangler d1 execute keep-cooking --remote --command "INSERT INTO households (id, name) VALUES ('hh-demo', 'Keep Cooking') ON CONFLICT(id) DO NOTHING"
+          npx wrangler d1 execute keep-cooking --remote --command "INSERT INTO memberships (household_id, user_id, role) VALUES ('hh-demo', 'beta-user', 'owner') ON CONFLICT(household_id, user_id) DO UPDATE SET role = 'owner'"
           # No custom domain yet: publishes to the out-of-the-box
-          # https://smidgen-api.<account>.workers.dev URL.
+          # https://keep-cooking-api.<account>.workers.dev URL.
           npx wrangler deploy

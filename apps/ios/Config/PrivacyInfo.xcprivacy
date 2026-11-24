@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<!-- Single shared privacy manifest (lane 1 ios-packaging). Referenced as
-	     a resource from the Smidgen app, SmidgenWidgets, and SmidgenShare
+	     a resource from the Keep Cooking app, KeepCookingWidgets, and KeepCookingShare
 	     targets in project.yml; the watch target is intentionally out of the
 	     upload set so it has no entry. No tracking, no collected data types. -->
 	<key>NSPrivacyTracking</key>

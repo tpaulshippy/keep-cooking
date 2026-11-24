@@ -1,4 +1,4 @@
-// Smidgen — Lane 4 Cook: CookModeView (SwiftUI)
+// Keep Cooking — Lane 4 Cook: CookModeView (SwiftUI)
 // Hands-free overhaul: full-screen step pager + progress, sticky servings
 // scaler, large-type steps, 44pt targets, ingredient checklist, timers with
 // Start, visible keep-awake pill. iPad (.regular) keeps 2-column layout.

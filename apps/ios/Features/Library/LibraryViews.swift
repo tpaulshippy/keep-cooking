@@ -1,4 +1,4 @@
-// Smidgen — Lane 5 Organize
+// Keep Cooking — Lane 5 Organize
 // apps/ios/Features/Library/LibraryViews.swift
 //
 // Library UI: categories, cookbooks, full-text + advanced search with saved

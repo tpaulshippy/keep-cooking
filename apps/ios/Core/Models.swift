@@ -1,4 +1,4 @@
-// Smidgen — Lane 2 iOS Foundation
+// Keep Cooking — Lane 2 iOS Foundation
 // apps/ios/Core/Models.swift
 //
 // SwiftData models 1:1 with packages/contracts/schema.sql (v0.1.0)

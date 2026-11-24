@@ -1,4 +1,4 @@
-// Smidgen — Lane 4 Cook: time-string → multi-timer parser (pure)
+// Keep Cooking — Lane 4 Cook: time-string → multi-timer parser (pure)
 // Turns free-text step strings into zero or more timers, e.g.
 //   "bake 12-15 min, rest 1 hr" -> [12..15min upper=15min "bake", 1hr "rest"]
 // Rules:

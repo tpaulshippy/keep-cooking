@@ -1,4 +1,4 @@
-// Smidgen — Lane B ios-crypto-sync (E2E V1)
+// Keep Cooking — Lane B ios-crypto-sync (E2E V1)
 // apps/ios/Sync/SyncCrypto.swift
 //
 // Thin E2E V1 client crypto. The server is blind: envelope payloads are

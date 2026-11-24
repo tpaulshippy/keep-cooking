@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Smidgen — fresh BYO backend deploy (Worker + D1 + R2).
+# Keep Cooking — fresh BYO backend deploy (Worker + D1 + R2).
 # Prints the Worker URL to paste into the app: Settings → Server (BYO backend).
 #
 # Usage:
@@ -40,8 +40,8 @@ fi
 # Exact-name match on captured command output (no SIGPIPE: never pipe the
 # live listing straight into grep -q). Matches JSON `"name": "<want>"` or a
 # table row where <want> stands alone (not a prefix/suffix of another name:
-# "smidgen" must not match "smidgen2"/"my-smidgen"; "smidgen-photos" must not
-# match "smidgen-photos2").
+# "keep-cooking" must not match "keep-cooking2"/"my-keep-cooking"; "keep-cooking-photos" must not
+# match "keep-cooking-photos2").
 exact_name_present() {
   local want="$1" text="$2"
   printf '%s\n' "$text" | grep -qF "\"name\": \"$want\"" && return 0
@@ -50,16 +50,16 @@ exact_name_present() {
   return 1
 }
 
-echo "==> 1/6 D1 database (smidgen)"
+echo "==> 1/6 D1 database (keep-cooking)"
 D1_LIST="$(wrangler d1 list 2>/dev/null || true)"
-if exact_name_present "smidgen" "$D1_LIST"; then
-  echo "    D1 'smidgen' already exists — keeping it."
+if exact_name_present "keep-cooking" "$D1_LIST"; then
+  echo "    D1 'keep-cooking' already exists — keeping it."
 else
-  D1_CREATE="$(wrangler d1 create smidgen 2>&1)"
+  D1_CREATE="$(wrangler d1 create keep-cooking 2>&1)"
   printf '%s\n' "$D1_CREATE"
   # Resolve the new database_id and write it into api/wrangler.toml before
   # deploy so the Worker binds the database we just created (not the
-  # local-smidgen-placeholder).
+  # local-keepcooking-placeholder).
   NEW_DB_ID="$(printf '%s\n' "$D1_CREATE" | grep -oE '"database_id"[[:space:]]*:[[:space:]]*"[^"]+"' | head -n 1 | cut -d'"' -f4 || true)"
   if [ -z "${NEW_DB_ID:-}" ]; then
     NEW_DB_ID="$(printf '%s\n' "$D1_CREATE" | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -n 1 || true)"
@@ -81,19 +81,19 @@ else
   fi
 fi
 
-echo "==> 2/6 R2 bucket (smidgen-photos)"
+echo "==> 2/6 R2 bucket (keep-cooking-photos)"
 R2_LIST="$(wrangler r2 bucket list 2>/dev/null || true)"
-if exact_name_present "smidgen-photos" "$R2_LIST"; then
-  echo "    R2 'smidgen-photos' already exists — keeping it."
+if exact_name_present "keep-cooking-photos" "$R2_LIST"; then
+  echo "    R2 'keep-cooking-photos' already exists — keeping it."
 else
-  wrangler r2 bucket create smidgen-photos
+  wrangler r2 bucket create keep-cooking-photos
 fi
 
 echo "==> 3/6 D1 schema (remote)"
 for migration in "$API_DIR/drizzle/0001_init.sql" "$API_DIR/drizzle/0002_e2e_blobs.sql"; do
   if [ -f "$migration" ]; then
     echo "    applying $migration --remote"
-    wrangler d1 execute smidgen --remote --file="$migration"
+    wrangler d1 execute keep-cooking --remote --file="$migration"
   else
     echo "    skipping $migration (not found)"
   fi

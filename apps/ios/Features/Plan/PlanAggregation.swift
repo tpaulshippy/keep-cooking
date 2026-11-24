@@ -1,4 +1,4 @@
-// Smidgen — Lane 4 Plan: week aggregation + webcal feed (pure)
+// Keep Cooking — Lane 4 Plan: week aggregation + webcal feed (pure)
 //   - aggregateWeekToList: plans for a week -> merged shopping-list lines,
 //     quantities scaled (plan.servings vs recipe.servings) and summed by
 //     (lowercased name + unit). Display strings use RecipeScaler fractions.

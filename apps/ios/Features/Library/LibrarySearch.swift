@@ -1,4 +1,4 @@
-// Smidgen — Lane 5 Organize
+// Keep Cooking — Lane 5 Organize
 // apps/ios/Features/Library/LibrarySearch.swift
 //
 // Pure full-text + advanced recipe filtering. Foundation only (no SwiftData,

@@ -3,9 +3,9 @@
 # upload is accepted (Apple rejects re-uploaded build numbers).
 # Locally this is a no-op (CI_BUILD_NUMBER only exists in Xcode Cloud).
 #
-# Smidgen upload set: app + widgets + share ONLY
+# KeepCooking upload set: app + widgets + share ONLY
 # (org.smidgen.app, org.smidgen.app.widgets, org.smidgen.app.share).
-# SmidgenWatch (org.smidgen.app.watch) is a standalone watchOS app that
+# KeepCookingWatch (org.smidgen.app.watch) is a standalone watchOS app that
 # stays in-tree but is NOT uploaded (pair at distribution time), so it is
 # deliberately left out of the plist fallback below. The pbxproj sed is
 # global and covers all 6 targets, which is harmless for watch/tests.
@@ -23,8 +23,8 @@ echo "Stamping build number ${CI_BUILD_NUMBER}"
 # sed covers all 6 targets (app/widgets/share/tests/watch/uitests).
 ROOT="${CI_PRIMARY_REPOSITORY_PATH:-$(cd "$(dirname "$0")/../.." && pwd)}"
 PBX=""
-for candidate in "$ROOT/apps/ios/Smidgen.xcodeproj/project.pbxproj" \
-                 "$ROOT/Smidgen.xcodeproj/project.pbxproj"; do
+for candidate in "$ROOT/apps/ios/KeepCooking.xcodeproj/project.pbxproj" \
+                 "$ROOT/KeepCooking.xcodeproj/project.pbxproj"; do
   if [ -f "$candidate" ]; then
     PBX="$candidate"
     break

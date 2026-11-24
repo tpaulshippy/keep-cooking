@@ -1,4 +1,4 @@
-// Smidgen — PASS 2 demos
+// Keep Cooking — PASS 2 demos
 // apps/ios/App/DemoFlows.swift
 //
 // Wires the Lane 3/4 snapshot views (Clip/Caption/OCR, Plan, Shop, Cook)
@@ -8,7 +8,7 @@
 //   3. plan-to-list — PlanView week → "Add week to list" aggregates into an
 //      aisle-sorted ShoppingList → check-off; cook mode reachable from detail.
 //
-// Accessibility identifiers (used by SmidgenUITests):
+// Accessibility identifiers (used by KeepCookingUITests):
 //   recipe-list, recipe-detail-title, cook-button, add-to-list-button,
 //   added-confirm, plan-view, week-to-list-confirm, lists-view,
 //   more-clip, more-caption, more-ocr (+ ocr-* ids in OCRScanView).
@@ -948,7 +948,7 @@ struct SettingsView: View {
             } header: {
                 Text("End-to-end encryption")
             } footer: {
-                Text("Smidgen can't see or recover your recipes. Lose code+devices = permanent loss. Got a new phone or iPad? Add it now while you still have this one — open Settings here on both devices.")
+                Text("Keep Cooking can't see or recover your recipes. Lose code+devices = permanent loss. Got a new phone or iPad? Add it now while you still have this one — open Settings here on both devices.")
             }
             Section("Sync") {
                 SyncStatusRow()
@@ -971,7 +971,7 @@ struct SettingsView: View {
                 }
             }
             Section("About") {
-                Text("Smidgen \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0") — offline-first, MIT.")
+                Text("Keep Cooking \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0") — offline-first, MIT.")
                     .foregroundStyle(.secondary)
             }
         }

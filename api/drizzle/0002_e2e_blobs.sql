@@ -1,4 +1,4 @@
--- Smidgen E2E V1 blind blob pipe (see api/src/e2e.ts).
+-- Keep Cooking E2E V1 blind blob pipe (see api/src/e2e.ts).
 -- Canonical migration chain: apply drizzle/0001_init.sql first, then this
 -- file (`npm run db:apply:local` / `db:apply:remote` do both in order; 0001
 -- already carries this table for fresh DBs, so this file backfills DBs

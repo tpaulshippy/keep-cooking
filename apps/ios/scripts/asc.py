@@ -4,11 +4,11 @@
 Env: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH
 Usage: asc.py apps | create-app | create-bundle-id [identifier] [name] | get /v1/path
 
-Smidgen bundle IDs (upload set — app + widgets + share ONLY):
-  org.smidgen.app          (Smidgen app)
-  org.smidgen.app.widgets  (SmidgenWidgets extension)
-  org.smidgen.app.share    (SmidgenShare extension)
-NOTE: org.smidgen.app.watch (SmidgenWatch) is a standalone watchOS app and
+Keep Cooking bundle IDs (upload set — app + widgets + share ONLY):
+  org.smidgen.app          (KeepCooking app)
+  org.smidgen.app.widgets  (KeepCookingWidgets extension)
+  org.smidgen.app.share    (KeepCookingShare extension)
+NOTE: org.smidgen.app.watch (KeepCookingWatch) is a standalone watchOS app and
 is intentionally OUT of the upload set (pair at distribution time).
 
 Requires: pip install PyJWT (ES256 JWT signing)
@@ -78,9 +78,9 @@ def main():
             "/v1/apps",
             {"data": {"type": "apps", "attributes": {
                 "bundleId": APP_BUNDLE_ID,
-                "name": "Smidgen",
+                "name": "Keep Cooking",
                 "primaryLocale": "en-US",
-                "sku": "smidgen",
+                "sku": "keep-cooking",
             }}},
         )
         print(json.dumps({"status": status, "result": out}, indent=1)[:2000])
@@ -114,7 +114,7 @@ def main():
             "POST",
             "/v1/profiles",
             {"data": {"type": "profiles", "attributes": {
-                "name": "Smidgen AppStore",
+                "name": "Keep Cooking AppStore",
                 "profileType": "IOS_APP_STORE",
             }, "relationships": {
                 "bundleId": {"data": {"type": "bundleIds", "id": bundle_id}},

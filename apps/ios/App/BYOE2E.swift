@@ -1,4 +1,4 @@
-// Smidgen — App-scope E2E façade (thin, no crypto here)
+// Keep Cooking — App-scope E2E façade (thin, no crypto here)
 // apps/ios/App/BYOE2E.swift
 //
 // All E2E V1 cryptography lives in apps/ios/Sync (SyncCrypto.swift /
@@ -42,7 +42,7 @@ public enum E2EJoinError: LocalizedError, Sendable {
     case kidMismatch
     public var errorDescription: String? {
         switch self {
-        case .notInvite: return "That text is not a Smidgen invite bundle."
+        case .notInvite: return "That text is not a Keep Cooking invite bundle."
         case .hashMismatch: return "Hash mismatch — code was mistyped or tampered with."
         case .kidMismatch: return "Key ID mismatch — bundle was tampered with or created by an incompatible app."
         }

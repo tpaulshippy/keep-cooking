@@ -1,4 +1,4 @@
-// Smidgen — Lane 3 Capture
+// Keep Cooking — Lane 3 Capture
 // apps/ios/Features/Ingest/IngredientParserTests.swift
 //
 // XCTest suite for IngredientParser + ClipboardDetector + OCRSplitter.
@@ -11,7 +11,7 @@
 import XCTest
 
 // NOTE: when these files live in the same test target, no import is needed.
-// If your app target is named Smidgen, use `@testable import Smidgen` instead.
+// If your app target is named KeepCooking, use `@testable import KeepCooking` instead.
 
 final class IngredientParserTests: XCTestCase {
     func testUnicodeHalf() {

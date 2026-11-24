@@ -243,7 +243,7 @@ export async function clipRecipe(input: ClipInput): Promise<ClipResult & { log: 
       try {
         const res = await fetchFn(input.url, {
           signal: ctrl.signal,
-          headers: { 'user-agent': 'SmidgenClip/0.1 (+https://api.smidgen.local)' },
+          headers: { 'user-agent': 'KeepCookingClip/0.1 (+https://api.keepcooking.app)' },
         });
         const ct = res.headers.get('content-type') ?? '';
         if (!res.ok) throw new Error(`http ${res.status}`);

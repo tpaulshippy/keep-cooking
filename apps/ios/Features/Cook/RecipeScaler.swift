@@ -1,4 +1,4 @@
-// Smidgen — Lane 4 Cook: recipe scaling (pure, no SwiftData, no network)
+// Keep Cooking — Lane 4 Cook: recipe scaling (pure, no SwiftData, no network)
 // Matches Lane 1 POST /recipes/:id/scale { servings: 0.25..100 }.
 // Factor is clamped to 0.25x–4x per Lane 4 spec; quantities render as
 // fraction-rounded display strings (nearest 1/4, unicode fractions).

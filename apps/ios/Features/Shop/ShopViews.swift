@@ -1,4 +1,4 @@
-// Smidgen — Lane 4 Shop/Pantry: multi-list aisle-sorted views + pantry
+// Keep Cooking — Lane 4 Shop/Pantry: multi-list aisle-sorted views + pantry
 // Consumes Core ShoppingList/ListItem/PantryItem via snapshots (no new
 // persistence, no auth/sync changes). iPad-compatible: NavigationStack
 // content for the Lane 2 PadSplitView; pantry gets a two-column grid under

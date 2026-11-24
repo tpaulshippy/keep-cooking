@@ -1,6 +1,6 @@
 # Widgets — Preview / Screenshot Notes
 
-`SmidgenWidgets.swift` (TimelineProvider + two widgets) reads only the shared
+`KeepCookingWidgets.swift` (TimelineProvider + two widgets) reads only the shared
 `WidgetSnapshot.swift` payload — no SwiftData, no network.
 
 ## What to capture (2 widgets × 2 sizes)
@@ -33,7 +33,7 @@ A snapshot older than the last plan/list edit cannot occur — the app calls
 
 ## Target membership reminder
 
-Widget extension: `WidgetSnapshot.swift` + `SmidgenWidgets.swift` only.
+Widget extension: `WidgetSnapshot.swift` + `KeepCookingWidgets.swift` only.
 Main app (for the writer): `WidgetSnapshot.swift` + the `SnapshotWriter`
-section of `SmidgenWidgets.swift` (it is `#if canImport(SwiftData)`-gated).
+section of `KeepCookingWidgets.swift` (it is `#if canImport(SwiftData)`-gated).
 App Group `group.com.smidgen.shared` required on both.

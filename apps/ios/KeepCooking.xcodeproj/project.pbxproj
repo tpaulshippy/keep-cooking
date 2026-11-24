@@ -21,7 +21,7 @@
 		2E4EADFE0640F1B514E06147 /* recipe-04.json in Resources */ = {isa = PBXBuildFile; fileRef = 392F50077CA35473B4C6B383 /* recipe-04.json */; };
 		3543E32D27FE72EE997DE03F /* DuplicateFinderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E5DB7DC50200281903A3EA0 /* DuplicateFinderTests.swift */; };
 		36BA2FC76027B9CDEAF5711D /* ShareStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58C98BED44DCA47F717AD78C /* ShareStore.swift */; };
-		3C4482208A8D1F5EEE391E77 /* SmidgenWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F17874BF113DCEB362D9890 /* SmidgenWidgets.swift */; };
+		3C4482208A8D1F5EEE391E77 /* KeepCookingWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F17874BF113DCEB362D9890 /* KeepCookingWidgets.swift */; };
 		40BD3C46ADE01F3BC7304923 /* recipe-13-dupe.json in Resources */ = {isa = PBXBuildFile; fileRef = 2551CEB897E6620235566831 /* recipe-13-dupe.json */; };
 		41637B0E1053163C90E1450D /* ClipboardBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E048AEAE306958C06CF0B8AD /* ClipboardBanner.swift */; };
 		4260F2818B66978FCBE653B3 /* recipe-02.json in Resources */ = {isa = PBXBuildFile; fileRef = EAAEC2770664BE6E156485AA /* recipe-02.json */; };
@@ -34,7 +34,7 @@
 		5CBB976656FD84F211C61808 /* IngestHumanPolishTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD2D2E5F94BD0192C7510A5D /* IngestHumanPolishTests.swift */; };
 		5DABC4216DA350D44D7573AE /* recipe-11.json in Resources */ = {isa = PBXBuildFile; fileRef = AF0D65674E4F4F8E8F8177F5 /* recipe-11.json */; };
 		5F9CCD36213494A18AABD4B9 /* PlanAggregation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23789FAAD89E65816EC079FC /* PlanAggregation.swift */; };
-		6240CEA7264FE38CB4E6D33B /* SmidgenApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78CF752BEB5799714C262738 /* SmidgenApp.swift */; };
+		6240CEA7264FE38CB4E6D33B /* KeepCookingApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78CF752BEB5799714C262738 /* KeepCookingApp.swift */; };
 		64424C80936377DDF3ABB378 /* LibrarySearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DDFF21CAE4746CC07BEBBA0 /* LibrarySearchTests.swift */; };
 		6ED184ED02D444C21775EF2E /* DuplicateFinder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33E81FAB33D10D4F00FABAF2 /* DuplicateFinder.swift */; };
 		6F3FAE4AB0811C1A26F9172D /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = C29A1009A84B444254CD7415 /* Models.swift */; };
@@ -56,8 +56,8 @@
 		8A92CF52EC0D85C5E052E333 /* recipe-03.json in Resources */ = {isa = PBXBuildFile; fileRef = 27B2B85EE15773EE21BAB425 /* recipe-03.json */; };
 		8F6BC75DE7F90D499F8E5978 /* PlanAggregation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23789FAAD89E65816EC079FC /* PlanAggregation.swift */; };
 		934D962D9B2A3B30E32D0DE9 /* ClipModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFEB426C01662481C2053D24 /* ClipModels.swift */; };
-		9471C5981825961CC5D242D4 /* SmidgenWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = BF6EC7BDD478141917C9716C /* SmidgenWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		9744F866974A8FAD9CE097F3 /* SmidgenShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 1962776F2E60FB4A81CFB17A /* SmidgenShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		9471C5981825961CC5D242D4 /* KeepCookingWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = BF6EC7BDD478141917C9716C /* KeepCookingWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		9744F866974A8FAD9CE097F3 /* KeepCookingShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 1962776F2E60FB4A81CFB17A /* KeepCookingShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		981AA7A4860CC2263AE538E0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AB13E4BF125192FE69877AD1 /* Assets.xcassets */; };
 		98AAAACCB25B688D74178172 /* WatchViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C25E4C252A28F46E2F7A52E /* WatchViews.swift */; };
 		A29DDD2522297EC01BE779E3 /* IngredientParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACD36CEE15F0BF13B0F9EF70 /* IngredientParserTests.swift */; };
@@ -79,7 +79,7 @@
 		D8C05D54CA956CAAEE1C605C /* WidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BFCDD47F7C8B01DA19454C4 /* WidgetSnapshot.swift */; };
 		DA47E527D252EA31D02388F6 /* DemoFlows.swift in Sources */ = {isa = PBXBuildFile; fileRef = 131B72E0EC3EB6EC5CC0F146 /* DemoFlows.swift */; };
 		DB456C3C8C20874499866A48 /* DemoFlowsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1DA4AD568824F924579D48 /* DemoFlowsUITests.swift */; };
-		E1FE845FA17465C0B4A9D4E1 /* SmidgenIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1848936A3CC5C47FA2D3B258 /* SmidgenIntents.swift */; };
+		E1FE845FA17465C0B4A9D4E1 /* KeepCookingIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1848936A3CC5C47FA2D3B258 /* KeepCookingIntents.swift */; };
 		E22F6B1A7E63A2926DFA1F6E /* CaptionsImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97BCB550D9FF7CD4530BD6D1 /* CaptionsImportView.swift */; };
 		E3C48E8CF0791DCCD3666AF9 /* StepTimerParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B399F5950B23BA7D5BCE68A9 /* StepTimerParser.swift */; };
 		ED161FD915352262442B6E53 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 081C173788EB54C1887C759B /* PrivacyInfo.xcprivacy */; };
@@ -99,21 +99,21 @@
 			containerPortal = 75B6361BB9281861F41E5B43 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 659DE4328200EAFFB75D9049;
-			remoteInfo = SmidgenShare;
+			remoteInfo = KeepCookingShare;
 		};
 		3A8BA95E3C66F6ECE0E18BE9 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 75B6361BB9281861F41E5B43 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 66CA8E96D620A6C26E2D74CA;
-			remoteInfo = Smidgen;
+			remoteInfo = KeepCooking;
 		};
 		6BC2241245D332958EAA3F8B /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 75B6361BB9281861F41E5B43 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 2D8DC5E2DA8580B726A90525;
-			remoteInfo = SmidgenWidgets;
+			remoteInfo = KeepCookingWidgets;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -124,8 +124,8 @@
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				9471C5981825961CC5D242D4 /* SmidgenWidgets.appex in Embed Foundation Extensions */,
-				9744F866974A8FAD9CE097F3 /* SmidgenShare.appex in Embed Foundation Extensions */,
+				9471C5981825961CC5D242D4 /* KeepCookingWidgets.appex in Embed Foundation Extensions */,
+				9744F866974A8FAD9CE097F3 /* KeepCookingShare.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -137,10 +137,10 @@
 		07E5FB27D9CF0231028F34A7 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		081C173788EB54C1887C759B /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		0BC2356A8A6B5CCF643B2EE4 /* recipe-09.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "recipe-09.json"; sourceTree = "<group>"; };
-		0D99477653F956F97223685A /* SmidgenUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SmidgenUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		0D99477653F956F97223685A /* KeepCookingUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = KeepCookingUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		131B72E0EC3EB6EC5CC0F146 /* DemoFlows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoFlows.swift; sourceTree = "<group>"; };
-		1848936A3CC5C47FA2D3B258 /* SmidgenIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmidgenIntents.swift; sourceTree = "<group>"; };
-		1962776F2E60FB4A81CFB17A /* SmidgenShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = SmidgenShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		1848936A3CC5C47FA2D3B258 /* KeepCookingIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeepCookingIntents.swift; sourceTree = "<group>"; };
+		1962776F2E60FB4A81CFB17A /* KeepCookingShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = KeepCookingShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		1B49F0C98D1D42A92BAAC37D /* ShopViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShopViews.swift; sourceTree = "<group>"; };
 		1E5DB7DC50200281903A3EA0 /* DuplicateFinderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuplicateFinderTests.swift; sourceTree = "<group>"; };
 		23789FAAD89E65816EC079FC /* PlanAggregation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanAggregation.swift; sourceTree = "<group>"; };
@@ -156,22 +156,22 @@
 		3C1DA4AD568824F924579D48 /* DemoFlowsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoFlowsUITests.swift; sourceTree = "<group>"; };
 		4A40A587E766B41D3A54B7F6 /* RecipeScaler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecipeScaler.swift; sourceTree = "<group>"; };
 		4BA8BDFC24A02DDF34A670BF /* ClipView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipView.swift; sourceTree = "<group>"; };
-		4F17874BF113DCEB362D9890 /* SmidgenWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmidgenWidgets.swift; sourceTree = "<group>"; };
+		4F17874BF113DCEB362D9890 /* KeepCookingWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeepCookingWidgets.swift; sourceTree = "<group>"; };
 		54B839B01456D8C3342CC1EF /* recipe-10.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "recipe-10.json"; sourceTree = "<group>"; };
 		58C98BED44DCA47F717AD78C /* ShareStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareStore.swift; sourceTree = "<group>"; };
 		5DFAC576FA69697C63244F82 /* SyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncEngine.swift; sourceTree = "<group>"; };
 		B0E2E515CA1E4B1FA2E20001 /* BYOE2E.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BYOE2E.swift; sourceTree = "<group>"; };
 		B3A8CBC7B0252EEA4661CB9D /* SyncCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncCrypto.swift; sourceTree = "<group>"; };
 		64208EF15E7B5BC7A25C6337 /* LibraryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryModels.swift; sourceTree = "<group>"; };
-		65D092DB92EA97B27D1195A9 /* Smidgen.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Smidgen.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		65D092DB92EA97B27D1195A9 /* KeepCooking.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = KeepCooking.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6DDFF21CAE4746CC07BEBBA0 /* LibrarySearchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySearchTests.swift; sourceTree = "<group>"; };
-		78CF752BEB5799714C262738 /* SmidgenApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmidgenApp.swift; sourceTree = "<group>"; };
+		78CF752BEB5799714C262738 /* KeepCookingApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeepCookingApp.swift; sourceTree = "<group>"; };
 		7C25E4C252A28F46E2F7A52E /* WatchViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchViews.swift; sourceTree = "<group>"; };
 		7F6210C0ADC1C8C59178469B /* IngredientParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngredientParser.swift; sourceTree = "<group>"; };
 		8153F56D9470B193FABE198B /* IngestStepsHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngestStepsHeader.swift; sourceTree = "<group>"; };
 		8A95B932452D60B41B6C20C4 /* recipe-08.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "recipe-08.json"; sourceTree = "<group>"; };
 		8BFCDD47F7C8B01DA19454C4 /* WidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSnapshot.swift; sourceTree = "<group>"; };
-		8EF78B647256803BE6FD1BEB /* SmidgenWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SmidgenWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8EF78B647256803BE6FD1BEB /* KeepCookingWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KeepCookingWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		92B2640C9446D486B82020C3 /* recipe-12.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "recipe-12.json"; sourceTree = "<group>"; };
 		97BCB550D9FF7CD4530BD6D1 /* CaptionsImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptionsImportView.swift; sourceTree = "<group>"; };
 		A5C9C6D250C6D1A9CA3C5206 /* recipe-14-dupe.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "recipe-14-dupe.json"; sourceTree = "<group>"; };
@@ -182,8 +182,8 @@
 		AF0D65674E4F4F8E8F8177F5 /* recipe-11.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "recipe-11.json"; sourceTree = "<group>"; };
 		B34CAECDF306797D51B7B2E7 /* RecipeExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecipeExporter.swift; sourceTree = "<group>"; };
 		B399F5950B23BA7D5BCE68A9 /* StepTimerParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StepTimerParser.swift; sourceTree = "<group>"; };
-		BF6EC7BDD478141917C9716C /* SmidgenWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = SmidgenWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		BF773A1378378CE96510F64E /* SmidgenTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SmidgenTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		BF6EC7BDD478141917C9716C /* KeepCookingWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = KeepCookingWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		BF773A1378378CE96510F64E /* KeepCookingTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = KeepCookingTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C29A1009A84B444254CD7415 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		C50FC20F1C0416184CEE34E1 /* recipe-15-dupe.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "recipe-15-dupe.json"; sourceTree = "<group>"; };
 		C5B29FCFDD174F2D17C2DB1A /* recipe-01.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "recipe-01.json"; sourceTree = "<group>"; };
@@ -214,7 +214,7 @@
 		06FCFF30F348D6683CF8CAC5 /* Widgets */ = {
 			isa = PBXGroup;
 			children = (
-				4F17874BF113DCEB362D9890 /* SmidgenWidgets.swift */,
+				4F17874BF113DCEB362D9890 /* KeepCookingWidgets.swift */,
 				8BFCDD47F7C8B01DA19454C4 /* WidgetSnapshot.swift */,
 			);
 			path = Widgets;
@@ -242,12 +242,12 @@
 		1DAD80DE2FCB1D461C4CE105 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				65D092DB92EA97B27D1195A9 /* Smidgen.app */,
-				1962776F2E60FB4A81CFB17A /* SmidgenShare.appex */,
-				BF773A1378378CE96510F64E /* SmidgenTests.xctest */,
-				0D99477653F956F97223685A /* SmidgenUITests.xctest */,
-				8EF78B647256803BE6FD1BEB /* SmidgenWatch.app */,
-				BF6EC7BDD478141917C9716C /* SmidgenWidgets.appex */,
+				65D092DB92EA97B27D1195A9 /* KeepCooking.app */,
+				1962776F2E60FB4A81CFB17A /* KeepCookingShare.appex */,
+				BF773A1378378CE96510F64E /* KeepCookingTests.xctest */,
+				0D99477653F956F97223685A /* KeepCookingUITests.xctest */,
+				8EF78B647256803BE6FD1BEB /* KeepCookingWatch.app */,
+				BF6EC7BDD478141917C9716C /* KeepCookingWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -304,7 +304,7 @@
 		75D96B4951BC436A7BF65996 /* Intents */ = {
 			isa = PBXGroup;
 			children = (
-				1848936A3CC5C47FA2D3B258 /* SmidgenIntents.swift */,
+				1848936A3CC5C47FA2D3B258 /* KeepCookingIntents.swift */,
 			);
 			path = Intents;
 			sourceTree = "<group>";
@@ -332,7 +332,7 @@
 				AB13E4BF125192FE69877AD1 /* Assets.xcassets */,
 				B0E2E515CA1E4B1FA2E20001 /* BYOE2E.swift */,
 				131B72E0EC3EB6EC5CC0F146 /* DemoFlows.swift */,
-				78CF752BEB5799714C262738 /* SmidgenApp.swift */,
+				78CF752BEB5799714C262738 /* KeepCookingApp.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -421,9 +421,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		2D8DC5E2DA8580B726A90525 /* SmidgenWidgets */ = {
+		2D8DC5E2DA8580B726A90525 /* KeepCookingWidgets */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 205D898BFDBC8069A63252E6 /* Build configuration list for PBXNativeTarget "SmidgenWidgets" */;
+			buildConfigurationList = 205D898BFDBC8069A63252E6 /* Build configuration list for PBXNativeTarget "KeepCookingWidgets" */;
 			buildPhases = (
 				D052AF6E704693676ACEDBA1 /* Sources */,
 				A474F259DDBBCF70F7A6D3CE /* Resources */,
@@ -432,16 +432,16 @@
 			);
 			dependencies = (
 			);
-			name = SmidgenWidgets;
+			name = KeepCookingWidgets;
 			packageProductDependencies = (
 			);
-			productName = SmidgenWidgets;
-			productReference = BF6EC7BDD478141917C9716C /* SmidgenWidgets.appex */;
+			productName = KeepCookingWidgets;
+			productReference = BF6EC7BDD478141917C9716C /* KeepCookingWidgets.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
-		3156AFF12ED28E0E8B5EE845 /* SmidgenUITests */ = {
+		3156AFF12ED28E0E8B5EE845 /* KeepCookingUITests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 3B61C5B365B47A5F2DCECD7A /* Build configuration list for PBXNativeTarget "SmidgenUITests" */;
+			buildConfigurationList = 3B61C5B365B47A5F2DCECD7A /* Build configuration list for PBXNativeTarget "KeepCookingUITests" */;
 			buildPhases = (
 				E90293AF4C09FE2E2724A61B /* Sources */,
 			);
@@ -450,16 +450,16 @@
 			dependencies = (
 				CE58A31ECA28D2E046293E38 /* PBXTargetDependency */,
 			);
-			name = SmidgenUITests;
+			name = KeepCookingUITests;
 			packageProductDependencies = (
 			);
-			productName = SmidgenUITests;
-			productReference = 0D99477653F956F97223685A /* SmidgenUITests.xctest */;
+			productName = KeepCookingUITests;
+			productReference = 0D99477653F956F97223685A /* KeepCookingUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
-		659DE4328200EAFFB75D9049 /* SmidgenShare */ = {
+		659DE4328200EAFFB75D9049 /* KeepCookingShare */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = F64DE936C2266B7F6B6059CD /* Build configuration list for PBXNativeTarget "SmidgenShare" */;
+			buildConfigurationList = F64DE936C2266B7F6B6059CD /* Build configuration list for PBXNativeTarget "KeepCookingShare" */;
 			buildPhases = (
 				31E2CDA18EC6A100C956146F /* Sources */,
 				1422797AF0C15E86E9F52BDB /* Resources */,
@@ -468,16 +468,16 @@
 			);
 			dependencies = (
 			);
-			name = SmidgenShare;
+			name = KeepCookingShare;
 			packageProductDependencies = (
 			);
-			productName = SmidgenShare;
-			productReference = 1962776F2E60FB4A81CFB17A /* SmidgenShare.appex */;
+			productName = KeepCookingShare;
+			productReference = 1962776F2E60FB4A81CFB17A /* KeepCookingShare.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
-		66CA8E96D620A6C26E2D74CA /* Smidgen */ = {
+		66CA8E96D620A6C26E2D74CA /* KeepCooking */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 14C6E8BBA7966CF95B1E283E /* Build configuration list for PBXNativeTarget "Smidgen" */;
+			buildConfigurationList = 14C6E8BBA7966CF95B1E283E /* Build configuration list for PBXNativeTarget "KeepCooking" */;
 			buildPhases = (
 				D3802078F8056E8CBBFACF96 /* Sources */,
 				E9464B19BFEC4DA33CDC9AC5 /* Resources */,
@@ -489,16 +489,16 @@
 				F6946E239BDCD99F1BFF105E /* PBXTargetDependency */,
 				1C6B98BE156C3895955C859D /* PBXTargetDependency */,
 			);
-			name = Smidgen;
+			name = KeepCooking;
 			packageProductDependencies = (
 			);
-			productName = Smidgen;
-			productReference = 65D092DB92EA97B27D1195A9 /* Smidgen.app */;
+			productName = KeepCooking;
+			productReference = 65D092DB92EA97B27D1195A9 /* KeepCooking.app */;
 			productType = "com.apple.product-type.application";
 		};
-		9FC61F18F2DD7581ED2D729C /* SmidgenWatch */ = {
+		9FC61F18F2DD7581ED2D729C /* KeepCookingWatch */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A0513FDB74ACAB8B1D1ADC1D /* Build configuration list for PBXNativeTarget "SmidgenWatch" */;
+			buildConfigurationList = A0513FDB74ACAB8B1D1ADC1D /* Build configuration list for PBXNativeTarget "KeepCookingWatch" */;
 			buildPhases = (
 				6F6FCF589C0FAE0117906920 /* Sources */,
 			);
@@ -506,16 +506,16 @@
 			);
 			dependencies = (
 			);
-			name = SmidgenWatch;
+			name = KeepCookingWatch;
 			packageProductDependencies = (
 			);
-			productName = SmidgenWatch;
-			productReference = 8EF78B647256803BE6FD1BEB /* SmidgenWatch.app */;
+			productName = KeepCookingWatch;
+			productReference = 8EF78B647256803BE6FD1BEB /* KeepCookingWatch.app */;
 			productType = "com.apple.product-type.application.watchapp2";
 		};
-		BEAAC64E6BC5929C7017A4A6 /* SmidgenTests */ = {
+		BEAAC64E6BC5929C7017A4A6 /* KeepCookingTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 5C2EB5EFBDF07C714B27DEA6 /* Build configuration list for PBXNativeTarget "SmidgenTests" */;
+			buildConfigurationList = 5C2EB5EFBDF07C714B27DEA6 /* Build configuration list for PBXNativeTarget "KeepCookingTests" */;
 			buildPhases = (
 				7302593D9F38EB02CF9163F1 /* Sources */,
 			);
@@ -523,11 +523,11 @@
 			);
 			dependencies = (
 			);
-			name = SmidgenTests;
+			name = KeepCookingTests;
 			packageProductDependencies = (
 			);
-			productName = SmidgenTests;
-			productReference = BF773A1378378CE96510F64E /* SmidgenTests.xctest */;
+			productName = KeepCookingTests;
+			productReference = BF773A1378378CE96510F64E /* KeepCookingTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
@@ -566,7 +566,7 @@
 					};
 				};
 			};
-			buildConfigurationList = D222E87585E4AE88A60C1105 /* Build configuration list for PBXProject "Smidgen" */;
+			buildConfigurationList = D222E87585E4AE88A60C1105 /* Build configuration list for PBXProject "KeepCooking" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -580,12 +580,12 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				66CA8E96D620A6C26E2D74CA /* Smidgen */,
-				2D8DC5E2DA8580B726A90525 /* SmidgenWidgets */,
-				659DE4328200EAFFB75D9049 /* SmidgenShare */,
-				BEAAC64E6BC5929C7017A4A6 /* SmidgenTests */,
-				9FC61F18F2DD7581ED2D729C /* SmidgenWatch */,
-				3156AFF12ED28E0E8B5EE845 /* SmidgenUITests */,
+				66CA8E96D620A6C26E2D74CA /* KeepCooking */,
+				2D8DC5E2DA8580B726A90525 /* KeepCookingWidgets */,
+				659DE4328200EAFFB75D9049 /* KeepCookingShare */,
+				BEAAC64E6BC5929C7017A4A6 /* KeepCookingTests */,
+				9FC61F18F2DD7581ED2D729C /* KeepCookingWatch */,
+				3156AFF12ED28E0E8B5EE845 /* KeepCookingUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -686,7 +686,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				283E34988CC8C6258483837B /* Models.swift in Sources */,
-				3C4482208A8D1F5EEE391E77 /* SmidgenWidgets.swift in Sources */,
+				3C4482208A8D1F5EEE391E77 /* KeepCookingWidgets.swift in Sources */,
 				C737EAD11B56D34CF2D22EEC /* WidgetSnapshot.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -722,8 +722,8 @@
 				7DA9369B70FE123F051B1C28 /* ShareViews.swift in Sources */,
 				A8596D2B1F0D4017D84BB7E9 /* ShopHelpers.swift in Sources */,
 				15F5E222D96C0BF5A0B2758A /* ShopViews.swift in Sources */,
-				6240CEA7264FE38CB4E6D33B /* SmidgenApp.swift in Sources */,
-				E1FE845FA17465C0B4A9D4E1 /* SmidgenIntents.swift in Sources */,
+				6240CEA7264FE38CB4E6D33B /* KeepCookingApp.swift in Sources */,
+				E1FE845FA17465C0B4A9D4E1 /* KeepCookingIntents.swift in Sources */,
 				E3C48E8CF0791DCCD3666AF9 /* StepTimerParser.swift in Sources */,
 				6FE57C1CFCD71EEE8F3F5588 /* SyncEngine.swift in Sources */,
 				614CBF813B016FD69E868D9E /* SyncCrypto.swift in Sources */,
@@ -744,17 +744,17 @@
 /* Begin PBXTargetDependency section */
 		1C6B98BE156C3895955C859D /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 659DE4328200EAFFB75D9049 /* SmidgenShare */;
+			target = 659DE4328200EAFFB75D9049 /* KeepCookingShare */;
 			targetProxy = 383226271324D3784C2237E1 /* PBXContainerItemProxy */;
 		};
 		CE58A31ECA28D2E046293E38 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 66CA8E96D620A6C26E2D74CA /* Smidgen */;
+			target = 66CA8E96D620A6C26E2D74CA /* KeepCooking */;
 			targetProxy = 3A8BA95E3C66F6ECE0E18BE9 /* PBXContainerItemProxy */;
 		};
 		F6946E239BDCD99F1BFF105E /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 2D8DC5E2DA8580B726A90525 /* SmidgenWidgets */;
+			target = 2D8DC5E2DA8580B726A90525 /* KeepCookingWidgets */;
 			targetProxy = 6BC2241245D332958EAA3F8B /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -793,7 +793,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = org.smidgen.app.uitests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = Smidgen;
+				TEST_TARGET_NAME = KeepCooking;
 			};
 			name = Debug;
 		};
@@ -869,7 +869,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SMIDGEN_API_BASE_URL = "https://smidgen-api.pshippy-245.workers.dev";
+				SMIDGEN_API_BASE_URL = "https://keep-cooking-api.pshippy-245.workers.dev";
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
@@ -963,7 +963,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = org.smidgen.app.uitests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = Smidgen;
+				TEST_TARGET_NAME = KeepCooking;
 			};
 			name = Release;
 		};
@@ -1061,7 +1061,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SMIDGEN_API_BASE_URL = "https://smidgen-api.pshippy-245.workers.dev";
+				SMIDGEN_API_BASE_URL = "https://keep-cooking-api.pshippy-245.workers.dev";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -1110,7 +1110,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		14C6E8BBA7966CF95B1E283E /* Build configuration list for PBXNativeTarget "Smidgen" */ = {
+		14C6E8BBA7966CF95B1E283E /* Build configuration list for PBXNativeTarget "KeepCooking" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				6B5703D9B881E39098350123 /* Debug */,
@@ -1119,7 +1119,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		205D898BFDBC8069A63252E6 /* Build configuration list for PBXNativeTarget "SmidgenWidgets" */ = {
+		205D898BFDBC8069A63252E6 /* Build configuration list for PBXNativeTarget "KeepCookingWidgets" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				7C6A3B9BA9C955E6950E4EC3 /* Debug */,
@@ -1128,7 +1128,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		3B61C5B365B47A5F2DCECD7A /* Build configuration list for PBXNativeTarget "SmidgenUITests" */ = {
+		3B61C5B365B47A5F2DCECD7A /* Build configuration list for PBXNativeTarget "KeepCookingUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				2B612D82BBA7D43557D0C42F /* Debug */,
@@ -1137,7 +1137,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		5C2EB5EFBDF07C714B27DEA6 /* Build configuration list for PBXNativeTarget "SmidgenTests" */ = {
+		5C2EB5EFBDF07C714B27DEA6 /* Build configuration list for PBXNativeTarget "KeepCookingTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				1B5EB0A5AA702D2117835EBA /* Debug */,
@@ -1146,7 +1146,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		A0513FDB74ACAB8B1D1ADC1D /* Build configuration list for PBXNativeTarget "SmidgenWatch" */ = {
+		A0513FDB74ACAB8B1D1ADC1D /* Build configuration list for PBXNativeTarget "KeepCookingWatch" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				97AAFF578F6BD9B618D2F273 /* Debug */,
@@ -1155,7 +1155,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		D222E87585E4AE88A60C1105 /* Build configuration list for PBXProject "Smidgen" */ = {
+		D222E87585E4AE88A60C1105 /* Build configuration list for PBXProject "KeepCooking" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				D1945F63BBFFEE253185CF93 /* Debug */,
@@ -1164,7 +1164,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		F64DE936C2266B7F6B6059CD /* Build configuration list for PBXNativeTarget "SmidgenShare" */ = {
+		F64DE936C2266B7F6B6059CD /* Build configuration list for PBXNativeTarget "KeepCookingShare" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				429E0E06466A0892CB74A622 /* Debug */,

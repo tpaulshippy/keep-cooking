@@ -1,4 +1,4 @@
-// Smidgen — Lane 3 Capture
+// Keep Cooking — Lane 3 Capture
 // apps/ios/Features/Ingest/ClipView.swift
 //
 // Paprika-parity ingest: URL → preview → save in <3 taps.

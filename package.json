@@ -1,5 +1,5 @@
 {
-  "name": "smidgen",
+  "name": "keep-cooking",
   "private": true,
   "workspaces": ["api", "packages/contracts"]
 }

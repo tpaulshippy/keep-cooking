@@ -1,10 +1,10 @@
 openapi: 3.1.0
 info:
-  title: Smidgen API
+  title: Keep Cooking API
   version: 0.1.0
   description: Single Hono Worker + D1 + R2. MIT only. See packages/contracts/README.md.
 servers:
-  - url: https://api.smidgen.local
+  - url: https://api.keepcooking.local
 paths:
   /health:
     get:

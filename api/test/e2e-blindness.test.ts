@@ -240,7 +240,7 @@ describe('e2e v1 blind blob pipe', () => {
   it('beta gate fronts /v2 in prod (401 without token)', async () => {
     const store = new MemoryStore();
     const app = createApp(store, {
-      baseUrl: 'https://smidgen-api.pshippy-245.workers.dev',
+      baseUrl: 'https://keep-cooking-api.pshippy-245.workers.dev',
       secret: 'test-secret',
       betaToken: BETA,
     });
@@ -383,7 +383,7 @@ describe('e2e v1 D1-backed pipe (faithful FakeD1)', () => {
   const makeD1App = async (fake: FakeD1) => {
     const store = new D1Store(fake as unknown as D1);
     await store.hydrate();
-    const app = createApp(store, { baseUrl: 'https://api.smidgen.local', secret: 'test-secret' });
+    const app = createApp(store, { baseUrl: 'https://api.keepcooking.local', secret: 'test-secret' });
     return { app, store, fake };
   };
 

@@ -1,4 +1,4 @@
-# Smidgen API — Lane 1
+# Keep Cooking API — Lane 1
 
 One Hono Worker on Cloudflare: D1 (via Drizzle schema + parameterized SQL) + R2 photos.
 Better Auth (email + Apple stub via headers, production wiring documented below).
@@ -8,16 +8,16 @@ Households + RBAC (owner/member/viewer). Zod-validated inputs. **PII is never lo
 ## 3-command deploy
 
 ```bash
-npx wrangler d1 create smidgen        # 1. create D1 (paste id into wrangler.toml)
-npx wrangler r2 bucket create smidgen-photos   # 2. create R2 bucket
+npx wrangler d1 create keep-cooking        # 1. create D1 (paste id into wrangler.toml)
+npx wrangler r2 bucket create keep-cooking-photos   # 2. create R2 bucket
 npm run deploy                        # 3. apply migrations/seed, then deploy
 ```
 
 Full first-time sequence (after `d1 create`):
 
 ```bash
-npx wrangler d1 execute smidgen --remote --file=./drizzle/0001_init.sql
-npx wrangler d1 execute smidgen --remote --file=./drizzle/seed.sql   # optional demo seeds
+npx wrangler d1 execute keep-cooking --remote --file=./drizzle/0001_init.sql
+npx wrangler d1 execute keep-cooking --remote --file=./drizzle/seed.sql   # optional demo seeds
 npm run deploy
 ```
 
@@ -36,7 +36,7 @@ an in-memory store (dev only). `GET /health` proves boot.
 
 ## Budget (1 Worker + 1 D1 + 1 R2, Cloudflare free tier)
 
-| Resource | Free-tier quota | Smidgen usage | Headroom |
+| Resource | Free-tier quota | Keep Cooking usage | Headroom |
 |---|---|---|---|
 | Workers requests | 100k req/day | ~2k req/day (beta households) | 50x |
 | D1 rows read | 5M/day | ~50k/day | 100x |
@@ -70,7 +70,7 @@ Stay-free rules: signed photo URLs (<15 min TTL) instead of proxied bytes,
 
 ```bash
 # Generate + store the token as a repo secret (never commit the value):
-openssl rand -hex 32 | gh secret set INTERNAL_BETA_TOKEN --repo tpaulshippy/smidgen
+openssl rand -hex 32 | gh secret set INTERNAL_BETA_TOKEN --repo tpaulshippy/keep-cooking
 ```
 
 `.github/workflows/deploy.yml` pushes that secret to the Worker
@@ -81,15 +81,15 @@ Manual alternative: `npx wrangler secret put INTERNAL_BETA_TOKEN`.
 # Reserved for pass 2, unused by the beta gate:
 # npx wrangler secret put BETTER_AUTH_SECRET
 
-# D1: wrangler.toml still has `database_id = "local-smidgen-placeholder"` —
-# replace it with the real id from `npx wrangler d1 create smidgen` before deploy.
+# D1: wrangler.toml still has `database_id = "local-keepcooking-placeholder"` —
+# replace it with the real id from `npx wrangler d1 create keep-cooking` before deploy.
 ```
 
 ### Curl
 
 ```bash
-BASE=https://smidgen-api.pshippy-245.workers.dev
-TOKEN=$(cat ~/.smidgen-beta-token)   # value stored via `wrangler secret put INTERNAL_BETA_TOKEN`
+BASE=https://keep-cooking-api.pshippy-245.workers.dev
+TOKEN=$(cat ~/.keepcooking-beta-token)   # value stored via `wrangler secret put INTERNAL_BETA_TOKEN`
 
 curl -s $BASE/health                                        # 200, no auth
 curl -s $BASE/recipes                                      # 401 {error:"unauthorized"}

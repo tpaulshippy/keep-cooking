@@ -1,4 +1,4 @@
-// Smidgen — Lane 3 Capture
+// Keep Cooking — Lane 3 Capture
 // apps/ios/Features/Ingest/IngestStepsHeader.swift
 //
 // Shared Add → Review → Save progress header for the Clip, Captions, and

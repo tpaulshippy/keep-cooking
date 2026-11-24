@@ -1,4 +1,4 @@
-// Smidgen — Lane 2 iOS Foundation
+// Keep Cooking — Lane 2 iOS Foundation
 // apps/ios/Sync/SyncEngine.swift
 //
 // Offline-first sync against Lane 1 contracts:

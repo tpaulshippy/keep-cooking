@@ -46,8 +46,8 @@ Merge (`planMerge`): survivor = most ingredients → has photo → highest ratin
 ### System — Widgets, Intents, Watch
 
 - `Widgets/WidgetSnapshot.swift` (Foundation-only, shared by app/widget/watch/tests): `TodaySnapshot` over App Group `group.com.smidgen.shared`, key `smidgen.snapshot.v1`. Reads never throw — corrupt/missing data yields `.empty`.
-- `Widgets/SmidgenWidgets.swift`: **Today Plan** widget (today's meals, meal-ordered) + **List Progress** widget (checked/total + ProgressView), hourly timeline + `WidgetCenter.reloadAllTimelines()` via `SnapshotWriter.refresh(context:)` (main-app target).
-- `Intents/SmidgenIntents.swift`: 3 Shortcuts via AppIntents — **Add Recipe** (title + one-ingredient-per-line), **Start Timer** (logs a `StepTimer` onto a "Shortcut Timers" recipe AND returns the countdown dialog), **Add to List** (appends to most-recent list, creates "Shopping" if none). All offline-first SwiftData writes; sync picks them up via outbox. Phrases in `SmidgenShortcutsProvider`.
+- `Widgets/KeepCookingWidgets.swift`: **Today Plan** widget (today's meals, meal-ordered) + **List Progress** widget (checked/total + ProgressView), hourly timeline + `WidgetCenter.reloadAllTimelines()` via `SnapshotWriter.refresh(context:)` (main-app target).
+- `Intents/KeepCookingIntents.swift`: 3 Shortcuts via AppIntents — **Add Recipe** (title + one-ingredient-per-line), **Start Timer** (logs a `StepTimer` onto a "Shortcut Timers" recipe AND returns the countdown dialog), **Add to List** (appends to most-recent list, creates "Shopping" if none). All offline-first SwiftData writes; sync picks them up via outbox. Phrases in `KeepCookingShortcutsProvider`.
 - `watch/WatchViews.swift`: `WatchRootView` tabs — **Steps** (check off from `smidgen.nowcooking.v1`), **Timers** (start/stop countdowns), **Lists** (progress from the shared snapshot). The phone writes `NowCookingPayload` when Cook mode starts a recipe.
 
 ## Validation (this machine, no Xcode project in repo)
@@ -60,8 +60,8 @@ Merge (`planMerge`): survivor = most ingredients → has photo → highest ratin
 
 ## Needed from other lanes (not done here — out of scope)
 
-1. **App shell**: register `Cookbook.self` + `SavedSearch.self` in `SmidgenApp.modelTypes`; add a Library tab pointing at `LibraryHomeView`; route `smidgen://invite/<code>` in `onOpenURL`.
-2. **Targets/entitlements**: widget extension target (includes `WidgetSnapshot.swift` + `SmidgenWidgets.swift`), watch target (includes `WidgetSnapshot.swift` + `WatchViews.swift`), App Group `group.com.smidgen.shared` on all three + main app.
+1. **App shell**: register `Cookbook.self` + `SavedSearch.self` in `KeepCookingApp.modelTypes`; add a Library tab pointing at `LibraryHomeView`; route `smidgen://invite/<code>` in `onOpenURL`.
+2. **Targets/entitlements**: widget extension target (includes `WidgetSnapshot.swift` + `KeepCookingWidgets.swift`), watch target (includes `WidgetSnapshot.swift` + `WatchViews.swift`), App Group `group.com.smidgen.shared` on all three + main app.
 3. **Cook mode (Lane 4)**: write `NowCookingPayload` via `WatchStore.writeNowCooking` when a recipe starts; call `SnapshotWriter.refresh(context:)` after plan/list edits.
 
 ## Not Yet (unfinished = removed, nothing dead shipped)

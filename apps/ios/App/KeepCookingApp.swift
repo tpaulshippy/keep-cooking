@@ -1,5 +1,5 @@
-// Smidgen — Lane 2 iOS Foundation
-// apps/ios/App/SmidgenApp.swift
+// Keep Cooking — Lane 2 iOS Foundation
+// apps/ios/App/KeepCookingApp.swift
 //
 // Adaptive shell: iPhone = TabView (Recipes / Plan / Lists / More),
 // iPad = NavigationSplitView sidebar + detail. iOS 17+.
@@ -13,7 +13,7 @@ import SwiftUI
 import SwiftData
 
 @main
-struct SmidgenApp: App {
+struct KeepCookingApp: App {
     /// Model types in the Lane 2 schema (passed as an array — the
     /// Scene `modelContainer(for:)` overload takes `[any PersistentModel.Type]`).
     static var modelTypes: [any PersistentModel.Type] {
@@ -37,7 +37,7 @@ struct SmidgenApp: App {
         }
         // Offline-first store: local SwiftData is the source of truth.
         // CloudKit mirror arrives later via CloudKitMirrorStub (SyncEngine).
-        .modelContainer(for: SmidgenApp.modelTypes)
+        .modelContainer(for: KeepCookingApp.modelTypes)
     }
 }
 
@@ -99,7 +99,7 @@ struct PadSplitView: View {
                     Label(section.title, systemImage: section.icon)
                 }
             }
-            .navigationTitle("Smidgen")
+            .navigationTitle("Keep Cooking")
         } content: {
             switch selection ?? .recipes {
             case .recipes:
@@ -381,7 +381,7 @@ final class SyncCoordinator {
 // MARK: - Sync endpoint + credentials (Settings-editable, UserDefaults-backed)
 
 enum SyncConfig {
-    static let prodBaseURL = "https://smidgen-api.pshippy-245.workers.dev"
+    static let prodBaseURL = "https://keep-cooking-api.pshippy-245.workers.dev"
 
     static var baseURL: URL? {
         if let o = UserDefaults.standard.string(forKey: "smidgen.apiBaseURL"),

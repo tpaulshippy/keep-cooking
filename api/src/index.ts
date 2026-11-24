@@ -67,7 +67,7 @@ export function createApp(
 ) {
   const app = new Hono<{ Variables: { store: Store } }>();
   const version = opts.version ?? VERSION;
-  const baseUrl = (opts.baseUrl ?? 'https://api.smidgen.local').replace(/\/$/, '');
+  const baseUrl = (opts.baseUrl ?? 'https://api.keepcooking.local').replace(/\/$/, '');
   const secret = opts.secret ?? 'dev-only-change-me';
   // Prod detection: explicit override wins, else derived from baseUrl
   // (workers.dev / any non-local host => prod). Dev keeps the header stub.
@@ -470,7 +470,7 @@ export default {
     if (store instanceof D1Store) await store.hydrate();
     const app = createApp(store, {
       version: env.APP_VERSION ?? VERSION,
-      baseUrl: env.PUBLIC_BASE_URL ?? 'https://api.smidgen.local',
+      baseUrl: env.PUBLIC_BASE_URL ?? 'https://api.keepcooking.local',
       secret: env.BETTER_AUTH_SECRET ?? 'dev-only-change-me',
       betaToken: env.INTERNAL_BETA_TOKEN,
       // prod derived from PUBLIC_BASE_URL via isProdBaseUrl (workers.dev => prod)

@@ -1,4 +1,4 @@
-// Smidgen — Lane 5 Organize
+// Keep Cooking — Lane 5 Organize
 // apps/ios/Export/RecipeExporter.swift
 //
 // Client-side export mirroring Lane 1 `api/src/export.ts` exactly:

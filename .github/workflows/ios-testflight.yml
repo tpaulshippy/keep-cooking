@@ -23,7 +23,7 @@ on:
     branches: [main]
     paths:
       - "apps/ios/**"
-      - "apps/ios/Smidgen.xcodeproj/**"
+      - "apps/ios/KeepCooking.xcodeproj/**"
       - "apps/ios/ci_scripts/**"
       - "apps/ios/scripts/**"
       - ".github/workflows/ios-testflight.yml"

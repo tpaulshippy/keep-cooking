@@ -1,4 +1,4 @@
-// Smidgen — Library search tests (pure Foundation — no SwiftData, no UI)
+// Keep Cooking — Library search tests (pure Foundation — no SwiftData, no UI)
 //
 // Covers the shared engine behind the Recipes tab list (DemoFlows.swift
 // `filtered` delegates here via AdvancedFilter + filterRecipes):

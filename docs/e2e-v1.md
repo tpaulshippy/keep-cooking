@@ -1,10 +1,10 @@
-# Smidgen E2E v1 — zero-knowledge recipe sync
+# Keep Cooking E2E v1 — zero-knowledge recipe sync
 
 > **Zero-knowledge statement (scope: /v2 E2E envelopes only).** Recipe
 > content inside `PUT/GET /v2/sync/:hash` envelopes is encrypted on-device
 > before it ever reaches the backend. The Worker, D1 `sync_blobs_v2`, logs,
 > and backups hold only opaque blobs plus routing metadata (household hash,
-> key id, timestamps) for that route. Smidgen cannot see or recover those
+> key id, timestamps) for that route. Keep Cooking cannot see or recover those
 > recipes. Lose code+devices = permanent loss.
 >
 > Out of scope: the legacy plaintext pipes `GET /sync/pull` and
@@ -41,6 +41,12 @@ children into the parent recipe envelope pre-encrypt. Per-id delete
 travels as a `deleted: true` tombstone via PUT; whole-bucket wipe is
 `DELETE /v2/sync/:hash`. Photos stay inline in the ciphertext for pass 1 —
 no dedicated photo route.
+
+> **Legacy stable identifiers:** the `smidgen-hh-v1`, `smidgen-sync-v1`, and
+> `smidgen.e2ee.*` strings in this document are frozen cryptographic domain
+> separators / Keychain account prefixes. They are intentionally unchanged by
+> the Keep Cooking rename — altering them would orphan existing households'
+> server buckets and device keys.
 
 ## Key derivation (locked)
 
@@ -104,7 +110,7 @@ produce or verify plaintext.
 
 - **Loss:** the recovery kit IS the `syncCode` (plus `householdId` and the
   backend URL). Anyone with the code reads everything; anyone without it —
-  including Smidgen — reads nothing. There is no reset path: losing the
+  including Keep Cooking — reads nothing. There is no reset path: losing the
   code AND all joined devices means the ciphertext can never be decrypted
   again. Print it, store it with your passwords, treat it like a house key.
 - **Rotation:** Settings (future) → rotate generates a fresh `syncCode`
@@ -122,8 +128,8 @@ produce or verify plaintext.
 1. `wrangler login` (once per machine).
 2. Mint a beta token and deploy from the repo root:
    `INTERNAL_BETA_TOKEN=$(openssl rand -base64 32) ./scripts/deploy-backend.sh`
-   - Creates D1 `smidgen` (writes the new `database_id` into
-     `api/wrangler.toml` on first run), R2 `smidgen-photos`, applies the D1
+   - Creates D1 `keep-cooking` (writes the new `database_id` into
+     `api/wrangler.toml` on first run), R2 `keep-cooking-photos`, applies the D1
      schema remotely (`api/drizzle/0001_init.sql` + `0002_e2e_blobs.sql`),
      sets `INTERNAL_BETA_TOKEN` as a Worker secret, writes
      `PUBLIC_BASE_URL` into `api/wrangler.toml [vars]` when provided, deploys
@@ -132,7 +138,7 @@ produce or verify plaintext.
      `BYO_NO_TOKEN=1` only for an explicit local/no-token setup, where
      writes are ungated and the backend must never be exposed).
 3. The script prints the Worker URL, e.g.
-   `https://smidgen-api.<account>.workers.dev`.
+   `https://keep-cooking-api.<account>.workers.dev`.
 4. In the app: Settings → Server (BYO backend) → paste URL → **Test**
    (expects `GET /health` → 200). Do NOT tap Save & sync now yet:
    syncing before the household key exists would push recipes through
@@ -152,8 +158,8 @@ Run against a scratch backend with a test household:
 
 1. Create household + push ≥ 1 encrypted recipe envelope.
 2. Dump everything the operator can see:
-   - `wrangler d1 execute smidgen --command "SELECT * FROM …"` (all tables),
-   - `wrangler r2 object list smidgen-photos` + `get` every key,
+   - `wrangler d1 execute keep-cooking --command "SELECT * FROM …"` (all tables),
+   - `wrangler r2 object list keep-cooking-photos` + `get` every key,
    - Worker logs (`wrangler tail` capture for the session).
 3. Assert over the concatenated dump: **zero bytes** of known recipe
    plaintext — grep for each recipe title, ingredient name, step sentence,

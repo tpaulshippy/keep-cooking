@@ -1,4 +1,4 @@
-// Smidgen — Lane 3 Capture
+// Keep Cooking — Lane 3 Capture
 // apps/ios/Features/Ingest/ClipModels.swift
 //
 // Contract types for POST /clip (openapi.yaml ClipRequest → ClipReport).

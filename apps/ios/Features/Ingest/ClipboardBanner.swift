@@ -1,4 +1,4 @@
-// Smidgen — Lane 3 Capture
+// Keep Cooking — Lane 3 Capture
 // apps/ios/Features/Ingest/ClipboardBanner.swift
 //
 // Clipboard auto-detect on foreground with dismissable prompt.

@@ -1,5 +1,5 @@
-// Smidgen — Lane 5 Organize
-// apps/ios/Intents/SmidgenIntents.swift
+// Keep Cooking — Lane 5 Organize
+// apps/ios/Intents/KeepCookingIntents.swift
 //
 // 3 Shortcuts via AppIntents (iOS 17+): Add Recipe, Start Timer, Add to List.
 // Intents write through SnapshotWriter-visible SwiftData paths only — they
@@ -38,18 +38,18 @@ private enum IntentStore {
 
 // MARK: - 1. Add Recipe
 
-/// "Add <title> to Smidgen" — creates a recipe shell with one ingredient per
+/// "Add <title> to Keep Cooking" — creates a recipe shell with one ingredient per
 /// line of `ingredientsText` so a dictated list lands structured.
 struct AddRecipeIntent: AppIntent {
     static var title: LocalizedStringResource = "Add Recipe"
-    static var description = IntentDescription("Creates a new recipe in Smidgen.")
+    static var description = IntentDescription("Creates a new recipe in Keep Cooking.")
     static var openAppWhenRun: Bool = false
 
     @Parameter(title: "Title") var title: String
     @Parameter(title: "Ingredients", default: "") var ingredientsText: String
 
     static var parameterSummary: some ParameterSummary {
-        Summary("Add \(\.$title) to Smidgen")
+        Summary("Add \(\.$title) to Keep Cooking")
     }
 
     @MainActor
@@ -71,7 +71,7 @@ struct AddRecipeIntent: AppIntent {
             position += 1
         }
         try context.save()
-        return .result(dialog: "Added \(trimmed) to Smidgen.")
+        return .result(dialog: "Added \(trimmed) to Keep Cooking.")
     }
 }
 
@@ -172,7 +172,7 @@ struct AddToListIntent: AppIntent {
 // MARK: - Shortcuts provider
 
 /// Surfaces all three intents in the Shortcuts app.
-struct SmidgenShortcuts: AppShortcutsProvider {
+struct KeepCookingShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
             intent: AddRecipeIntent(),

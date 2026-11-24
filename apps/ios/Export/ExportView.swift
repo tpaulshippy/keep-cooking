@@ -1,4 +1,4 @@
-// Smidgen — Lane 5 Organize
+// Keep Cooking — Lane 5 Organize
 // apps/ios/Export/ExportView.swift
 //
 // Export UI: pick a recipe, preview JSON/Markdown/HTML, share or save to
@@ -112,7 +112,7 @@ public struct RecipeExportView: View {
     private func writeTempFile() -> URL? {
         guard let r = selected else { return nil }
         let safe = r.title.lowercased().map { $0.isLetter || $0.isNumber ? $0 : "-" }
-        let name = "smidgen-\(String(safe).prefix(40)).\(format.fileExtension)"
+        let name = "keep-cooking-\(String(safe).prefix(40)).\(format.fileExtension)"
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(String(name))
         try? exportedText.write(to: url, atomically: true, encoding: .utf8)
         return (try? url.checkResourceIsReachable()) == true ? url : nil

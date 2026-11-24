@@ -1,4 +1,4 @@
-// Smidgen — Lane 3 Capture
+// Keep Cooking — Lane 3 Capture
 // apps/ios/Features/Ingest/OCRScanView.swift
 //
 // Vision OCR scan: cookbook photo → recognized text → title/ingredients/steps

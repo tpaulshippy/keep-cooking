@@ -1,4 +1,4 @@
-// Smidgen — Lane 5 Organize
+// Keep Cooking — Lane 5 Organize
 // apps/ios/watch/WatchViews.swift
 //
 // watchOS companion: today's steps + timers + shopping list. Reads the same

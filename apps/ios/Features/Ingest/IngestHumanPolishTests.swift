@@ -1,4 +1,4 @@
-// Smidgen — Lane 3 Capture
+// Keep Cooking — Lane 3 Capture
 // apps/ios/Features/Ingest/IngestHumanPolishTests.swift
 //
 // Regression tests for the ingest human-polish pass (PR #5 review):
@@ -9,7 +9,7 @@
 import XCTest
 
 // NOTE: when these files live in the same test target, no import is needed.
-// If your app target is named Smidgen, use `@testable import Smidgen` instead.
+// If your app target is named KeepCooking, use `@testable import KeepCooking` instead.
 
 final class IngestHumanPolishTests: XCTestCase {
     // MARK: - Server-error copy

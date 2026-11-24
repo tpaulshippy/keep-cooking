@@ -1,15 +1,15 @@
-// Smidgen — Lane 4 CookTests (XCTest)
+// Keep Cooking — Lane 4 CookTests (XCTest)
 // Covers the Lane 4 pure core — no SwiftData, no network, no UI:
 //   1. Scaling 4 -> 6 servings (factor + fraction display).
 //   2. Timer parser (ranges use upper bound, multi-timer, hr/min/sec).
 //   3. Week aggregation (scaled merge + unmeasured passthrough).
 //   4. Aisle sort + pantry helpers (expiry, low-stock).
 //
-// Run: these live in the SmidgenTests target alongside SyncEngineTests
+// Run: these live in the KeepCookingTests target alongside SyncEngineTests
 // (apps/ios/Sync/SyncEngineTests.swift). The pure-logic sources under test
 // (RecipeScaler.swift, StepTimerParser.swift, CookSession.swift,
 // ../Plan/PlanAggregation.swift, ../Shop/ShopHelpers.swift) compile into
-// the same test target (see project.yml + Smidgen.xcodeproj) — no import
+// the same test target (see project.yml + KeepCooking.xcodeproj) — no import
 // needed, no @testable import (standalone bundle, no app host).
 
 import XCTest
