@@ -114,16 +114,32 @@ public struct CookModeView: View {
         .onAppear {
             KeepAwake.enable()
             session.loadTimers(from: steps.map { $0.text })
-            // VoiceCookManager owns speak on appear.
+            // Wire voice callbacks (idempotent per appearance).
+            wireVoiceCallbacks()
+            // Consume any Shortcuts/intent handoff written while away.
+            // Shared key "cook.pendingCommand" (next/previous/repeat/
+            // crossoff:<name>/gotostep:<n>). Manager owns parsing + clearing;
+            // the view only maps its store-agnostic snapshots.
+            _ = voiceManager.consumePendingCommand(session: session, ingredients: voiceIngredients, steps: steps.map { $0.text })
+            // Resume listening when the persisted flag is on. The manager
+            // persists cook.listeningEnabled; permission-then-start avoids
+            // starting the engine before mic access resolves.
+            if voiceManager.listeningEnabled {
+                beginListening()
+            }
+            // VoiceCookManager owns speak on appear (interrupting read).
             speakCurrentStep()
         }
         .onDisappear {
             KeepAwake.disable()
             CookActivityStub.cancel(ids: scheduledIds)
+            // Manager's stopListening also persists listeningEnabled off,
+            // fixing the stale-flag bug (was: stopped input, left flag true).
             voiceManager.stopListening()
         }
         .onChange(of: session.stepIndex) {
             // Re-read on every step change (pager swipe, dots, Back/Next/Finish).
+            // speakCurrentStep interrupts first so rapid swipes never pile up.
             speakCurrentStep()
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -547,6 +563,9 @@ public struct CookModeView: View {
                 voiceManager.readAloudEnabled.toggle()
                 if voiceManager.readAloudEnabled {
                     speakCurrentStep()
+                } else {
+                    // Read-aloud OFF must silence in-flight TTS immediately.
+                    voiceManager.stopSpeakingOutput()
                 }
             } label: {
                 Image(systemName: voiceManager.readAloudEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
@@ -586,8 +605,58 @@ public struct CookModeView: View {
 
     private func speakCurrentStep() {
         #if os(iOS)
-        voiceManager.readCurrentStep(steps: steps.map { $0.text }, session: session, locale: Locale.current)
+        // Interrupting read stops any in-flight utterance first so rapid
+        // step changes never pile up. (Manager lane provides the combined
+        // call; fallback would be stopSpeakingOutput() + readCurrentStep.)
+        voiceManager.readCurrentStepInterrupting(steps: steps.map { $0.text }, session: session, locale: Locale.current)
         #endif
+    }
+
+    /// Store-agnostic snapshots mapped to the manager's voice contract.
+    private var voiceIngredients: [VoiceIngredient] {
+        ingredients.map { VoiceIngredient(id: $0.id, name: $0.name, quantity: $0.quantity, unit: $0.unit) }
+    }
+
+    /// Wires manager callbacks. Only scale drives view state; the rest are
+    /// intentionally observed via `lastReply` (see comments below).
+    private func wireVoiceCallbacks() {
+        // Scale voice commands ("double it") drive the sticky servings
+        // stepper. Capture the Binding — not self — so the escaping
+        // callback can write through (View is a struct).
+        let servingsBinding = $targetServings
+        let base = baseServings
+        voiceManager.onScaleCommand = { factor in
+            let lower = max(0.25, base * 0.25)
+            let upper = base * 4
+            servingsBinding.wrappedValue = min(max(base * factor, lower), upper)
+        }
+        // onTimerCommand: intentionally unwired. The timer is scheduled by
+        // the manager; its reply is already set on lastReply and shown in
+        // the pill. No view-side scheduling (avoids double-scheduling with
+        // CookActivityStub) and no scheduledIds bookkeeping needed here.
+        // onStopCooking: intentionally no navigation. This view is
+        // store-agnostic with no router; popping mid-cook would strand
+        // timers/keep-awake state. The manager's "Done cooking." reply is
+        // shown in the pill and the user exits via the normal back button.
+        // onAddToList: intentionally unwired. This view only holds snapshot
+        // structs (no SwiftData context), so it cannot insert ListItems. The
+        // manager gives the honest spoken + pill reply ("Added to your …").
+    }
+
+    /// Permission-then-start entry point (shared by toggle-ON + onAppear resume).
+    /// Never starts the engine synchronously after requesting — the start
+    /// happens inside the permission completion.
+    private func beginListening() {
+        voiceManager.requestPermissionsThenStart { [voiceManager, session] in
+            voiceManager.startListening { transcript in
+                _ = voiceManager.handle(
+                    transcript: transcript,
+                    session: session,
+                    ingredients: voiceIngredients,
+                    steps: steps.map { $0.text }
+                )
+            }
+        }
     }
 
     private func toggleListening() {
@@ -596,15 +665,7 @@ public struct CookModeView: View {
             voiceManager.stopListening()
         } else {
             voiceManager.listeningEnabled = true
-            voiceManager.requestPermissions()
-            voiceManager.startListening { transcript in
-                voiceManager.handle(
-                    transcript: transcript,
-                    session: session,
-                    ingredients: ingredients.map { (id: $0.id, name: $0.name) },
-                    steps: steps.map { $0.text }
-                )
-            }
+            beginListening()
         }
     }
 

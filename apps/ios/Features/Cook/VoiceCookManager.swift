@@ -10,6 +10,20 @@
 // Replies: every handled command sets `lastReply` AND speaks it (Paprika
 // parity: show + say each reply). Commands are only handled while the app is
 // frontmost (`UIApplication.applicationState == .active` where available).
+//
+// Cubic review fixes (manager+session lane):
+//   - `VoiceIngredient` (id/name/quantity/unit) feeds `handle`; amount replies
+//     scale via `scaledDisplay(..., factor: session.scale)`.
+//   - View-wired callbacks: `onScaleCommand` (clamped factor),
+//     `onTimerCommand`, `onStopCooking`, `onAddToList`. Add-to-list / timer
+//     never claim success without a real write/schedule.
+//   - Step-read interrupts: `readCurrentStep` stops the current utterance
+//     before speaking the new step (see also `readCurrentStepInterrupting`).
+//   - Permission-then-start: `requestPermissions(completion:)` /
+//     `requestPermissionsThenStart(_:)` join mic + speech results; the legacy
+//     `requestPermissions()` calls through.
+//   - Shared handoff: `consumePendingCommand(session:ingredients:steps:)`
+//     reads + clears the exact UserDefaults key "cook.pendingCommand".
 
 import Foundation
 import AVFoundation
@@ -18,6 +32,25 @@ import Speech
 #if os(iOS)
 import UIKit
 #endif
+
+// MARK: - Voice ingredient (contract: designer UI lane depends on this shape)
+
+/// Ingredient as seen by voice commands: identity + scaled-amount data.
+/// Amount replies render via
+/// `scaledDisplay(name:quantity:unit:factor:)` with `factor = session.scale`;
+/// `quantity == nil` (unmeasured, e.g. "salt to taste") replies name only.
+public struct VoiceIngredient: Sendable {
+    public var id: String
+    public var name: String
+    public var quantity: Double?
+    public var unit: String
+    public init(id: String, name: String, quantity: Double? = nil, unit: String = "") {
+        self.id = id
+        self.name = name
+        self.quantity = quantity
+        self.unit = unit
+    }
+}
 
 // MARK: - Audio input seam
 
@@ -73,8 +106,15 @@ public final class LiveVoiceInput: VoiceAudioInput {
 
     public func start(onTranscript: @escaping (String) -> Void) {
         stop()
+        #if os(iOS)
+        configureAudioSession()
+        #endif
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = false
+        // Prefer on-device recognition when the recognizer supports it.
+        if recognizer.supportsOnDeviceRecognition {
+            request.requiresOnDeviceRecognition = true
+        }
         self.request = request
         let inputNode = engine.inputNode
         let format = inputNode.outputFormat(forBus: 0)
@@ -101,7 +141,32 @@ public final class LiveVoiceInput: VoiceAudioInput {
         request = nil
         task = nil
         isRunning = false
+        #if os(iOS)
+        deactivateAudioSession()
+        #endif
     }
+
+    #if os(iOS)
+    /// Play-and-record so read-aloud ducks under listening; activated before
+    /// `engine.start()` so the engine never starts on a cold session.
+    private func configureAudioSession() {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.playAndRecord, mode: .spokenAudio, options: .duckOthers)
+            try session.setActive(true)
+        } catch {
+            // Engine start below still reports failure via `isRunning`.
+        }
+    }
+
+    private func deactivateAudioSession() {
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        } catch {
+            // Best effort; nothing for the caller to do.
+        }
+    }
+    #endif
 }
 
 // MARK: - Manager
@@ -125,26 +190,94 @@ public final class VoiceCookManager {
     public var lastReply = ""
     public private(set) var micDenied = false
 
+    // MARK: View-wired callbacks (all optional; the view owns rendering)
+
+    /// Fired with the clamped scale factor whenever a voice scale command
+    /// applies, so the view can update `targetServings`.
+    public var onScaleCommand: ((Double) -> Void)?
+    /// Fired with the timer that was actually scheduled.
+    public var onTimerCommand: ((ParsedTimer) -> Void)?
+    /// Fired when "stop cooking" is handled, after input is torn down.
+    public var onStopCooking: (() -> Void)?
+    /// Fired as `(itemsDescription, listName)` when an add-to-list command is
+    /// handled. When nil the manager replies honestly that it cannot edit
+    /// lists from Cook mode instead of claiming success.
+    public var onAddToList: ((String, String?) -> Void)?
+
     private let synthesizer = AVSpeechSynthesizer()
     private var audioInput: VoiceAudioInput?
+
+    // Single-flight permission join state: mic + speech results are tracked
+    // separately so neither callback can clobber the other (denial race).
+    private var pendingSpeechGranted: Bool?
+    private var pendingMicGranted: Bool?
+    private var pendingPermissionCompletion: ((Bool) -> Void)?
+
+    /// Exact UserDefaults key the Intents lane uses to hand off a command
+    /// issued while the app was backgrounded.
+    public static let pendingCommandKey = "cook.pendingCommand"
 
     public init() {}
 
     // MARK: Permissions
 
-    public func requestPermissions() {
+    /// Requests mic + speech permissions and reports whether BOTH were
+    /// granted. `micDenied` is set when EITHER is denied. Use this (or
+    /// `requestPermissionsThenStart`) so the UI never starts the engine
+    /// before authorization completes.
+    public func requestPermissions(completion: @escaping (Bool) -> Void) {
+        pendingSpeechGranted = nil
+        pendingMicGranted = nil
+        pendingPermissionCompletion = completion
         SFSpeechRecognizer.requestAuthorization { [weak self] status in
             Task { @MainActor [weak self] in
-                self?.micDenied = (status != .authorized)
+                self?.noteSpeechPermission(granted: status == .authorized)
             }
         }
         #if os(iOS)
         AVAudioSession.sharedInstance().requestRecordPermission { [weak self] granted in
             Task { @MainActor [weak self] in
-                if !granted { self?.micDenied = true }
+                self?.noteMicPermission(granted: granted)
             }
         }
+        #else
+        noteMicPermission(granted: true)
         #endif
+    }
+
+    /// Permission-then-start: runs `body` only after BOTH mic and speech
+    /// permissions are granted. The UI lane should start the engine from
+    /// `body`, never before auth completes.
+    public func requestPermissionsThenStart(_ body: @escaping () -> Void) {
+        requestPermissions { granted in
+            if granted { body() }
+        }
+    }
+
+    /// Legacy entry point (kept for existing callers); calls through to the
+    /// joined permission flow with no follow-up work.
+    public func requestPermissions() {
+        requestPermissionsThenStart {}
+    }
+
+    private func noteSpeechPermission(granted: Bool) {
+        pendingSpeechGranted = granted
+        finishPermissionsIfReady()
+    }
+
+    private func noteMicPermission(granted: Bool) {
+        pendingMicGranted = granted
+        finishPermissionsIfReady()
+    }
+
+    private func finishPermissionsIfReady() {
+        guard let speech = pendingSpeechGranted,
+              let mic = pendingMicGranted,
+              let completion = pendingPermissionCompletion else { return }
+        pendingPermissionCompletion = nil
+        let granted = speech && mic
+        micDenied = !granted
+        completion(granted)
     }
 
     // MARK: Speech output
@@ -159,6 +292,7 @@ public final class VoiceCookManager {
         isReadingAloud = true
     }
 
+    /// Stops speech output immediately.
     public func stopSpeakingOutput() {
         synthesizer.stopSpeaking(at: .immediate)
         isReadingAloud = false
@@ -166,10 +300,22 @@ public final class VoiceCookManager {
 
     /// Reads the current step aloud on entry / step change when enabled.
     /// The UI lane calls this on appear and whenever `session.stepIndex` changes.
+    ///
+    /// Interrupt behavior (cubic finding): this stops the current utterance
+    /// BEFORE speaking the new step, so step changes never talk over the
+    /// previous step. `readCurrentStepInterrupting` is the explicit alias.
     public func readCurrentStep(steps: [String], session: CookSession, locale: Locale? = nil) {
         guard readAloudEnabled, isAppFrontmost else { return }
         guard session.stepIndex >= 0, session.stepIndex < steps.count else { return }
+        stopSpeakingOutput()
         speak(steps[session.stepIndex], locale: locale)
+    }
+
+    /// Explicit interrupt-and-read alias. Identical to `readCurrentStep`,
+    /// which already stops the current utterance before speaking the new
+    /// step; provided so callers can state the interrupt intent.
+    public func readCurrentStepInterrupting(steps: [String], session: CookSession, locale: Locale? = nil) {
+        readCurrentStep(steps: steps, session: session, locale: locale)
     }
 
     // MARK: Listening
@@ -177,6 +323,9 @@ public final class VoiceCookManager {
     /// Starts continuous listening. Pass a mock via `input` in tests; with
     /// nil the manager uses on-device recognition, falling back to the mock
     /// (and setting `micDenied`) when the mic is unavailable.
+    /// `isListening` honestly reflects `audioInput?.isRunning` after the
+    /// start attempt; on failure it stays false with a retry prompt in
+    /// `lastReply`.
     public func startListening(using input: VoiceAudioInput? = nil,
                                onTranscript: @escaping (String) -> Void) {
         guard listeningEnabled else { return }
@@ -189,12 +338,91 @@ public final class VoiceCookManager {
             audioInput = MockVoiceInput()
         }
         audioInput?.start(onTranscript: onTranscript)
-        isListening = true
+        let running = audioInput?.isRunning ?? false
+        isListening = running
+        if !running {
+            lastReply = "I couldn't start listening. Check the microphone and try again."
+            speak(lastReply)
+        }
     }
 
     public func stopListening() {
         audioInput?.stop()
         isListening = false
+    }
+
+    // MARK: Shared handoff (Intents lane)
+
+    /// Reads + clears the "cook.pendingCommand" value written by the Intents
+    /// lane (`next` / `previous` / `repeat` / `crossoff:<name>` /
+    /// `gotostep:<n>`) and applies it to `session`. Returns true when a
+    /// pending value was consumed. The view should call this on appear; it
+    /// cannot run in `init` because it needs a live session.
+    @discardableResult
+    public func consumePendingCommand(session: CookSession,
+                                      ingredients: [VoiceIngredient],
+                                      steps: [String]) -> Bool {
+        let key = Self.pendingCommandKey
+        guard let raw = UserDefaults.standard.string(forKey: key) else { return false }
+        UserDefaults.standard.removeObject(forKey: key)
+        let cmd = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !cmd.isEmpty else { return false }
+        switch cmd {
+        case "next":
+            session.next()
+            reply("Next step.")
+            return true
+        case "previous", "prev":
+            session.previous()
+            reply("Previous step.")
+            return true
+        case "repeat":
+            if session.stepIndex >= 0, session.stepIndex < steps.count {
+                reply(steps[session.stepIndex])
+            } else {
+                reply("Here is that step again.")
+            }
+            return true
+        default:
+            if cmd.hasPrefix("crossoff:") {
+                let name = String(cmd.dropFirst("crossoff:".count)).trimmingCharacters(in: .whitespaces)
+                guard !name.isEmpty else { return false }
+                let tuples = ingredients.map { (id: $0.id, name: $0.name) }
+                if let id = ingredientId(matching: name, in: tuples) {
+                    session.crossedOffIngredients.insert(id)
+                    reply("Crossed off \(name).")
+                } else if fuzzyVoiceMatch(name, candidates: ingredients.map { $0.name }) != nil {
+                    reply("Which \(name)? I see more than one matching ingredient.")
+                } else {
+                    reply("I don't see \(name) in the ingredients.")
+                }
+                return true
+            }
+            if cmd.hasPrefix("gotostep:") {
+                let token = String(cmd.dropFirst("gotostep:".count)).trimmingCharacters(in: .whitespaces)
+                guard let n = Int(token), n > 0 else { return false }
+                let total = steps.isEmpty ? session.stepCount : steps.count
+                if let target = validatedStep(n, stepCount: total) {
+                    session.go(to: target - 1)
+                    reply("Step \(target).")
+                } else {
+                    reply("There are only \(total) steps.")
+                }
+                return true
+            }
+            return false
+        }
+    }
+
+    /// Tuple compatibility overload (existing view/tests pass `(id:name)`
+    /// pairs); forwards to the `VoiceIngredient` implementation.
+    @discardableResult
+    public func consumePendingCommand(session: CookSession,
+                                      ingredients: [(id: String, name: String)],
+                                      steps: [String]) -> Bool {
+        consumePendingCommand(session: session,
+                              ingredients: ingredients.map { VoiceIngredient(id: $0.id, name: $0.name) },
+                              steps: steps)
     }
 
     // MARK: Command handling
@@ -204,9 +432,10 @@ public final class VoiceCookManager {
     @discardableResult
     public func handle(transcript: String,
                        session: CookSession,
-                       ingredients: [(id: String, name: String)],
+                       ingredients: [VoiceIngredient],
                        steps: [String]) -> Bool {
         guard isAppFrontmost else { return false }
+        let tuples = ingredients.map { (id: $0.id, name: $0.name) }
         switch parseVoiceCommand(transcript) {
         case .next:
             session.next()
@@ -225,8 +454,13 @@ public final class VoiceCookManager {
                 session.go(to: session.stepCount - 1)
                 reply("Last step.")
             } else {
-                session.go(to: n - 1)
-                reply("Step \(n).")
+                let total = steps.isEmpty ? session.stepCount : steps.count
+                if let target = validatedStep(n, stepCount: total) {
+                    session.go(to: target - 1)
+                    reply("Step \(target).")
+                } else {
+                    reply("There are only \(total) steps.")
+                }
             }
         case .startOver:
             session.go(to: 0)
@@ -238,46 +472,74 @@ public final class VoiceCookManager {
                 reply("You need " + ingredients.map { $0.name }.joined(separator: ", ") + ".")
             }
         case .ingredientAmount(let name):
-            if let id = ingredientId(matching: name, in: ingredients),
+            if let id = ingredientId(matching: name, in: tuples),
                let found = ingredients.first(where: { $0.id == id }) {
-                reply("You need \(found.name).")
+                reply("You need \(scaledDisplay(name: found.name, quantity: found.quantity, unit: found.unit, factor: session.scale)).")
+            } else if fuzzyVoiceMatch(name, candidates: ingredients.map { $0.name }) != nil {
+                reply("Which \(name)? I see more than one matching ingredient.")
             } else {
-                reply("I couldn't find \(name) in the ingredients.")
+                reply("I don't see \(name) in the ingredients.")
             }
         case .crossOff(let name):
-            if let id = ingredientId(matching: name, in: ingredients) {
+            if let id = ingredientId(matching: name, in: tuples) {
                 session.crossedOffIngredients.insert(id)
                 reply("Crossed off \(name).")
+            } else if fuzzyVoiceMatch(name, candidates: ingredients.map { $0.name }) != nil {
+                reply("Which \(name)? I see more than one matching ingredient.")
             } else {
-                reply("I couldn't find \(name) in the ingredients.")
+                reply("I don't see \(name) in the ingredients.")
             }
         case .uncross(let name):
-            if let id = ingredientId(matching: name, in: ingredients) {
+            if let id = ingredientId(matching: name, in: tuples) {
                 session.crossedOffIngredients.remove(id)
                 reply("Put back \(name).")
+            } else if fuzzyVoiceMatch(name, candidates: ingredients.map { $0.name }) != nil {
+                reply("Which \(name)? I see more than one matching ingredient.")
             } else {
-                reply("I couldn't find \(name) in the ingredients.")
+                reply("I don't see \(name) in the ingredients.")
             }
         case .doubleScale:
-            session.scale = min(4, session.scale * 2)
+            let factor = min(4, session.scale * 2)
+            session.scale = factor
+            onScaleCommand?(factor)
             reply("Doubled.")
         case .halveScale:
-            session.scale = max(0.25, session.scale / 2)
+            let factor = max(0.25, session.scale / 2)
+            session.scale = factor
+            onScaleCommand?(factor)
             reply("Halved.")
         case .resetScale:
             session.scale = 1
+            onScaleCommand?(1)
             reply("Back to the original scale.")
         case .addToList(let listName):
-            if let listName {
-                reply("Added to your \(listName) list.")
+            if let onAddToList {
+                let items = ingredients.map { $0.name }.joined(separator: ", ")
+                onAddToList(items.isEmpty ? "ingredients" : items, listName)
+                if let listName {
+                    reply("Added to your \(listName) list.")
+                } else {
+                    reply("Added to your list.")
+                }
             } else {
-                reply("Added to your list.")
+                if let listName {
+                    reply("I can't edit lists from Cook mode yet — add these ingredients to your \(listName) list from the Lists tab.")
+                } else {
+                    reply("I can't edit lists from Cook mode yet — add these ingredients from the Lists tab.")
+                }
             }
-        case .startTimer(let seconds, _):
+        case .startTimer(let seconds, let label):
+            let timer: ParsedTimer?
             if let seconds {
-                reply("Timer started for \(voiceDurationString(seconds)).")
-            } else if session.stepIndex >= 0, session.stepIndex < steps.count,
-                      let timer = parseTimers(from: steps[session.stepIndex]).first {
+                timer = ParsedTimer(seconds: seconds, label: label ?? "Timer")
+            } else if session.stepIndex >= 0, session.stepIndex < steps.count {
+                timer = parseTimers(from: steps[session.stepIndex]).first
+            } else {
+                timer = nil
+            }
+            if let timer {
+                CookActivityStub.schedule(timers: [timer])
+                onTimerCommand?(timer)
                 reply("Timer started for \(timer.label), \(voiceDurationString(timer.seconds)).")
             } else {
                 reply("No timer found in this step.")
@@ -286,6 +548,11 @@ public final class VoiceCookManager {
             stopSpeakingOutput()
             lastReply = "Stopped."
         case .stopCooking:
+            audioInput?.stop()
+            isListening = false
+            // Persist off so a reopen doesn't show a stale "on".
+            listeningEnabled = false
+            onStopCooking?()
             reply("Done cooking.")
         case .unknown:
             lastReply = "Sorry, I didn't catch that."
@@ -293,6 +560,20 @@ public final class VoiceCookManager {
             return false
         }
         return true
+    }
+
+    /// Tuple compatibility overload: the CookModeView lane passes
+    /// `(id:name)` pairs without quantities. Forwards to the
+    /// `VoiceIngredient` implementation (amounts reply name-only).
+    @discardableResult
+    public func handle(transcript: String,
+                       session: CookSession,
+                       ingredients: [(id: String, name: String)],
+                       steps: [String]) -> Bool {
+        handle(transcript: transcript,
+               session: session,
+               ingredients: ingredients.map { VoiceIngredient(id: $0.id, name: $0.name) },
+               steps: steps)
     }
 
     // MARK: Private

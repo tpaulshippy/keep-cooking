@@ -46,7 +46,8 @@ public enum VoiceCommand: Equatable {
 public func normalizeVoiceText(_ raw: String) -> String {
     var s = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
     s = s.replacingOccurrences(of: "'", with: "")
-        .replacingOccurrences(of: "'", with: "")
+        .replacingOccurrences(of: "\u{2019}", with: "")
+        .replacingOccurrences(of: "\u{2018}", with: "")
         .replacingOccurrences(of: "`", with: "")
     while let last = s.last, ".!?".contains(last) { s.removeLast() }
     s = s.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -116,36 +117,67 @@ public func voiceNumberValue(_ token: String) -> Int? {
 // MARK: - Fuzzy ingredient match
 
 /// Best fuzzy match for a spoken ingredient name against candidate labels.
-/// Matches on normalized containment first, then token overlap. Returns the
-/// original (non-normalized) candidate string, or nil when nothing matches.
+/// Token-boundary-aware scoring: normalized exact equality outranks exact
+/// token overlap, which outranks token-boundary phrase containment.
+/// Within a tier, the candidate with the most matched tokens wins, then the
+/// longest matched span. Returns the original (non-normalized) candidate
+/// string, or nil when nothing matches — including when the top two
+/// candidates tie (ambiguous; the caller replies with disambiguation).
 public func fuzzyVoiceMatch(_ query: String, candidates: [String]) -> String? {
     let q = voiceNormalizedName(query)
     guard !q.isEmpty else { return nil }
-    let qTokens = Set(q.split(separator: " ").map(String.init))
+    let qTokens = q.split(separator: " ").map(String.init)
+    let qSet = Set(qTokens)
+    // (tier, matchedTokens, matchedSpan, order) — higher wins.
+    var bestKey: (Int, Int, Int)?
     var bestCandidate: String?
-    var bestScore = 0.0
-    var bestLength = Int.max
+    var bestCount = 0
     for candidate in candidates {
         let c = voiceNormalizedName(candidate)
         guard !c.isEmpty else { continue }
-        let score: Double
+        let cTokens = c.split(separator: " ").map(String.init)
+        let key: (Int, Int, Int)?
         if c == q {
-            score = 3
-        } else if c.contains(q) || q.contains(c) {
-            score = 2
+            key = (3, qTokens.count, q.count)
         } else {
-            let cTokens = Set(c.split(separator: " ").map(String.init))
-            let overlap = qTokens.intersection(cTokens).count
-            guard overlap > 0 else { continue }
-            score = Double(overlap) / Double(max(qTokens.count, 1))
+            let cSet = Set(cTokens)
+            let overlap = qSet.intersection(cSet)
+            if !overlap.isEmpty {
+                let span = overlap.reduce(0) { $0 + $1.count }
+                key = (2, overlap.count, span)
+            } else if voiceTokenBoundaryContains(c, q) || voiceTokenBoundaryContains(q, c) {
+                // Phrase containment aligned to token boundaries only, so
+                // "our" never matches "flour". Span = needle length.
+                let needle = c.count > q.count ? q : c
+                key = (1, 1, needle.count)
+            } else {
+                continue
+            }
         }
-        if score > bestScore || (score == bestScore && c.count < bestLength) {
-            bestScore = score
-            bestLength = c.count
+        guard let k = key else { continue }
+        if bestKey == nil || k > bestKey! {
+            bestKey = k
             bestCandidate = candidate
+            bestCount = 1
+        } else if k == bestKey! {
+            bestCount += 1
         }
     }
+    guard bestCount == 1 else { return nil }
     return bestCandidate
+}
+
+/// Token-boundary containment: `needle` appears in `haystack` as a whole
+/// phrase of tokens (hyphens/slashes count as boundaries).
+private func voiceTokenBoundaryContains(_ haystack: String, _ needle: String) -> Bool {
+    if haystack == needle { return true }
+    func norm(_ s: String) -> String {
+        s.replacingOccurrences(of: "-", with: " ").replacingOccurrences(of: "/", with: " ")
+    }
+    let h = norm(haystack)
+    let n = norm(needle)
+    if h == n { return true }
+    return h.hasPrefix(n + " ") || h.hasSuffix(" " + n) || h.contains(" " + n + " ")
 }
 
 // MARK: - Timer durations in voice text
@@ -156,8 +188,10 @@ private func voiceSeconds(num: Double, unit: String) -> Int? {
     else if unit.hasPrefix("m") { multiplier = 60 }
     else if unit.hasPrefix("s") { multiplier = 1 }
     else { return nil }
-    let seconds = Int((num * multiplier).rounded())
-    return seconds > 0 ? seconds : nil
+    guard num.isFinite else { return nil }
+    let raw = (num * multiplier).rounded()
+    guard raw.isFinite, raw >= 1, raw <= 43200 else { return nil }
+    return Int(raw)
 }
 
 private func voiceCompoundWordNumber(_ words: [String]) -> Double? {
@@ -169,11 +203,45 @@ private func voiceCompoundWordNumber(_ words: [String]) -> Double? {
         if let v = voiceNumberValue(w) { return Double(v) }
         return nil
     }
-    // Tens compound ("twenty five").
-    if words.count == 2, let tens = voiceTens[words[0]], let ones = voiceOnes[words[1]], ones < 10 {
-        return Double(tens + ones)
+    // General English number phrase (strict: ANY unhandled token rejects
+    // the whole slice, so "one hundred" never degrades to a partial 1).
+    // Supports ones/tens compounds plus hundred(s)/thousand(s), e.g.
+    // "twenty five", "one hundred", "one hundred twenty five",
+    // "two thousand three hundred", "a hundred". "and" is filler.
+    var total = 0
+    var current = 0
+    var seenNumber = false
+    for w in words {
+        if w == "and" { continue }
+        if w == "a" || w == "an" {
+            current += 1
+            seenNumber = true
+        } else if let v = voiceOnes[w] {
+            // Avoid double-counting tens compounds handled below; single
+            // pass is fine since tens+ones are additive here too.
+            current += v
+            seenNumber = true
+        } else if let v = voiceTens[w] {
+            current += v
+            seenNumber = true
+        } else if w == "hundred" || w == "hundreds" {
+            guard current > 0 else { return nil }
+            current *= 100
+            seenNumber = true
+        } else if w == "thousand" || w == "thousands" {
+            guard current > 0 else { return nil }
+            total += current * 1000
+            current = 0
+            seenNumber = true
+        } else if let n = Int(w) {
+            current += n
+            seenNumber = true
+        } else {
+            return nil
+        }
     }
-    return nil
+    guard seenNumber else { return nil }
+    return Double(total + current)
 }
 
 /// Finds the first duration in free text. Numeric forms use the UPPER bound
@@ -202,7 +270,10 @@ private func voiceTimerSeconds(in text: String) -> Int? {
             || minuteWords.contains(token)
             || secondWords.contains(token)
         guard isUnit else { continue }
-        let start = max(0, i - 2)
+        // Wide enough for "two thousand three hundred (minutes)"; the
+        // longest trailing slice is tried first so a full valid phrase
+        // (e.g. "one hundred") never degrades to a partial ("one" -> 1).
+        let start = max(0, i - 6)
         let window = Array(tokens[start..<i])
         // Try the longest trailing slice first ("twenty five"), then shorter.
         for length in stride(from: window.count, through: 1, by: -1) {
@@ -311,6 +382,19 @@ private func parseVoiceGoToStep(_ text: String) -> VoiceCommand? {
     if token == "last" { return .goToStep(VoiceCommand.lastStep) }
     guard let n = voiceNumberValue(token), n > 0 else { return nil }
     return .goToStep(n)
+}
+
+/// Validates a parsed `.goToStep` request against the recipe length.
+/// `VoiceCommand.lastStep` (-1) maps to `stepCount`; any other request must
+/// fall in 1...stepCount. Returns nil when out of range (the manager lane
+/// uses nil to give an honest "that step doesn't exist" reply instead of
+/// clamping). Pure — `parseVoiceCommand` intentionally stays step-count
+/// agnostic and carries the requested Int as-is.
+public func validatedStep(requested: Int, stepCount: Int) -> Int? {
+    guard stepCount > 0 else { return nil }
+    if requested == VoiceCommand.lastStep { return stepCount }
+    guard (1...stepCount).contains(requested) else { return nil }
+    return requested
 }
 
 private func parseVoiceTimer(_ text: String) -> VoiceCommand? {

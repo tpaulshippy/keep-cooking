@@ -92,11 +92,26 @@ public func applyScaleCommand(_ command: ScaleVoiceCommand,
 
 /// Fuzzy ingredient-id lookup using the same normalization as the voice
 /// parser (`fuzzyVoiceMatch`). Pure (no state).
+///
+/// Ambiguity rule (cubic finding): when multiple ingredients share the same
+/// normalized label, returns nil instead of the first match so the caller
+/// can reply with a disambiguation prompt. Existing optional signature kept.
 public func ingredientId(matching name: String,
                          in ingredients: [(id: String, name: String)]) -> String? {
     let matched = fuzzyVoiceMatch(name, candidates: ingredients.map { $0.name })
     guard let matched else { return nil }
-    return ingredients.first { $0.name == matched }?.id
+    let norm = voiceNormalizedName(matched)
+    let dupes = ingredients.filter { voiceNormalizedName($0.name) == norm }
+    guard dupes.count == 1 else { return nil }
+    return dupes.first?.id
+}
+
+/// Validates a 1-based voice step request against the step count.
+/// Returns the step number when it lies in 1...stepCount, else nil so the
+/// caller can reply "There are only N steps." Pure (no state).
+public func validatedStep(_ n: Int, stepCount: Int) -> Int? {
+    guard stepCount > 0, (1...stepCount).contains(n) else { return nil }
+    return n
 }
 
 // MARK: - Keep screen on

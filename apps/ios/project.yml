@@ -119,6 +119,13 @@ targets:
       - target: KeepCookingShare
     info:
       path: Config/Info-App.plist
+      # Generation-safety (engine lane owns the plist): XcodeGen rewrites
+      # Config/Info-*.plist from scratch, so these keys live here as the
+      # source of truth and are merged back on every `xcodegen generate`.
+      # Strings must match Config/Info-App.plist exactly.
+      properties:
+        NSMicrophoneUsageDescription: "Listen for hands-free cook commands while the recipe is on screen."
+        NSSpeechRecognitionUsageDescription: "Recognize cook commands like Next step on-device."
     entitlements:
       path: Config/AppGroups.entitlements
     settings:

@@ -15,11 +15,27 @@ import Foundation
 #if canImport(AppIntents)
 import AppIntents
 import SwiftData
+import UserNotifications
 #if canImport(UIKit)
 import UIKit
 #endif
 
 // MARK: - Shared helpers
+
+/// Handoff bridge to the live Cook session. Intent extensions run in a
+/// separate process with no access to the in-memory CookSession /
+/// CookVoiceManager, so stateless nav intents write a pending command that
+/// the app consumes (and clears) on launch/foreground. Key is consumed by
+/// the Cook view + manager — do not rename without updating both sides.
+private enum CookPendingHandoff {
+    static let suiteName = "group.com.smidgen.share"
+    static let key = "cook.pendingCommand"
+
+    static func write(_ value: String) {
+        let defaults = UserDefaults(suiteName: suiteName) ?? .standard
+        defaults.set(value, forKey: key)
+    }
+}
 
 @MainActor
 private enum IntentStore {
@@ -175,14 +191,16 @@ struct AddToListIntent: AppIntent {
 //
 // LIMITATION: AppIntent extensions run in a separate process with no access
 // to the live in-memory CookSession / CookVoiceManager. These intents are
-// therefore stateless: the navigation ones open the app (openAppWhenRun=true)
-// where the in-app voice manager advances the already-running session, and
-// CrossOffIngredientIntent only resolves the name against recent recipes
-// before handing off. None of them performs continuous listening — the Siri
-// path is one-shot per invocation.
+// therefore handoff-based: each one writes UserDefaults
+// (group.com.smidgen.share, key "cook.pendingCommand") — "next" /
+// "previous" / "repeat" / "crossoff:<normalized-name>" — and opens the app
+// (openAppWhenRun=true) where the live session consumes + clears the
+// command. None of them performs continuous listening — the Siri path is
+// one-shot per invocation.
 
-/// "Next step" — opens the app; the live session advances in-app via the
-/// voice manager. Stateless by design (no live CookSession access).
+/// "Next step" — writes a "next" pending command for the live session to
+/// consume on foreground, then opens the app. Stateless by design (no live
+/// CookSession access from the intent process).
 struct NextStepIntent: AppIntent {
     static var title: LocalizedStringResource = "Next step"
     static var description = IntentDescription("Advances to the next cooking step in Keep Cooking.")
@@ -190,11 +208,12 @@ struct NextStepIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        return .result(dialog: "Next step.")
+        CookPendingHandoff.write("next")
+        return .result(dialog: "Opening Keep Cooking to go to the next step.")
     }
 }
 
-/// "Previous step" — opens the app; the live session moves back in-app.
+/// "Previous step" — writes a "previous" pending command, then opens the app.
 struct PreviousStepIntent: AppIntent {
     static var title: LocalizedStringResource = "Previous step"
     static var description = IntentDescription("Goes back to the previous cooking step in Keep Cooking.")
@@ -202,12 +221,13 @@ struct PreviousStepIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        return .result(dialog: "Previous step.")
+        CookPendingHandoff.write("previous")
+        return .result(dialog: "Opening Keep Cooking to go back a step.")
     }
 }
 
-/// "Repeat that / Read current step" — opens the app; the live session
-/// re-reads the current step in-app.
+/// "Repeat that / Read current step" — writes a "repeat" pending command,
+/// then opens the app where the live session re-reads the current step.
 struct RepeatStepIntent: AppIntent {
     static var title: LocalizedStringResource = "Repeat step"
     static var description = IntentDescription("Repeats the current cooking step in Keep Cooking.")
@@ -215,16 +235,16 @@ struct RepeatStepIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        return .result(dialog: "Repeating this step.")
+        CookPendingHandoff.write("repeat")
+        return .result(dialog: "Opening Keep Cooking to repeat this step.")
     }
 }
 
 /// "Cross off <ingredient>" — resolves a fuzzy ingredient match in the
-/// most-recent recipe, then hands off to the app where the in-app voice
-/// manager completes the toggle. Does NOT toggle live state directly:
-/// the intent process cannot reach the live CookSession, so writing a
-/// crossed marker here would diverge from Cook mode. Keep honest: lookup
-/// + dialog + openAppWhenRun=true.
+/// most-recent recipes (same VoiceCommandParser resolution as in-app
+/// voice), writes a "crossoff:<name>" pending command for the live session
+/// to consume, then opens the app. Never reports success without the
+/// handoff: unknown names throw a spoken message.
 struct CrossOffIngredientIntent: AppIntent {
     static var title: LocalizedStringResource = "Cross off ingredient"
     static var description = IntentDescription("Crosses off an ingredient in Keep Cooking.")
@@ -247,27 +267,30 @@ struct CrossOffIngredientIntent: AppIntent {
         let recipes = (try? context.fetch(FetchDescriptor<Recipe>(
             predicate: #Predicate { !$0.deleted },
             sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]))) ?? []
-        let lowered = needle.lowercased()
-        var matched: String?
+        // Shared fuzzy resolution (VoiceCommandParser lives in the same app
+        // target as these intents). Deleted rows are excluded so a removed
+        // ingredient can never match.
+        var matched: Ingredient?
         for recipe in recipes {
-            if let hit = recipe.ingredients.first(where: {
-                let n = $0.name.lowercased()
-                return n.contains(lowered) || lowered.contains(n)
-            }) {
-                matched = hit.display.isEmpty ? hit.name : hit.display
+            let live = recipe.ingredients.filter { !$0.deleted }
+            let pairs = live.map { (id: $0.id, name: $0.name) }
+            if let id = ingredientId(matching: needle, in: pairs) {
+                matched = live.first { $0.id == id }
                 break
             }
         }
         guard let found = matched else {
-            throw IntentExecutionError.message("I couldn't find \(needle) in your recent recipes.")
+            throw IntentExecutionError.message("I don't see \(needle) in your recent recipes.")
         }
-        return .result(dialog: "Crossed off \(found) — open Keep Cooking to see it.")
+        let display = found.display.isEmpty ? found.name : found.display
+        CookPendingHandoff.write("crossoff:\(voiceNormalizedName(found.name))")
+        return .result(dialog: "Opening Keep Cooking to cross off \(display).")
     }
 }
 
-/// "Start cook timer" — mirrors StartTimerIntent logging (records a
-/// StepTimer on the "Shortcut Timers" recipe) but surfaces under its own
-/// cook-control title. Offline; does not drive the live CookSession.
+/// "Start cook timer" — logs a StepTimer on the "Shortcut Timers" recipe
+/// (so Cook mode sees it) AND schedules a real local notification mirroring
+/// CookActivityStub.schedule. Offline; does not drive the live CookSession.
 struct StartCookTimerIntent: AppIntent {
     static var title: LocalizedStringResource = "Start Cook Timer"
     static var description = IntentDescription("Starts a cook timer and logs it on a recipe step.")
@@ -307,7 +330,19 @@ struct StartCookTimerIntent: AppIntent {
         context.insert(step)
         recipe.updatedAt = Date()
         try context.save()
-        return .result(dialog: "Cook timer set for \(minutes) minutes: \(timerLabel).")
+        // Real timer: mirror CookActivityStub.schedule — a local notification
+        // that fires even if the app is backgrounded. Authorization cannot be
+        // prompted well from an intent, so schedule and let the countdown
+        // dialog stand; the StepTimer log above keeps Cook mode in sync.
+        let content = UNMutableNotificationContent()
+        content.title = "Keep Cooking timer"
+        content.body = "\(timerLabel) — done!"
+        content.sound = .default
+        let trigger = UNTimeIntervalNotificationTrigger(
+            timeInterval: max(1, TimeInterval(minutes * 60)), repeats: false)
+        try await UNUserNotificationCenter.current().add(UNNotificationRequest(
+            identifier: "cook-timer-\(UUID().uuidString)", content: content, trigger: trigger))
+        return .result(dialog: "Timer set for \(minutes) minutes: \(timerLabel).")
     }
 }
 
