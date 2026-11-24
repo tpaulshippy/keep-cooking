@@ -1,0 +1,16 @@
+apps/android/app/src/main/java/com/keepcooking/app/MainActivity.kt
+  h_6bbd00fe0a456a 8,23-27,31
+apps/android/app/src/main/res/values/themes.xml
+  h_6bbd00fe0a456a 3-6,8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4fa84b94a0e9d0ea82266c71bcbe552b03a92765",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
