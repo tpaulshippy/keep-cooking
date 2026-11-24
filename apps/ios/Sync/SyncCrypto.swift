@@ -92,12 +92,15 @@ public enum SyncCryptoError: Error, Sendable, Equatable {
     case payloadDecode(String)
 }
 
-/// Canonical E2E timestamp: whole seconds (floor). The wire encodes
-/// `updatedAt` as second-precision ISO-8601, so both seal and open must bind
-/// the same truncated instant — otherwise a fractional local `Date` would
-/// authenticate at seal time and fail at open time after the JSON round-trip.
+/// Canonical E2E timestamp: whole milliseconds (floor). The wire encodes
+/// `updatedAt` as millisecond-precision ISO-8601 with fixed 3 fractional
+/// digits (see `e2eISO8601Formatter` in SyncEngine.swift), so both seal and
+/// open bind the same instant after the JSON round-trip. Flooring to whole
+/// *seconds* would collapse same-second edits onto one instant; the blind
+/// server applies strict parsed LWW (`stored` wins ties) and would silently
+/// drop the loser, so subsecond ordering is preserved end to end.
 public func canonicalE2ETimestamp(_ date: Date) -> Date {
-    Date(timeIntervalSince1970: floor(date.timeIntervalSince1970))
+    Date(timeIntervalSince1970: floor(date.timeIntervalSince1970 * 1000) / 1000)
 }
 
 /// Domain separator for the E2E header associated-data binding.
@@ -108,8 +111,14 @@ public let e2eADContext = "smidgen-e2e-ad-v1"
 /// so a blind-server header swap (id/entity/updatedAt/tombstone/kid/bucket)
 /// fails open instead of decrypting under a forged header. Encoded as a JSON
 /// string array — deterministic and unambiguous without locale pitfalls.
-/// `updatedAt` is canonicalized to whole seconds (see
-/// `canonicalE2ETimestamp`) so seal-time and open-time agree.
+/// `updatedAt` binds whole MILLISECONDS (see `canonicalE2ETimestamp`) so
+/// seal-time and open-time agree, including the subsecond part: binding only
+/// whole seconds would let a same-second timestamp swap pass authentication.
+/// The wire always carries fixed 3-digit fractional seconds (see
+/// `e2eISO8601Formatter`), so the server's parsed (`Date.parse`) and lexical
+/// orderings agree on every timestamp this client emits.
+/// NOTE: boxes sealed under the old whole-second binding are rejected as
+/// `decryptFailed` (fail closed, like pre-AD boxes) — no downgrade path.
 public func e2eHeaderAD(
     v: Int,
     alg: String,
@@ -121,10 +130,10 @@ public func e2eHeaderAD(
     deleted: Bool,
     entity: SyncEntityName
 ) -> Data {
-    let seconds = Int64(floor(updatedAt.timeIntervalSince1970))
+    let millis = Int64(floor(updatedAt.timeIntervalSince1970 * 1000))
     let parts = [
         e2eADContext, String(v), alg, kid, householdHash, id,
-        String(seconds), deviceId, deleted ? "1" : "0", entity.rawValue,
+        String(millis), deviceId, deleted ? "1" : "0", entity.rawValue,
     ]
     // JSON string-array encoding cannot realistically fail; the unit
     // separator fallback preserves determinism if it ever does.

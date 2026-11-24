@@ -336,6 +336,10 @@ public enum E2EError: Error, Sendable {
     case decryptFailed(id: String)
     case payloadDecode(String)
     case payloadEncode(String)
+    /// An E2E route was selected but no E2E transport was supplied.
+    /// Failing closed: falling back to the plaintext v1 `sync()` here would
+    /// silently send household data outside the zero-knowledge channel.
+    case missingTransport
 }
 
 /// Wire shape for PUT/GET/DELETE /v2/sync/:hash, 1:1 with the server's
@@ -564,9 +568,9 @@ private func pruneDeletedFoldedChildren(_ envelope: SyncEnvelope) -> SyncEnvelop
 
 /// Seals a plaintext envelope's payload; the header stays plaintext but is
 /// cryptographically BOUND to the payload via AES-GCM associated data (see
-/// `e2eHeaderAD`). `updatedAt` is canonicalized to whole seconds first so the
-/// seal-time and open-time bindings agree after the second-precision JSON
-/// round-trip. A header swap in transit fails open (`decryptFailed`).
+/// `e2eHeaderAD`). `updatedAt` is canonicalized to whole milliseconds first
+/// so the seal-time and open-time bindings agree after the JSON round-trip.
+/// A header swap in transit fails open (`decryptFailed`).
 public func e2eEncrypt(_ envelope: SyncEnvelope, identity: E2ESyncIdentity) throws -> EncryptedEnvelope {
     let sealedAt = canonicalE2ETimestamp(envelope.updatedAt)
     let associatedData = e2eHeaderAD(
@@ -668,6 +672,29 @@ public func e2eEncryptBatch(_ envelopes: [SyncEnvelope], identity: E2ESyncIdenti
 
 // MARK: E2E transport (PUT/GET /v2/sync/:hash)
 
+/// Millisecond-precision ISO-8601 for the /v2 wire: always exactly 3
+/// fractional digits (`2001-02-03T04:05:06.789Z`). Fixed width keeps LEXICAL
+/// string order identical to chronological order, so the server's parsed
+/// (`Date.parse`) LWW and its lexical list sort agree on every timestamp this
+/// client emits. `JSONEncoder.DateEncodingStrategy.iso8601` drops fractions
+/// (second precision), which would collapse same-second edits into ties the
+/// blind server resolves against us (`stored` wins ties).
+let e2eISO8601Formatter: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.timeZone = TimeZone(secondsFromGMT: 0)
+    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return f
+}()
+
+/// Fallback for DECODING only: accepts older whole-second stamps (server
+/// seeds, pre-millis boxes) that carry no fractional part.
+private let e2eISO8601FallbackFormatter: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.timeZone = TimeZone(secondsFromGMT: 0)
+    f.formatOptions = [.withInternetDateTime]
+    return f
+}()
+
 public protocol E2EEncryptedTransport: Sendable {
     func pullEncrypted(hash: String, since: Date?) async throws -> [EncryptedEnvelope]
     /// Pushes a batch; returns the ids the server newly stored. Ids ABSENT
@@ -698,10 +725,25 @@ public struct APIE2ETransport: E2EEncryptedTransport {
         self.session = session
         self.auth = auth
         let d = JSONDecoder()
-        d.dateDecodingStrategy = .iso8601
+        // Millis-precision wire (see `e2eISO8601Formatter`); the fallback
+        // still opens older whole-second stamps.
+        d.dateDecodingStrategy = .custom { decoder in
+            let c = try decoder.singleValueContainer()
+            let s = try c.decode(String.self)
+            if let date = e2eISO8601Formatter.date(from: s) { return date }
+            if let date = e2eISO8601FallbackFormatter.date(from: s) { return date }
+            throw DecodingError.dataCorruptedError(
+                in: c, debugDescription: "Invalid E2E date: \(s)")
+        }
         self.decoder = d
         let e = JSONEncoder()
-        e.dateEncodingStrategy = .iso8601
+        e.dateEncodingStrategy = .custom { date, encoder in
+            var c = encoder.singleValueContainer()
+            // Canonicalize on the way out too (defense in depth alongside
+            // `canonicalE2ETimestamp` in `e2eEncrypt`): the wire never carries
+            // more precision than the header AD binds.
+            try c.encode(e2eISO8601Formatter.string(from: canonicalE2ETimestamp(date)))
+        }
         self.encoder = e
     }
 
@@ -788,6 +830,61 @@ public extension SyncEngine {
         for enc in remoteEncrypted {
             remote.append(try e2eDecrypt(enc, identity: identity))
         }
+        var pulled = await mergePulledRemote(remote, applyRemote: applyRemote)
+        advancePullCursor(with: remote)
+
+        let pending = Array(outbox.values)
+        var conflicts = 0
+        var pushed = 0
+        if !pending.isEmpty {
+            let encrypted = try e2eEncryptBatch(pending, identity: identity)
+            let storedIds = Set(try await transport.pushEncrypted(hash: identity.hash, encrypted))
+            // `stored` names folded envelope ids; map pre-fold outbox entries
+            // back via their carrier (children ride under the parent id).
+            // Stored → accepted (drain + count). Unstored → the server kept an
+            // equal-or-newer version (stored-wins-ties) and keeps it. The
+            // blind server never returns the winner, so unstored entries stay
+            // pending while it is fetched: draining them here would adopt a
+            // stale baseline the cursor can never replay (strict `>` filter).
+            var unstored: [SyncEnvelope] = []
+            for env in pending {
+                if storedIds.contains(e2eCarrierId(for: env)) {
+                    pushed += 1
+                    baseline[env.id] = env
+                    outbox.removeValue(forKey: env.id)
+                } else {
+                    unstored.append(env)
+                }
+            }
+            if !unstored.isEmpty {
+                // Force a FULL pull (since: nil): the winner may predate the
+                // cursor, so the incremental pull would never replay it.
+                // Reconcile through the same header-LWW merge — a newer
+                // winner is applied + drained, an identical one just drains —
+                // so the baseline always lands on the server version before
+                // anything is removed. Entries still pending afterwards lost
+                // under a folded parent carrier; they stay queued (never
+                // silently dropped) and the conflict is still counted.
+                let allEncrypted = try await transport.pullEncrypted(hash: identity.hash, since: nil)
+                var winners: [SyncEnvelope] = []
+                winners.reserveCapacity(allEncrypted.count)
+                for enc in allEncrypted {
+                    winners.append(try e2eDecrypt(enc, identity: identity))
+                }
+                advancePullCursor(with: winners)
+                pulled += await mergePulledRemote(winners, applyRemote: applyRemote)
+                conflicts += unstored.count
+            }
+        }
+        return SyncResult(pulled: pulled, pushed: pushed, conflicts: conflicts)
+    }
+
+    /// Header-LWW merge for pulled E2E envelopes, shared by the incremental
+    /// pull and the post-push winner reconcile. Returns the applied count.
+    private func mergePulledRemote(
+        _ remote: [SyncEnvelope],
+        applyRemote: (@Sendable (SyncEnvelope) async -> Void)?
+    ) async -> Int {
         var pulled = 0
         for env in remote {
             if let local = outbox[env.id] ?? baseline[env.id] {
@@ -810,31 +907,7 @@ public extension SyncEngine {
                 pulled += 1
             }
         }
-        advancePullCursor(with: remote)
-
-        let pending = Array(outbox.values)
-        var conflicts = 0
-        var pushed = 0
-        if !pending.isEmpty {
-            let encrypted = try e2eEncryptBatch(pending, identity: identity)
-            let storedIds = Set(try await transport.pushEncrypted(hash: identity.hash, encrypted))
-            // `stored` names folded envelope ids; map pre-fold outbox entries
-            // back via their carrier (children ride under the parent id).
-            // Stored → accepted (drain + count). Unstored → the server kept
-            // an equal-or-newer version (stored-wins-ties): drain the outbox
-            // entry optimistically and count a conflict — the next pull
-            // reconciles any genuinely newer server state via header LWW.
-            for env in pending {
-                if storedIds.contains(e2eCarrierId(for: env)) {
-                    pushed += 1
-                } else {
-                    conflicts += 1
-                }
-                baseline[env.id] = env
-                outbox.removeValue(forKey: env.id)
-            }
-        }
-        return SyncResult(pulled: pulled, pushed: pushed, conflicts: conflicts)
+        return pulled
     }
 }
 
@@ -870,7 +943,8 @@ public func resolveSyncRoute(defaults: UserDefaults = .standard) -> SyncRoute {
 public extension SyncEngine {
     /// Runs `syncE2E` when `route` is `.e2e` (and an E2E transport is
     /// supplied), else the legacy v1 `sync()`. A missing E2E transport under
-    /// an E2E route falls back to v1 rather than failing the sync.
+    /// an E2E route throws `E2EError.missingTransport` — failing closed
+    /// rather than silently syncing household data over plaintext v1.
     func syncRouted(
         route: SyncRoute,
         e2eTransport: (any E2EEncryptedTransport)? = nil,
@@ -881,7 +955,7 @@ public extension SyncEngine {
             return try await sync(applyRemote: applyRemote)
         case .e2e(let identity):
             guard let e2eTransport else {
-                return try await sync(applyRemote: applyRemote)
+                throw E2EError.missingTransport
             }
             return try await syncE2E(
                 identity: identity, transport: e2eTransport,

@@ -60,7 +60,7 @@ else
   # Resolve the new database_id and write it into api/wrangler.toml before
   # deploy so the Worker binds the database we just created (not the
   # local-smidgen-placeholder).
-  NEW_DB_ID="$(printf '%s\n' "$D1_CREATE" | grep -oE '"database_id"[[:space:]]*:[[:space:]]*"[^"]+"' | head -n 1 | cut -d'"' -f4)"
+  NEW_DB_ID="$(printf '%s\n' "$D1_CREATE" | grep -oE '"database_id"[[:space:]]*:[[:space:]]*"[^"]+"' | head -n 1 | cut -d'"' -f4 || true)"
   if [ -z "${NEW_DB_ID:-}" ]; then
     NEW_DB_ID="$(printf '%s\n' "$D1_CREATE" | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -n 1 || true)"
   fi
@@ -110,8 +110,26 @@ else
     echo "    Make sure the same value is entered in the app:"
     echo "    Settings → Server (BYO backend) → Beta token → Save & sync now."
   elif [ "$ALLOW_NO_TOKEN" = "1" ]; then
-    echo "    BYO_NO_TOKEN=1: proceeding WITHOUT a beta token (explicit local/no-token setup)." >&2
-    echo "    Writes are ungated — never expose this backend." >&2
+    # BYO_NO_TOKEN=1 leaves writes ungated, so it is only ever valid
+    # against a genuinely local dev target. Refuse remote deploys (the
+    # checked-in workers.dev URL included) — gated writes there would 401
+    # on every request with no token configured.
+    NO_TOKEN_TARGET="${BASE_URL:-}"
+    if [ -z "$NO_TOKEN_TARGET" ]; then
+      NO_TOKEN_TARGET="$(grep -E '^[[:space:]]*PUBLIC_BASE_URL[[:space:]]*=' "$API_DIR/wrangler.toml" | cut -d'"' -f2 | head -n 1 || true)"
+    fi
+    case "$NO_TOKEN_TARGET" in
+      *localhost*|*127.0.0.1*|*.local*)
+        echo "    BYO_NO_TOKEN=1: proceeding WITHOUT a beta token against local target $NO_TOKEN_TARGET." >&2
+        echo "    Writes are ungated — never expose this backend." >&2
+        ;;
+      *)
+        echo "    ERROR: BYO_NO_TOKEN=1 is for a local dev target only (localhost / 127.0.0.1 / *.local)." >&2
+        echo "    Target '${NO_TOKEN_TARGET:-<unknown>}' is remote and gated writes would 401." >&2
+        echo "    Either provide INTERNAL_BETA_TOKEN or point PUBLIC_BASE_URL at a local dev server." >&2
+        exit 1
+        ;;
+    esac
   else
     echo "    ERROR: INTERNAL_BETA_TOKEN is required." >&2
     echo "    Re-run with: INTERNAL_BETA_TOKEN=\$(openssl rand -base64 32) ./scripts/deploy-backend.sh" >&2

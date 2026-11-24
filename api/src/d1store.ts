@@ -379,20 +379,41 @@ export class D1Store extends MemoryStore implements Store {
 
   /** E2E upsert that throws on D1 failure — no silent memory-only ack.
    * The ON CONFLICT predicate keeps a stale write from overwriting a newer
-   * D1 winner lost to an interleaving isolate. A missing table
-   * (pre-migration DB) still falls back to memory-only. */
-  private async persistE2EOrThrow(hash: string, env: EncryptedEnvelope): Promise<void> {
+   * D1 winner lost to an interleaving isolate. Returns whether D1 holds our
+   * row afterwards: false when the strict predicate matched zero rows (a
+   * concurrent D1 winner rejected us). A missing table (pre-migration DB)
+   * still falls back to memory-only (true). */
+  private async persistE2EOrThrow(hash: string, env: EncryptedEnvelope): Promise<boolean> {
+    let res: unknown;
     try {
-      await this.db
+      res = await this.db
         .prepare(
           'INSERT INTO sync_blobs_v2 (household_hash, id, header, ciphertext, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(household_hash, id) DO UPDATE SET header = excluded.header, ciphertext = excluded.ciphertext, updated_at = excluded.updated_at WHERE excluded.updated_at > sync_blobs_v2.updated_at',
         )
         .bind(hash, env.id, JSON.stringify(envelopeHeader(env)), env.ciphertext, env.updatedAt)
         .run();
     } catch (e) {
-      if (e instanceof Error && /no such table/i.test(e.message)) return;
+      if (e instanceof Error && /no such table/i.test(e.message)) return true;
       throw e;
     }
+    const changes = (res as { meta?: { changes?: unknown } } | null | undefined)?.meta?.changes;
+    if (typeof changes === 'number') {
+      if (changes > 0) return true;
+      // Strict predicate matched zero rows: a concurrent D1 winner rejected
+      // us. Pull it into memory so we stop staging the loser, and report
+      // not-stored instead of the pre-persistence memory flag.
+      await this.loadE2EHash(hash);
+      return false;
+    }
+    // Bindings that don't surface affected-row meta (incl. test fakes):
+    // confirm the winner with a fresh snapshot — loadE2EHash merges a
+    // strictly-newer D1 row into memory over what we just staged.
+    const reachable = await this.loadE2EHash(hash);
+    if (!reachable) return true;
+    const cur = this.e2eBlobs.get(hash)?.get(env.id);
+    if (!cur) return false; // concurrently wiped: D1 does not hold our row
+    if (cur !== env && e2eIsNewer(cur.updatedAt, env.updatedAt)) return false; // D1 winner is newer
+    return true;
   }
 
   override async e2ePut(hash: string, env: EncryptedEnvelope): Promise<boolean> {
@@ -403,19 +424,27 @@ export class D1Store extends MemoryStore implements Store {
     // winner change), but D1 still needs the row — persist anyway.
     const retry = !stored && pending !== undefined && JSON.stringify(pending) === JSON.stringify(env);
     if (!stored && !retry) return false;
+    let persisted: boolean;
     try {
-      await this.persistE2EOrThrow(hash, env);
+      persisted = await this.persistE2EOrThrow(hash, env);
     } catch (e) {
       // Keep the memory copy so the write isn't silently lost, but surface
-      // the failure to the caller (HTTP 500) instead of acking it.
+      // the failure to the caller (HTTP 500) instead of acking it. Keep the
+      // newest pending envelope per ID so an older retry can't replace a
+      // newer unconfirmed write.
       let m = this.e2eUnsaved.get(hash);
       if (!m) {
         m = new Map();
         this.e2eUnsaved.set(hash, m);
       }
-      m.set(env.id, env);
+      const prev = m.get(env.id);
+      if (!prev || e2eIsNewer(env.updatedAt, prev.updatedAt)) m.set(env.id, env);
       throw e;
     }
+    // A concurrent D1 winner rejected our upsert (strict predicate matched
+    // zero rows): memory already reconciled to it above, so report
+    // not-stored instead of the pre-persistence memory flag.
+    if (!persisted) return false;
     this.e2eUnsaved.get(hash)?.delete(env.id);
     return stored;
   }

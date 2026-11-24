@@ -134,12 +134,17 @@ produce or verify plaintext.
 3. The script prints the Worker URL, e.g.
    `https://smidgen-api.<account>.workers.dev`.
 4. In the app: Settings → Server (BYO backend) → paste URL → **Test**
-   (expects `GET /health` → 200) → Save. Blank resets to the Bundle
+   (expects `GET /health` → 200). Do NOT tap Save & sync now yet:
+   syncing before the household key exists would push recipes through
+   the legacy plaintext `POST /sync/push` pipe. Blank resets to the Bundle
    `SMIDGEN_API_BASE_URL` → prod fallback chain.
-5. In the app: Settings → Server (BYO backend) → enter the same
-   `INTERNAL_BETA_TOKEN` in the Beta token field → Save & sync now.
-   Join/create the household key in Settings → End-to-end encryption,
-   then sync.
+5. FIRST join or create the household key in Settings → End-to-end
+   encryption (paste the invite bundle on a second device, or create a new
+   household), and eyeball-match `kid` / `hashPrefix8` across devices.
+6. ONLY THEN, back in Settings → Server (BYO backend), enter the same
+   `INTERNAL_BETA_TOKEN` in the Beta token field → Save & sync now. From
+   this point recipe sync travels as E2E v2 envelopes; the legacy plaintext
+   pipes stay unused for recipe content.
 
 ## Blindness acceptance (prove the server learns nothing)
 

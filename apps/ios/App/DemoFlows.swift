@@ -1044,23 +1044,50 @@ struct SettingsView: View {
     /// GET <hint>/health, then — and only then — persists the hint as the
     /// backend URL. Requires explicit user action; never called implicitly.
     private func confirmEndpointHint() async {
-        guard let hint = pendingEndpointHint?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !hint.isEmpty,
-              let url = URL(string: hint + "/health"),
-              let scheme = URL(string: hint)?.scheme?.lowercased(),
-              scheme == "https" || scheme == "http"
+        let rawHint = pendingEndpointHint?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !rawHint.isEmpty else {
+            hintHealthResult = "Invalid server URL — keeping current server."
+            return
+        }
+        // Normalize: a hint ending in "/" would otherwise probe "<hint>//health".
+        var hint = rawHint
+        while hint.hasSuffix("/") && hint.count > 1 { hint = String(hint.dropLast()) }
+        guard let hintURL = URL(string: hint),
+              let scheme = hintURL.scheme?.lowercased(),
+              let host = hintURL.host?.lowercased(),
+              URL(string: hint + "/health") != nil
         else {
             hintHealthResult = "Invalid server URL — keeping current server."
             return
         }
+        // SECURITY: the beta bearer token is sent to this server, so a
+        // cleartext http:// hint would leak it on the wire. Require HTTPS,
+        // except explicitly local dev targets (localhost / 127.0.0.1 / *.local).
+        let isLocalDev = host == "localhost" || host == "127.0.0.1" || host.hasSuffix(".local")
+        guard scheme == "https" || (scheme == "http" && isLocalDev) else {
+            hintHealthResult = "Invite server must use HTTPS (http:// is only allowed for localhost / 127.0.0.1 / *.local dev servers) — keeping current server."
+            return
+        }
+        let healthURL = URL(string: hint + "/health")!
         hintTesting = true
         defer { hintTesting = false }
         do {
-            let (data, resp) = try await URLSession.shared.data(from: url)
+            let (data, resp) = try await URLSession.shared.data(from: healthURL)
             let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
             guard code == 200 else {
                 let body = String(data: data, encoding: .utf8) ?? ""
                 hintHealthResult = "Server rejected (HTTP \(code)): \(body.prefix(120)) — keeping current server."
+                return
+            }
+            // A second invite may have been joined while the health check was
+            // in flight: only apply when the staged hint is still the one probed.
+            let current: String? = pendingEndpointHint.map { pending in
+                var normalized = pending.trimmingCharacters(in: .whitespacesAndNewlines)
+                while normalized.hasSuffix("/") && normalized.count > 1 { normalized = String(normalized.dropLast()) }
+                return normalized
+            }
+            guard current == hint else {
+                hintHealthResult = "A newer invite arrived — review the suggested server again before switching."
                 return
             }
             baseURLString = hint

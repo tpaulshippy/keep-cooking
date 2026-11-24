@@ -27,7 +27,6 @@ on:
       - "apps/ios/ci_scripts/**"
       - "apps/ios/scripts/**"
       - ".github/workflows/ios-testflight.yml"
-  pull_request: null
 
 jobs:
   dispatch:
