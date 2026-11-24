@@ -1,5 +1,9 @@
 # Keep Cooking — XcodeGen project spec (PASS 1: full Xcode project).
-# Generated project: apps/ios/KeepCooking.xcodeproj (`xcodegen generate` from apps/ios).
+# Generated project: apps/ios/Smidgen.xcodeproj (`xcodegen generate` from apps/ios).
+# (Filename stays Smidgen.xcodeproj for Xcode Cloud compatibility — the
+# workflow is pinned to apps/ios/Smidgen.xcodeproj. App display name,
+# targets, and schemes are KeepCooking; legacy Smidgen.* scheme aliases
+# are kept alongside so old + new workflow configs both resolve.)
 # WARNING: `xcodegen generate` REWRITES Config/Info-*.plist and
 # Config/AppGroups.entitlements from scratch (verified: custom keys like
 # NSExtension/NSCameraUsageDescription are wiped). Back up Config/ before
@@ -234,7 +238,7 @@ targets:
       TARGETED_DEVICE_FAMILY: '1,2'
 
 # Schemes are explicit and shared (committed under
-# KeepCooking.xcodeproj/xcshareddata/xcschemes/) so every clone and Xcode Cloud
+# Smidgen.xcodeproj/xcshareddata/xcschemes/) so every clone and Xcode Cloud
 # resolves `-scheme KeepCooking` identically. Keep this list in sync with targets.
 schemes:
   KeepCooking:

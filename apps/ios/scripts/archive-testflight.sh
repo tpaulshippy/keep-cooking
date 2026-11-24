@@ -30,7 +30,7 @@ cd "$(dirname "$0")/.."   # apps/ios
 : "${ASC_KEY_PATH:?set ASC_KEY_PATH to your .p8 private key path}"
 ARCHIVE="build/KeepCooking.xcarchive"
 xcodebuild archive \
-  -project KeepCooking.xcodeproj -scheme KeepCooking \
+  -project Smidgen.xcodeproj -scheme KeepCooking \
   -configuration Release -destination 'generic/platform=iOS' \
   -archivePath "$ARCHIVE" \
   CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM="$TEAM_ID" \

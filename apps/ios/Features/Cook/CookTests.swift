@@ -9,7 +9,7 @@
 // (apps/ios/Sync/SyncEngineTests.swift). The pure-logic sources under test
 // (RecipeScaler.swift, StepTimerParser.swift, CookSession.swift,
 // ../Plan/PlanAggregation.swift, ../Shop/ShopHelpers.swift) compile into
-// the same test target (see project.yml + KeepCooking.xcodeproj) — no import
+// the same test target (see project.yml + Smidgen.xcodeproj) — no import
 // needed, no @testable import (standalone bundle, no app host).
 
 import XCTest

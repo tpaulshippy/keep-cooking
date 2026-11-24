@@ -23,7 +23,9 @@ echo "Stamping build number ${CI_BUILD_NUMBER}"
 # sed covers all 6 targets (app/widgets/share/tests/watch/uitests).
 ROOT="${CI_PRIMARY_REPOSITORY_PATH:-$(cd "$(dirname "$0")/../.." && pwd)}"
 PBX=""
-for candidate in "$ROOT/apps/ios/KeepCooking.xcodeproj/project.pbxproj" \
+for candidate in "$ROOT/apps/ios/Smidgen.xcodeproj/project.pbxproj" \
+                 "$ROOT/apps/ios/KeepCooking.xcodeproj/project.pbxproj" \
+                 "$ROOT/Smidgen.xcodeproj/project.pbxproj" \
                  "$ROOT/KeepCooking.xcodeproj/project.pbxproj"; do
   if [ -f "$candidate" ]; then
     PBX="$candidate"

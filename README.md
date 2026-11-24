@@ -73,4 +73,4 @@ Demos (real simulator recordings, iOS 26.5 iPhone 16 Pro): `docs/demos/offline-l
 (15 seeds, kill + relaunch persists), `ingest-save.mp4` (OCR scan → parse → save),
 `plan-to-list.mp4` (week plan → aggregated aisle-sorted list → check-off → cook mode).
 See `docs/demos/NOTES.md` for commands + honest gaps. Full XcodeGen project:
-`apps/ios/project.yml` → `KeepCooking.xcodeproj` (app + widgets + share + watch + unit/UITests).
+`apps/ios/project.yml` → `Smidgen.xcodeproj` (app + widgets + share + watch + unit/UITests).

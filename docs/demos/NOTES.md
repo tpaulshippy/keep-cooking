@@ -47,7 +47,7 @@ git checkout xcode-full
 cd apps/ios && xcodegen generate          # picks up Seed resources + UITests target
 
 # build (OS=18.5 per brief)
-xcodebuild -project apps/ios/KeepCooking.xcodeproj -scheme KeepCooking \
+xcodebuild -project apps/ios/Smidgen.xcodeproj -scheme KeepCooking \
   -destination 'platform=iOS Simulator,OS=18.5,name=iPhone 16 Pro' build   # exit 0
 
 # recording device (iOS 26.5 — see deviation note above)
@@ -58,7 +58,7 @@ xcrun simctl boot D54DE10D-E9FD-4E87-87C5-CCA9AF0BFB67   # exit 0
 # video 1 (fresh install first)
 xcrun simctl uninstall D54DE10D-… org.smidgen.app        # exit 0
 nohup xcrun simctl io D54DE10D-… recordVideo docs/demos/offline-launch.mp4 &
-xcodebuild test -project apps/ios/KeepCooking.xcodeproj -scheme KeepCookingUITests \
+xcodebuild test -project apps/ios/Smidgen.xcodeproj -scheme KeepCookingUITests \
   -destination 'platform=iOS Simulator,name=KeepCooking26' \
   -only-testing:KeepCookingUITests/DemoFlowsUITests/testOfflineLaunch   # passed (18.2s)
 kill -INT <recordVideo pid>

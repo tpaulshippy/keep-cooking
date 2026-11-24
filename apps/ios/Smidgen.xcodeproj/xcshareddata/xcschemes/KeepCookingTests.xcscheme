@@ -16,10 +16,10 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "66CA8E96D620A6C26E2D74CA"
-               BuildableName = "KeepCooking.app"
-               BlueprintName = "KeepCooking"
-               ReferencedContainer = "container:KeepCooking.xcodeproj">
+               BlueprintIdentifier = "BEAAC64E6BC5929C7017A4A6"
+               BuildableName = "KeepCookingTests.xctest"
+               BlueprintName = "KeepCookingTests"
+               ReferencedContainer = "container:Smidgen.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -33,14 +33,27 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "66CA8E96D620A6C26E2D74CA"
-            BuildableName = "KeepCooking.app"
-            BlueprintName = "KeepCooking"
-            ReferencedContainer = "container:KeepCooking.xcodeproj">
+            BlueprintIdentifier = "BEAAC64E6BC5929C7017A4A6"
+            BuildableName = "KeepCookingTests.xctest"
+            BlueprintName = "KeepCookingTests"
+            ReferencedContainer = "container:Smidgen.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <Testables>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "BEAAC64E6BC5929C7017A4A6"
+               BuildableName = "KeepCookingTests.xctest"
+               BlueprintName = "KeepCookingTests"
+               ReferencedContainer = "container:Smidgen.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
+      <CommandLineArguments>
+      </CommandLineArguments>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"
@@ -52,18 +65,15 @@
       debugDocumentVersioning = "YES"
       debugServiceExtension = "internal"
       allowLocationSimulation = "YES">
-      <BuildableProductRunnable
-         runnableDebuggingMode = "0">
+      <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "66CA8E96D620A6C26E2D74CA"
-            BuildableName = "KeepCooking.app"
-            BlueprintName = "KeepCooking"
-            ReferencedContainer = "container:KeepCooking.xcodeproj">
+            BlueprintIdentifier = "BEAAC64E6BC5929C7017A4A6"
+            BuildableName = "KeepCookingTests.xctest"
+            BlueprintName = "KeepCookingTests"
+            ReferencedContainer = "container:Smidgen.xcodeproj">
          </BuildableReference>
-      </BuildableProductRunnable>
-      <CommandLineArguments>
-      </CommandLineArguments>
+      </MacroExpansion>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
@@ -71,16 +81,15 @@
       savedToolIdentifier = ""
       useCustomWorkingDirectory = "NO"
       debugDocumentVersioning = "YES">
-      <BuildableProductRunnable
-         runnableDebuggingMode = "0">
+      <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "66CA8E96D620A6C26E2D74CA"
-            BuildableName = "KeepCooking.app"
-            BlueprintName = "KeepCooking"
-            ReferencedContainer = "container:KeepCooking.xcodeproj">
+            BlueprintIdentifier = "BEAAC64E6BC5929C7017A4A6"
+            BuildableName = "KeepCookingTests.xctest"
+            BlueprintName = "KeepCookingTests"
+            ReferencedContainer = "container:Smidgen.xcodeproj">
          </BuildableReference>
-      </BuildableProductRunnable>
+      </MacroExpansion>
    </ProfileAction>
    <AnalyzeAction
       buildConfiguration = "Debug">
