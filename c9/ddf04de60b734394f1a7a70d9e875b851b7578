@@ -1,0 +1,28 @@
+apps/ios/Features/Cook/CookModeView.swift
+  h_6bbd00fe0a456a 117-130,136-137,142,566-568,608-611,615-650,652,655,662-671
+apps/ios/Features/Cook/CookSession.swift
+  h_6bbd00fe0a456a 95-98,103-114
+apps/ios/Features/Cook/CookTests.swift
+  h_6bbd00fe0a456a 308-520
+apps/ios/Features/Cook/VoiceCommandParser.swift
+  h_6bbd00fe0a456a 49-50,120-125,129-132,134,138-139,141,143-155,157-159,161-163,166,170-182,191-194,206-241,243-244,273-276,387-399
+apps/ios/Features/Cook/VoiceCookManager.swift
+  h_6bbd00fe0a456a 13-26,36-54,109-111,114-117,144-167,169,193-206,210-219,224-231,234,240,243-244,248-282,295,303-306,310,314-320,326-328,341-346,354-427,435,438,457-463,475,477-479,481,484,487-488,490,493,496-497,499,502-504,507-509,513,516-523,525-529,531-532,534-542,551-555,565-578
+apps/ios/Intents/KeepCookingIntents.swift
+  h_6bbd00fe0a456a 18,25-39,194-203,211-212,216,224-225,229-230,238-239,244-247,270-273,275-278,283,285-287,291-293,333-345
+apps/ios/Intents/README.md
+  h_6bbd00fe0a456a 10-14
+apps/ios/project.yml
+  h_6bbd00fe0a456a 122-128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c9ddf04de60b734394f1a7a70d9e875b851b7578",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
