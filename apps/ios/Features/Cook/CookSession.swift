@@ -79,17 +79,21 @@ public enum KeepAwake {
 /// Background timer alerts. Local notifications fire even when the app is
 /// backgrounded; the Live Activity half is a stub (no ActivityKit target yet).
 public enum CookActivityStub {
+    /// Pure ID builder (no system calls) behind `schedule`: one UUID batch
+    /// per call so per-timer starts passing one-element arrays never collide.
+    /// Unit tests exercise this directly — `UNUserNotificationCenter` is
+    /// unavailable in the host-less SmidgenTests bundle.
+    public static func makeIDs(for timers: [ParsedTimer]) -> [String] {
+        let batch = UUID().uuidString
+        return timers.enumerated().map { "cook-timer-\(batch)-\($0.offset)-\($0.element.seconds)" }
+    }
+
     /// Schedules a local notification per timer. Returns the scheduled ids.
     @discardableResult
     public static func schedule(timers: [ParsedTimer]) -> [String] {
         let center = UNUserNotificationCenter.current()
-        // One UUID per schedule call: per-timer starts each pass a
-        // one-element array (index always 0), so index+seconds alone would
-        // collide and equal-duration timers would replace each other.
-        let batch = UUID().uuidString
-        var ids: [String] = []
-        for (i, timer) in timers.enumerated() {
-            let id = "cook-timer-\(batch)-\(i)-\(timer.seconds)"
+        let ids = makeIDs(for: timers)
+        for (id, timer) in zip(ids, timers) {
             let content = UNMutableNotificationContent()
             content.title = "Smidgen timer"
             content.body = "\(timer.label) — done!"
@@ -97,7 +101,6 @@ public enum CookActivityStub {
             let trigger = UNTimeIntervalNotificationTrigger(
                 timeInterval: max(1, TimeInterval(timer.seconds)), repeats: false)
             center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
-            ids.append(id)
         }
         startLiveActivityStub(timerCount: timers.count)
         return ids

@@ -113,8 +113,10 @@ actor FakeE2EServer {
         var stored: [String] = []
         for env in envs {
             guard env.householdHash == hash else {
+                // Cross-bucket pushes are rejected, never stored. No XCTFail
+                // here: testBucketsAreIsolatedByHash deliberately exercises
+                // this path and asserts on the return value + rejectedPushes.
                 rejectedPushes.append(env.id)
-                XCTFail("householdHash \(env.householdHash) does not match requested bucket \(hash)")
                 continue
             }
             guard UUID(uuidString: env.id) != nil else {
@@ -353,7 +355,8 @@ final class E2ESyncTests: XCTestCase {
         let resB = try await engineB.syncE2E(identity: identity, transport: tB, applyRemote: { box.append($0) })
         XCTAssertEqual(resB.pulled, 1)
         XCTAssertEqual(box.all.first?.id, e2eR1)
-        XCTAssertEqual(await server.rejectedPushes, [])
+        let rejectedAfterConverge = await server.rejectedPushes
+        XCTAssertEqual(rejectedAfterConverge, [])
     }
 
     func testPushCountsServerKeptAsConflict() async throws {
@@ -382,7 +385,8 @@ final class E2ESyncTests: XCTestCase {
         let pushRes = try await engine.syncE2E(identity: identity, transport: t, applyRemote: { winBox.append($0) })
         XCTAssertEqual(pushRes.pushed, 0)
         XCTAssertEqual(pushRes.conflicts, 1)
-        XCTAssertEqual(await engine.pendingCount, 0)
+        let pendingAfterConflict = await engine.pendingCount
+        XCTAssertEqual(pendingAfterConflict, 0)
         XCTAssertEqual(winBox.all.map(\.id), [e2eR2])
         XCTAssertEqual(winBox.all.first?.deviceId, "device-b")
         XCTAssertEqual(winBox.all.first?.updatedAt, base.addingTimeInterval(200))
@@ -470,8 +474,9 @@ final class E2ESyncTests: XCTestCase {
         let resA2 = try await engineA.syncE2E(identity: identity, transport: t, applyRemote: { box.append($0) })
         XCTAssertEqual(resA2.pulled, 1)
         XCTAssertEqual(box.all.first?.deviceId, "device-b")
+        let pulledAt = box.all.first?.updatedAt.timeIntervalSince1970 ?? -1
         XCTAssertEqual(
-            box.all.first?.updatedAt.timeIntervalSince1970,
+            pulledAt,
             base.addingTimeInterval(0.8).timeIntervalSince1970, accuracy: 0.001)
     }
 
@@ -486,8 +491,10 @@ final class E2ESyncTests: XCTestCase {
 
         let envA = try e2eEncrypt(makeEnv(id: e2eR1, at: base, device: "device-a"), identity: identityA)
         let envB = try e2eEncrypt(makeEnv(id: e2eR1, at: base, device: "device-b"), identity: identityB)
-        XCTAssertEqual(await server.pushEncrypted(hash: identityA.hash, [envA]), [e2eR1])
-        XCTAssertEqual(await server.pushEncrypted(hash: identityB.hash, [envB]), [e2eR1])
+        let storedA = await server.pushEncrypted(hash: identityA.hash, [envA])
+        XCTAssertEqual(storedA, [e2eR1])
+        let storedB = await server.pushEncrypted(hash: identityB.hash, [envB])
+        XCTAssertEqual(storedB, [e2eR1])
 
         let gotA = await server.pullEncrypted(hash: identityA.hash, since: nil)
         let gotB = await server.pullEncrypted(hash: identityB.hash, since: nil)
@@ -499,8 +506,10 @@ final class E2ESyncTests: XCTestCase {
         XCTAssertEqual(gotB.first?.deviceId, "device-b")
 
         // A cross-bucket push is rejected, never stored.
-        XCTAssertEqual(await server.pushEncrypted(hash: identityB.hash, [envA]), [])
-        XCTAssertEqual(await server.rejectedPushes, [e2eR1])
+        let crossStored = await server.pushEncrypted(hash: identityB.hash, [envA])
+        XCTAssertEqual(crossStored, [])
+        let rejected = await server.rejectedPushes
+        XCTAssertEqual(rejected, [e2eR1])
     }
 }
 

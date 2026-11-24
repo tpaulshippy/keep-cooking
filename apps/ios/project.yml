@@ -180,6 +180,7 @@ targets:
       - path: Features/Ingest/IngestStepsHeader.swift
       - path: Features/Cook/RecipeScaler.swift
       - path: Features/Cook/StepTimerParser.swift
+      - path: Features/Cook/CookSession.swift
       - path: Features/Plan/PlanAggregation.swift
       - path: Features/Shop/ShopHelpers.swift
       - path: Features/Library/DuplicateFinder.swift

@@ -5,17 +5,16 @@
 //   3. Week aggregation (scaled merge + unmeasured passthrough).
 //   4. Aisle sort + pantry helpers (expiry, low-stock).
 //
-// Run: these live in the app test target alongside SyncEngineTests
-// (apps/ios/Sync/SyncEngineTests.swift). Until the Xcode project lands,
-// validate with: swiftc -parse <files>.
+// Run: these live in the SmidgenTests target alongside SyncEngineTests
+// (apps/ios/Sync/SyncEngineTests.swift). The pure-logic sources under test
+// (RecipeScaler.swift, StepTimerParser.swift, CookSession.swift,
+// ../Plan/PlanAggregation.swift, ../Shop/ShopHelpers.swift) compile into
+// the same test target (see project.yml + Smidgen.xcodeproj) — no import
+// needed, no @testable import (standalone bundle, no app host).
 
 import XCTest
 
-// NOTE: when the app/test target exists, `@testable import` the app module
-// and delete this include shim. The shim below just lists the files under
-// test so a bare `swiftc -parse` covers them without a module:
-//   RecipeScaler.swift, StepTimerParser.swift,
-//   ../Plan/PlanAggregation.swift, ../Shop/ShopHelpers.swift
+// Same-target convention (see header): no import needed.
 
 final class CookTests: XCTestCase {
     // MARK: - Scaling 4 -> 6 servings
@@ -176,22 +175,22 @@ final class CookTests: XCTestCase {
 
     func testScheduleIdsUniqueAcrossCalls() {
         // Per-timer starts each pass a one-element array; equal durations
-        // must not reuse one notification identifier.
+        // must not reuse one notification identifier. Exercises the pure
+        // ID builder: UNUserNotificationCenter is unavailable in the
+        // host-less test bundle, so `schedule` itself is not called here.
         let timer = ParsedTimer(seconds: 600, label: "bake")
-        let first = CookActivityStub.schedule(timers: [timer])
-        let second = CookActivityStub.schedule(timers: [timer])
+        let first = CookActivityStub.makeIDs(for: [timer])
+        let second = CookActivityStub.makeIDs(for: [timer])
         XCTAssertEqual(first.count, 1)
         XCTAssertEqual(second.count, 1)
         XCTAssertNotEqual(first[0], second[0])
-        CookActivityStub.cancel(ids: first + second)
     }
 
     func testScheduleIdsUniqueWithinBatch() {
         let timers = [ParsedTimer(seconds: 600, label: "bake"),
                       ParsedTimer(seconds: 600, label: "rest")]
-        let ids = CookActivityStub.schedule(timers: timers)
+        let ids = CookActivityStub.makeIDs(for: timers)
         XCTAssertEqual(ids.count, 2)
         XCTAssertNotEqual(ids[0], ids[1])
-        CookActivityStub.cancel(ids: ids)
     }
 }
