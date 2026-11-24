@@ -174,8 +174,8 @@ class CookLogicTest {
         assertEquals(VoiceCommand.Next, parseVoiceCommand("  Next. "))
         assertEquals(VoiceCommand.Previous, parseVoiceCommand("previous step"))
         assertEquals(VoiceCommand.RepeatStep, parseVoiceCommand("repeat that"))
-        assertEquals(VoiceCommand.Next, parseVoiceCommand("smidgen next"))
-        assertEquals(VoiceCommand.Previous, parseVoiceCommand("hey smidgen, previous step"))
+        assertEquals(VoiceCommand.Next, parseVoiceCommand("keep cooking next"))
+        assertEquals(VoiceCommand.Previous, parseVoiceCommand("hey keep cooking, previous step"))
     }
 
     @Test
@@ -213,15 +213,15 @@ class CookLogicTest {
     }
 
     @Test
-    fun voiceSmidgenPrefixRule() {
+    fun voiceWakeWordPrefixRule() {
         assertEquals(VoiceCommand.Unknown, parseVoiceCommand("halve it"))
         assertEquals(VoiceCommand.Unknown, parseVoiceCommand("double it"))
         assertEquals(VoiceCommand.Unknown, parseVoiceCommand("come again"))
-        assertEquals(VoiceCommand.HalveScale, parseVoiceCommand("smidgen halve it"))
-        assertEquals(VoiceCommand.DoubleScale, parseVoiceCommand("smidgen double it"))
-        assertEquals(VoiceCommand.RepeatStep, parseVoiceCommand("smidgen come again"))
-        assertEquals(VoiceCommand.RepeatStep, parseVoiceCommand("smidgen what was that?"))
-        assertEquals(VoiceCommand.StopCooking, parseVoiceCommand("smidgen cancel"))
+        assertEquals(VoiceCommand.HalveScale, parseVoiceCommand("keep cooking halve it"))
+        assertEquals(VoiceCommand.DoubleScale, parseVoiceCommand("keep cooking double it"))
+        assertEquals(VoiceCommand.RepeatStep, parseVoiceCommand("keep cooking come again"))
+        assertEquals(VoiceCommand.RepeatStep, parseVoiceCommand("keep cooking what was that?"))
+        assertEquals(VoiceCommand.StopCooking, parseVoiceCommand("keep cooking cancel"))
     }
 
     @Test
@@ -281,9 +281,9 @@ class CookLogicTest {
     }
 
     @Test
-    fun voiceSmidgenImDone() {
-        assertEquals(VoiceCommand.Next, parseVoiceCommand("smidgen I’m done"))
-        assertEquals(VoiceCommand.Next, parseVoiceCommand("smidgen I'm done"))
+    fun voiceWakeWordImDone() {
+        assertEquals(VoiceCommand.Next, parseVoiceCommand("keep cooking I’m done"))
+        assertEquals(VoiceCommand.Next, parseVoiceCommand("keep cooking I'm done"))
     }
 
     @Test
