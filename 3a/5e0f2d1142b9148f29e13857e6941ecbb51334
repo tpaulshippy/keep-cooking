@@ -1,0 +1,16 @@
+apps/android/app/src/test/java/com/keepcooking/app/CookLogicTest.kt
+  h_6bbd00fe0a456a 179-181
+apps/ios/Features/Cook/CookTests.swift
+  h_6bbd00fe0a456a 208-210
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3a5e0f2d1142b9148f29e13857e6941ecbb51334",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
