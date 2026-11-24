@@ -58,6 +58,47 @@ public final class CookSession {
     }
 }
 
+// MARK: - Voice scale + ingredient-match helpers (Option A, Lane 10)
+
+/// Voice scale commands ("double / halve / reset the recipe").
+public enum ScaleVoiceCommand: Sendable {
+    case double
+    case halve
+    case reset
+}
+
+public extension ScaleVoiceCommand {
+    init?(_ voice: VoiceCommand) {
+        switch voice {
+        case .doubleScale: self = .double
+        case .halveScale: self = .halve
+        case .resetScale: self = .reset
+        default: return nil
+        }
+    }
+}
+
+/// Applies a voice scale command to a servings pair. Double/halve are
+/// relative to the base servings; reset returns to base. Pure (no state).
+public func applyScaleCommand(_ command: ScaleVoiceCommand,
+                              baseServings: Double,
+                              targetServings: inout Double) {
+    switch command {
+    case .double: targetServings = baseServings * 2
+    case .halve: targetServings = baseServings / 2
+    case .reset: targetServings = baseServings
+    }
+}
+
+/// Fuzzy ingredient-id lookup using the same normalization as the voice
+/// parser (`fuzzyVoiceMatch`). Pure (no state).
+public func ingredientId(matching name: String,
+                         in ingredients: [(id: String, name: String)]) -> String? {
+    let matched = fuzzyVoiceMatch(name, candidates: ingredients.map { $0.name })
+    guard let matched else { return nil }
+    return ingredients.first { $0.name == matched }?.id
+}
+
 // MARK: - Keep screen on
 
 public enum KeepAwake {

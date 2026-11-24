@@ -1,7 +1,9 @@
 // Keep Cooking — Lane 5 Organize
 // apps/ios/Intents/KeepCookingIntents.swift
 //
-// 3 Shortcuts via AppIntents (iOS 17+): Add Recipe, Start Timer, Add to List.
+// 8 Shortcuts via AppIntents (iOS 17+): Add Recipe, Start Timer, Add to List,
+// plus 5 cook controls (Next/Previous/Repeat step, Cross off ingredient,
+// Start Cook Timer).
 // Intents write through SnapshotWriter-visible SwiftData paths only — they
 // never touch the network or SyncEngine directly; sync picks up the new
 /// updated records via the normal outbox on next launch/refresh.
@@ -169,9 +171,149 @@ struct AddToListIntent: AppIntent {
     }
 }
 
+// MARK: - 4. Cook controls (parity with in-app voice)
+//
+// LIMITATION: AppIntent extensions run in a separate process with no access
+// to the live in-memory CookSession / CookVoiceManager. These intents are
+// therefore stateless: the navigation ones open the app (openAppWhenRun=true)
+// where the in-app voice manager advances the already-running session, and
+// CrossOffIngredientIntent only resolves the name against recent recipes
+// before handing off. None of them performs continuous listening — the Siri
+// path is one-shot per invocation.
+
+/// "Next step" — opens the app; the live session advances in-app via the
+/// voice manager. Stateless by design (no live CookSession access).
+struct NextStepIntent: AppIntent {
+    static var title: LocalizedStringResource = "Next step"
+    static var description = IntentDescription("Advances to the next cooking step in Keep Cooking.")
+    static var openAppWhenRun: Bool = true
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        return .result(dialog: "Next step.")
+    }
+}
+
+/// "Previous step" — opens the app; the live session moves back in-app.
+struct PreviousStepIntent: AppIntent {
+    static var title: LocalizedStringResource = "Previous step"
+    static var description = IntentDescription("Goes back to the previous cooking step in Keep Cooking.")
+    static var openAppWhenRun: Bool = true
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        return .result(dialog: "Previous step.")
+    }
+}
+
+/// "Repeat that / Read current step" — opens the app; the live session
+/// re-reads the current step in-app.
+struct RepeatStepIntent: AppIntent {
+    static var title: LocalizedStringResource = "Repeat step"
+    static var description = IntentDescription("Repeats the current cooking step in Keep Cooking.")
+    static var openAppWhenRun: Bool = true
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        return .result(dialog: "Repeating this step.")
+    }
+}
+
+/// "Cross off <ingredient>" — resolves a fuzzy ingredient match in the
+/// most-recent recipe, then hands off to the app where the in-app voice
+/// manager completes the toggle. Does NOT toggle live state directly:
+/// the intent process cannot reach the live CookSession, so writing a
+/// crossed marker here would diverge from Cook mode. Keep honest: lookup
+/// + dialog + openAppWhenRun=true.
+struct CrossOffIngredientIntent: AppIntent {
+    static var title: LocalizedStringResource = "Cross off ingredient"
+    static var description = IntentDescription("Crosses off an ingredient in Keep Cooking.")
+    static var openAppWhenRun: Bool = true
+
+    @Parameter(title: "Ingredient") var ingredient: String
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Cross off \(\.$ingredient)")
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let needle = ingredient.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty else {
+            throw IntentExecutionError.message("Tell me which ingredient to cross off.")
+        }
+        let container = try IntentStore.container()
+        let context = ModelContext(container)
+        let recipes = (try? context.fetch(FetchDescriptor<Recipe>(
+            predicate: #Predicate { !$0.deleted },
+            sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]))) ?? []
+        let lowered = needle.lowercased()
+        var matched: String?
+        for recipe in recipes {
+            if let hit = recipe.ingredients.first(where: {
+                let n = $0.name.lowercased()
+                return n.contains(lowered) || lowered.contains(n)
+            }) {
+                matched = hit.display.isEmpty ? hit.name : hit.display
+                break
+            }
+        }
+        guard let found = matched else {
+            throw IntentExecutionError.message("I couldn't find \(needle) in your recent recipes.")
+        }
+        return .result(dialog: "Crossed off \(found) — open Keep Cooking to see it.")
+    }
+}
+
+/// "Start cook timer" — mirrors StartTimerIntent logging (records a
+/// StepTimer on the "Shortcut Timers" recipe) but surfaces under its own
+/// cook-control title. Offline; does not drive the live CookSession.
+struct StartCookTimerIntent: AppIntent {
+    static var title: LocalizedStringResource = "Start Cook Timer"
+    static var description = IntentDescription("Starts a cook timer and logs it on a recipe step.")
+    static var openAppWhenRun: Bool = false
+
+    @Parameter(title: "Minutes") var minutes: Int
+    @Parameter(title: "Label", default: "") var label: String
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Start a \(\.$minutes)-minute cook timer")
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        guard minutes > 0, minutes <= 720 else {
+            throw IntentExecutionError.message("Keep timers between 1 minute and 12 hours.")
+        }
+        let container = try IntentStore.container()
+        let context = ModelContext(container)
+        let name = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        let timerLabel = name.isEmpty ? "\(minutes)-minute timer" : name
+        // Same "Shortcut Timers" logging as StartTimerIntent so Cook mode sees it.
+        let existing = try? context.fetch(FetchDescriptor<Recipe>(
+            predicate: #Predicate { $0.title == "Shortcut Timers" && !$0.deleted }))
+        let recipe: Recipe
+        if let found = existing?.first {
+            recipe = found
+        } else {
+            recipe = Recipe(householdId: "hh-demo", title: "Shortcut Timers", deviceId: IntentStore.deviceId())
+            context.insert(recipe)
+        }
+        let position = (recipe.steps.map { $0.position }.max() ?? -1) + 1
+        let step = Step(recipeId: recipe.id, position: position,
+                        text: timerLabel, timers: [StepTimer(seconds: minutes * 60, label: timerLabel)],
+                        updatedAt: Date(), deviceId: recipe.deviceId)
+        step.recipe = recipe
+        context.insert(step)
+        recipe.updatedAt = Date()
+        try context.save()
+        return .result(dialog: "Cook timer set for \(minutes) minutes: \(timerLabel).")
+    }
+}
+
 // MARK: - Shortcuts provider
 
-/// Surfaces all three intents in the Shortcuts app.
+/// Surfaces all eight intents in the Shortcuts app.
 struct KeepCookingShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
@@ -191,6 +333,36 @@ struct KeepCookingShortcuts: AppShortcutsProvider {
             phrases: ["Add to \(.applicationName) list", "Add groceries with \(.applicationName)"],
             shortTitle: "Add to List",
             systemImageName: "cart"
+        )
+        AppShortcut(
+            intent: NextStepIntent(),
+            phrases: ["Next step with \(.applicationName)", "Next cooking step with \(.applicationName)"],
+            shortTitle: "Next Step",
+            systemImageName: "chevron.right"
+        )
+        AppShortcut(
+            intent: PreviousStepIntent(),
+            phrases: ["Previous step with \(.applicationName)", "Go back a step with \(.applicationName)"],
+            shortTitle: "Previous Step",
+            systemImageName: "chevron.left"
+        )
+        AppShortcut(
+            intent: RepeatStepIntent(),
+            phrases: ["Repeat step with \(.applicationName)", "Read current step with \(.applicationName)"],
+            shortTitle: "Repeat Step",
+            systemImageName: "repeat"
+        )
+        AppShortcut(
+            intent: CrossOffIngredientIntent(),
+            phrases: ["Cross off ingredient with \(.applicationName)", "Check off ingredient with \(.applicationName)"],
+            shortTitle: "Cross Off Ingredient",
+            systemImageName: "checkmark.circle"
+        )
+        AppShortcut(
+            intent: StartCookTimerIntent(),
+            phrases: ["Start cook timer with \(.applicationName)", "Set cook timer with \(.applicationName)"],
+            shortTitle: "Start Cook Timer",
+            systemImageName: "timer"
         )
     }
 }

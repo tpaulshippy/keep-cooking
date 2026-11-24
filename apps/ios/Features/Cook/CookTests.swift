@@ -193,4 +193,115 @@ final class CookTests: XCTestCase {
         XCTAssertEqual(ids.count, 2)
         XCTAssertNotEqual(ids[0], ids[1])
     }
+
+    // MARK: - Voice parser (Option A, Lane 10)
+
+    func testVoiceNextPreviousRepeat() {
+        XCTAssertEqual(parseVoiceCommand("next"), .next)
+        // Standalone-utterance match: trim + trailing period + case.
+        XCTAssertEqual(parseVoiceCommand("  Next. "), .next)
+        XCTAssertEqual(parseVoiceCommand("previous step"), .previous)
+        XCTAssertEqual(parseVoiceCommand("repeat that"), .repeatStep)
+        // Wake-word prefix is stripped generally.
+        XCTAssertEqual(parseVoiceCommand("smidgen next"), .next)
+        XCTAssertEqual(parseVoiceCommand("hey smidgen, previous step"), .previous)
+    }
+
+    func testVoiceGoToStep() {
+        XCTAssertEqual(parseVoiceCommand("go to step 3"), .goToStep(3))
+        XCTAssertEqual(parseVoiceCommand("go to step three"), .goToStep(3))
+        XCTAssertEqual(parseVoiceCommand("go to the last step"), .goToStep(VoiceCommand.lastStep))
+    }
+
+    func testVoiceStartOver() {
+        XCTAssertEqual(parseVoiceCommand("start over"), .startOver)
+    }
+
+    func testVoiceTimerExtraction() {
+        XCTAssertEqual(
+            parseVoiceCommand("start a timer for 10 minutes"),
+            .startTimer(seconds: 600, label: nil))
+        // Ranges use the upper bound, matching parseTimers.
+        XCTAssertEqual(
+            parseVoiceCommand("start a timer for 12-15 minutes"),
+            .startTimer(seconds: 900, label: nil))
+        XCTAssertEqual(
+            parseVoiceCommand("start a timer for ten minutes"),
+            .startTimer(seconds: 600, label: nil))
+        // No duration: the caller resolves the current step via parseTimers.
+        XCTAssertEqual(
+            parseVoiceCommand("start the timer"),
+            .startTimer(seconds: nil, label: nil))
+    }
+
+    func testVoiceScaleCommands() {
+        XCTAssertEqual(parseVoiceCommand("double the recipe"), .doubleScale)
+        XCTAssertEqual(parseVoiceCommand("halve the recipe"), .halveScale)
+        XCTAssertEqual(parseVoiceCommand("reset the scale"), .resetScale)
+    }
+
+    func testVoiceSmidgenPrefixRule() {
+        // Bare ambiguous utterances stay unknown ...
+        XCTAssertEqual(parseVoiceCommand("halve it"), .unknown)
+        XCTAssertEqual(parseVoiceCommand("double it"), .unknown)
+        XCTAssertEqual(parseVoiceCommand("come again"), .unknown)
+        // ... but are honored with the "smidgen" prefix.
+        XCTAssertEqual(parseVoiceCommand("smidgen halve it"), .halveScale)
+        XCTAssertEqual(parseVoiceCommand("smidgen double it"), .doubleScale)
+        XCTAssertEqual(parseVoiceCommand("smidgen come again"), .repeatStep)
+        XCTAssertEqual(parseVoiceCommand("smidgen what was that?"), .repeatStep)
+        XCTAssertEqual(parseVoiceCommand("smidgen cancel"), .stopCooking)
+    }
+
+    func testVoiceMidSentenceGuard() {
+        // Parser only handles standalone utterances; embedded commands stay
+        // unknown (mid-sentence gating lives with the caller).
+        XCTAssertEqual(parseVoiceCommand("please tell me the next step"), .unknown)
+        XCTAssertEqual(parseVoiceCommand("can you go to step 3 for me"), .unknown)
+    }
+
+    func testVoiceCrossUncrossFuzzy() {
+        XCTAssertEqual(parseVoiceCommand("cross off the flour"), .crossOff(name: "flour"))
+        XCTAssertEqual(parseVoiceCommand("uncross flour"), .uncross(name: "flour"))
+        // Fuzzy helper: a short spoken name matches the longer label.
+        XCTAssertEqual(
+            fuzzyVoiceMatch("flour", candidates: ["All-purpose flour", "Sugar"]),
+            "All-purpose flour")
+    }
+
+    func testVoiceAddToList() {
+        XCTAssertEqual(
+            parseVoiceCommand("add the ingredients to my list"),
+            .addToList(listName: nil))
+        XCTAssertEqual(
+            parseVoiceCommand("add the ingredients to my costco list"),
+            .addToList(listName: "costco"))
+    }
+
+    func testVoiceIngredientAmount() {
+        XCTAssertEqual(
+            parseVoiceCommand("how much flour do i need"),
+            .ingredientAmount(name: "flour"))
+    }
+
+    func testVoiceStopCommands() {
+        XCTAssertEqual(parseVoiceCommand("stop speaking"), .stopSpeaking)
+        XCTAssertEqual(parseVoiceCommand("stop cooking"), .stopCooking)
+    }
+
+    func testVoiceScaleHelper() {
+        var target = 4.0
+        applyScaleCommand(.double, baseServings: 4, targetServings: &target)
+        XCTAssertEqual(target, 8)
+        applyScaleCommand(.halve, baseServings: 4, targetServings: &target)
+        XCTAssertEqual(target, 2)
+        applyScaleCommand(.reset, baseServings: 4, targetServings: &target)
+        XCTAssertEqual(target, 4)
+    }
+
+    func testVoiceIngredientIdHelper() {
+        let ingredients = [(id: "i1", name: "All-purpose flour"), (id: "i2", name: "Sugar")]
+        XCTAssertEqual(ingredientId(matching: "flour", in: ingredients), "i1")
+        XCTAssertNil(ingredientId(matching: "cinnamon", in: ingredients))
+    }
 }
