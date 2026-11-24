@@ -125,7 +125,7 @@ fun fuzzyVoiceMatch(query: String, candidates: List<String>): String? {
         val c = voiceNormalizedName(candidate)
         if (c.isEmpty()) continue
         val cTokens = c.split(" ")
-        val key: Triple<Int, Int, Int>? = if (c == q) {
+        val key: Triple<Int, Int, Int> = if (c == q) {
             Triple(3, qTokens.size, q.length)
         } else {
             val cSet = cTokens.toSet()

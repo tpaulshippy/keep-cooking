@@ -16,7 +16,6 @@ import kotlinx.coroutines.launch
 
 private val Context.prefsDataStore by preferencesDataStore(name = "keepcooking")
 
-private val Context.prefsDataStore by preferencesDataStore(name = "keepcooking")
 private val Context.e2eMetaDataStore by preferencesDataStore(name = "keepcooking_e2e_meta")
 private val Context.e2eSecretDataStore by preferencesDataStore(name = "keepcooking_e2e_secret")
 

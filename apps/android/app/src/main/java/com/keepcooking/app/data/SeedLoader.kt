@@ -5,6 +5,7 @@ import java.time.Instant
 import java.util.UUID
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -19,7 +20,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Loads bundled seed recipes from src/main/assets/seed/*.json into Room.
+ * Loads bundled seed recipes from src/main/assets/seed/ JSON files into Room.
  * Parity with iOS SeedLoader: one-shot, idempotent, airplane-mode friendly.
  */
 class SeedLoader(
@@ -128,12 +129,7 @@ class SeedLoader(
     private fun JsonArray?.toStringListJson(): String {
         val arr = this ?: return "[]"
         val names = arr.mapNotNull { runCatching { it.jsonPrimitive.content }.getOrNull() }
-        return buildJsonObject { }.let {
-            Json.encodeToString(
-                kotlinx.serialization.builtins.ListSerializer(kotlinx.serialization.builtins.serializer<String>()),
-                names,
-            )
-        }
+        return Json.encodeToString(names)
     }
 }
 

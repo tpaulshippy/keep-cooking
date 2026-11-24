@@ -8,7 +8,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Today"
-        android:textAppearance="@style/TextAppearance.AppCompat.Caption" />
+        android:textAppearance="?android:attr/textAppearanceSmall" />
     <TextView
         android:id="@+id/widget_body"
         android:layout_width="match_parent"

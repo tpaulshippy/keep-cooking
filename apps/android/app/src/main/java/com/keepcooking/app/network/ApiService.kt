@@ -1,6 +1,5 @@
 package com.keepcooking.app.network
 
-import com.keepcooking.app.BuildConfig
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import okhttp3.MediaType.Companion.toMediaType

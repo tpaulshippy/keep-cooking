@@ -1,6 +1,7 @@
 package com.keepcooking.app.ui.screens
 
 import android.content.Intent
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -9,11 +10,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -76,15 +77,19 @@ fun ExportScreen(container: AppContainer, initialRecipeId: String = "") {
             Modifier.fillMaxSize().padding(padding).padding(16.dp).verticalScroll(rememberScrollState()),
         ) {
             Text("Recipe")
-            ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+            Box {
                 OutlinedTextField(
                     value = selectedTitle.ifBlank { "No recipes to export." },
                     onValueChange = {},
                     readOnly = true,
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                    modifier = Modifier.menuAnchor().fillMaxWidth(),
+                    trailingIcon = {
+                        IconButton(onClick = { expanded = !expanded }) {
+                            Text(if (expanded) "▴" else "▾")
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
                 )
-                androidx.compose.material3.ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                     recipes.forEach { (id, title) ->
                         DropdownMenuItem(text = { Text(title) }, onClick = {
                             selectedId = id
