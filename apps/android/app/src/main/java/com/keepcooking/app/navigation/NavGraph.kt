@@ -37,8 +37,11 @@ import com.keepcooking.app.ui.screens.IngestDraft
 import com.keepcooking.app.ui.screens.IngestScreen
 import com.keepcooking.app.ui.screens.LibraryRecipeRow
 import com.keepcooking.app.ui.screens.LibraryScreen
+import com.keepcooking.app.ui.screens.MoreScreen
 import com.keepcooking.app.ui.screens.PlanScreen
 import com.keepcooking.app.ui.screens.RecipeDetailScreen
+import com.keepcooking.app.ui.screens.RecipesScreen
+import com.keepcooking.app.ui.screens.loadLibraryRows
 import com.keepcooking.app.ui.screens.ShareScreen
 import com.keepcooking.app.ui.screens.ShopScreen
 import com.keepcooking.app.wear.NowCookingScreen
@@ -325,36 +328,23 @@ fun KeepCookingNav() {
     ) { padding ->
         NavHost(
             navController = navController,
-            startDestination = TopDestination.Library.route,
+            startDestination = TopDestination.Recipes.route,
             modifier = Modifier.padding(padding),
         ) {
+            composable(TopDestination.Recipes.route) {
+                RecipesScreen(
+                    container = container,
+                    onRecipeClick = { id ->
+                        navController.navigate(Routes.recipeDetail(id))
+                    },
+                    onAddRecipe = { navController.navigate(Routes.Ingest) },
+                )
+            }
+            composable(TopDestination.Plan.route) { PlanScreen(container) }
+            composable(TopDestination.Lists.route) { ShopScreen(container) }
             composable(TopDestination.Library.route) {
                 var rows by remember { mutableStateOf(listOf<LibraryRecipeRow>()) }
-                LaunchedEffect(Unit) {
-                    val live = container.db.recipes().liveRecipes()
-                    rows = live.map { r ->
-                        val ings = container.db.ingredients().forRecipe(r.id)
-                        val steps = container.db.steps().forRecipe(r.id)
-                        val cats = runCatching {
-                            Json.parseToJsonElement(r.categoriesJson).jsonArray.map { it.jsonPrimitive.content }
-                        }.getOrDefault(emptyList())
-                        LibraryRecipeRow(
-                            recipeId = r.id,
-                            title = r.title,
-                            recipeDescription = r.recipeDescription,
-                            servings = r.servings,
-                            prepMinutes = r.prepMinutes,
-                            cookMinutes = r.cookMinutes,
-                            rating = r.rating,
-                            source = r.source,
-                            categories = cats,
-                            ingredientNames = ings.map { it.name },
-                            stepTexts = steps.map { it.text },
-                            photoOriginal = r.photoOriginal,
-                            photoThumb = r.photoThumb,
-                        )
-                    }
-                }
+                LaunchedEffect(Unit) { rows = loadLibraryRows(container) }
                 LibraryScreen(
                     recipes = rows,
                     onRecipeClick = { id ->
@@ -396,7 +386,17 @@ fun KeepCookingNav() {
                     },
                 )
             }
-            composable(TopDestination.Ingest.route) {
+            composable(TopDestination.More.route) {
+                MoreScreen(
+                    onClip = { navController.navigate(Routes.Ingest) },
+                    onExport = { navController.navigate(Routes.Export) },
+                    onShare = { navController.navigate(Routes.Share) },
+                    onNowCooking = { navController.navigate(Routes.NowCooking) },
+                )
+            }
+            // Ingest is a launched flow (Recipes + / More + share sheet), not a tab —
+            // parity with iOS, where clipping lives in the recipe flow.
+            composable(Routes.Ingest) {
                 // Drain the pending-share queue + read the system clipboard so the
                 // clipboard banner can surface a link to clip.
                 var clipText by remember { mutableStateOf<String?>(null) }
@@ -424,18 +424,26 @@ fun KeepCookingNav() {
                     },
                 )
             }
-            composable(TopDestination.Cook.route) {
-                CookScreen(onExit = { navController.popBackStack() })
+            // Cook is a recipe-launched flow (parity with iOS CookModeView), not a tab.
+            composable(
+                route = Routes.Cook,
+                arguments = listOf(navArgument("recipeId") { type = NavType.StringType }),
+            ) { entry ->
+                CookScreen(
+                    recipeId = entry.arguments?.getString("recipeId").orEmpty(),
+                    container = container,
+                    onExit = { navController.popBackStack() },
+                )
             }
-            composable(TopDestination.Plan.route) { PlanScreen(container) }
-            composable(TopDestination.Shop.route) { ShopScreen(container) }
             composable(
                 route = Routes.RecipeDetail,
                 arguments = listOf(navArgument("recipeId") { type = NavType.StringType }),
             ) { entry ->
                 RecipeDetailScreen(
+                    container = container,
                     recipeId = entry.arguments?.getString("recipeId").orEmpty(),
                     onBack = { navController.popBackStack() },
+                    onCook = { id -> navController.navigate(Routes.cook(id)) },
                 )
             }
             composable(Routes.Export) { ExportScreen(container) }

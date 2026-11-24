@@ -31,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -39,6 +40,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.keepcooking.app.AppContainer
+import com.keepcooking.app.cook.fractionDisplayString
 import com.keepcooking.app.library.AdvancedFilter
 import com.keepcooking.app.library.Cookbook
 import com.keepcooking.app.library.DuplicableRecipe
@@ -471,14 +474,53 @@ private fun SavedSearches(
     }
 }
 
-/** Recipe detail placeholder — parity with iOS RecipeDetailPlaceholder. */
+/** Recipe detail — parity with iOS recipe detail. Loads the Room recipe with
+ * ingredients + steps and launches the Cook flow from here (Cook is not a tab). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RecipeDetailScreen(recipeId: String, onBack: () -> Unit = {}) {
-    Scaffold(topBar = { TopAppBar(title = { Text("Recipe") }) }) { padding ->
+fun RecipeDetailScreen(
+    container: AppContainer,
+    recipeId: String,
+    onBack: () -> Unit = {},
+    onCook: (String) -> Unit = {},
+) {
+    var title by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var ingredients by remember { mutableStateOf(listOf<String>()) }
+    var steps by remember { mutableStateOf(listOf<String>()) }
+    var servings by remember { mutableStateOf(4.0) }
+    LaunchedEffect(recipeId) {
+        val r = container.db.recipes().byId(recipeId)
+        if (r != null) {
+            title = r.title
+            description = r.recipeDescription
+            servings = r.servings
+            ingredients = container.db.ingredients().forRecipe(recipeId).map {
+                it.display.ifBlank { it.name }
+            }
+            steps = container.db.steps().forRecipe(recipeId).map { it.text }
+        }
+    }
+    Scaffold(topBar = { TopAppBar(title = { Text(title.ifBlank { "Recipe" }) }) }) { padding ->
         Column(Modifier.padding(padding).padding(16.dp)) {
-            Text(recipeId, style = MaterialTheme.typography.titleMedium)
-            Text("Ingredients + steps render here from Room.", style = MaterialTheme.typography.bodyMedium)
+            if (title.isBlank()) {
+                Text("Recipe not found.", style = MaterialTheme.typography.bodyMedium)
+                TextButton(onClick = onBack) { Text("Back") }
+                return@Column
+            }
+            if (description.isNotBlank()) Text(description, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                "Serves ${fractionDisplayString(servings)}",
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.padding(vertical = 8.dp),
+            )
+            Button(onClick = { onCook(recipeId) }, modifier = Modifier.fillMaxWidth()) {
+                Text("Start Cooking")
+            }
+            Text("Ingredients", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
+            ingredients.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
+            Text("Steps", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
+            steps.forEachIndexed { i, s -> Text("${i + 1}. $s", style = MaterialTheme.typography.bodyMedium) }
         }
     }
 }

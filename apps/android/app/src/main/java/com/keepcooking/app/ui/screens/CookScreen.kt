@@ -60,6 +60,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.keepcooking.app.AppContainer
 import com.keepcooking.app.cook.CookActivityStub
 import com.keepcooking.app.cook.CookSession
 import com.keepcooking.app.cook.CookTimerPermissions
@@ -91,38 +92,44 @@ private data class DemoStep(val id: String, val position: Int, val text: String)
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CookScreen(onExit: () -> Unit = {}) {
-    // Demo recipe (store-agnostic snapshots, like the iOS view's init args).
-    val title = "Weeknight Pasta"
-    val baseServings = 4.0
-    val ingredients = remember {
-        listOf(
-            DemoIngredient("i1", "Spaghetti", 8.0, "oz"),
-            DemoIngredient("i2", "Crushed tomatoes", 28.0, "oz"),
-            DemoIngredient("i3", "Garlic", 3.0, "cloves"),
-            DemoIngredient("i4", "Olive oil", 2.0, "tbsp"),
-            DemoIngredient("i5", "Salt to taste", null, ""),
-        )
-    }
-    val steps = remember {
-        listOf(
-            DemoStep("s1", 0, "Bring a large pot of salted water to a boil."),
-            DemoStep("s2", 1, "Cook the spaghetti 8-10 min until al dente."),
-            DemoStep("s3", 2, "Warm the sauce 5 min, then rest 1 min before serving."),
-        )
+fun CookScreen(recipeId: String, container: AppContainer, onExit: () -> Unit = {}) {
+    // Recipe-launched flow (parity with iOS CookModeView): the recipe comes
+    // from Room. No demo fallback — a missing recipe is an honest error.
+    var title by remember { mutableStateOf("") }
+    var baseServings by remember { mutableStateOf(4.0) }
+    var ingredients by remember { mutableStateOf(listOf<DemoIngredient>()) }
+    var steps by remember { mutableStateOf(listOf<DemoStep>()) }
+    var missing by remember { mutableStateOf(false) }
+    LaunchedEffect(recipeId) {
+        val r = container.db.recipes().byId(recipeId)
+        if (r == null) {
+            missing = true
+            return@LaunchedEffect
+        }
+        title = r.title
+        baseServings = r.servings
+        ingredients = container.db.ingredients().forRecipe(recipeId).map {
+            DemoIngredient(it.id, it.name, it.quantity, it.unit)
+        }
+        steps = container.db.steps().forRecipe(recipeId).map {
+            DemoStep(it.id, it.position, it.text)
+        }
     }
 
-    val session = remember { CookSession(stepCount = steps.size).also { it.loadTimers(steps.map { s -> s.text }) } }
+    val session = remember(steps.size) {
+        CookSession(stepCount = steps.size.coerceAtLeast(1)).also { it.loadTimers(steps.map { s -> s.text }) }
+    }
     val context = LocalContext.current
 
     // Publish the Now Cooking payload so the watch companion can follow along.
     // (Widgets never read this payload — they render SnapshotWriter snapshots.)
-    LaunchedEffect(Unit) {
+    LaunchedEffect(recipeId, title) {
+        if (title.isBlank()) return@LaunchedEffect
         runCatching {
             WatchStore.writeNowCooking(
                 context,
                 NowCookingPayload(
-                    recipeId = "demo-weeknight-pasta",
+                    recipeId = recipeId,
                     title = title,
                     steps = steps.map { WatchStepItem(position = it.position, text = it.text) },
                     timers = session.timers.map { WatchTimerItem(label = it.label, seconds = it.seconds) },
@@ -136,7 +143,7 @@ fun CookScreen(onExit: () -> Unit = {}) {
         onDispose { runCatching { WatchStore.clear(context) } }
     }
     var stepIndex by remember { mutableStateOf(0) }
-    var targetServings by remember { mutableStateOf(baseServings) }
+    var targetServings by remember(baseServings) { mutableStateOf(baseServings) }
     var ingredientsExpanded by remember { mutableStateOf(true) }
     var crossedSteps by remember { mutableStateOf(setOf<String>()) }
     var crossedIngredients by remember { mutableStateOf(setOf<String>()) }
@@ -283,7 +290,19 @@ fun CookScreen(onExit: () -> Unit = {}) {
         }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text(title) }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text(title.ifBlank { "Cook" }) }) }) { padding ->
+        if (missing) {
+            Column(Modifier.padding(padding).padding(16.dp)) {
+                Text("Recipe not found.", style = MaterialTheme.typography.bodyMedium)
+            }
+            return@Scaffold
+        }
+        if (steps.isEmpty()) {
+            Column(Modifier.padding(padding).padding(16.dp)) {
+                Text("Loading recipe…", style = MaterialTheme.typography.bodyMedium)
+            }
+            return@Scaffold
+        }
         Column(
             Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),

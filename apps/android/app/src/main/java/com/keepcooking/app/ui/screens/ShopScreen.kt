@@ -89,7 +89,7 @@ private enum class ShopTab { LISTS, PANTRY }
 @Composable
 fun ShopScreen(container: AppContainer? = null) {
     var tab by remember { mutableStateOf(ShopTab.LISTS) }
-    Scaffold(topBar = { TopAppBar(title = { Text("Shop") }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text("Lists") }) }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 ShopTab.entries.forEachIndexed { idx, t ->
