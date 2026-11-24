@@ -53,6 +53,10 @@ object ShareHandler {
         return arr
     }
 
+    /** Drain + return the first non-blank URL (Ingest clip prefill). */
+    fun drainFirst(context: Context): String? =
+        drain(context).firstOrNull { it.isNotBlank() }
+
     fun pending(context: Context): List<String> =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getStringSet(PENDING_KEY, emptySet())!!.toList()

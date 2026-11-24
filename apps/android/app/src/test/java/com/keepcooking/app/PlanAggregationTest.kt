@@ -63,6 +63,37 @@ class PlanAggregationTest {
         assertEquals("webcal://api.example.com/plans/feed.ics?householdId=h1", url)
     }
 
+    // MARK: - Cubic fixes: unit-aware null dedupe + encoded feed param
+
+    @Test
+    fun aggregationNullQuantityDedupeIncludesUnit() {
+        // Same name, different units: unmeasured lines must NOT collapse.
+        val inputs = listOf(
+            PlanGroceryInput("Salt", null, "", baseServings = 4.0, recipeId = "r1"),
+            PlanGroceryInput("Salt", null, "grams", baseServings = 4.0, recipeId = "r2"),
+        )
+        val out = aggregateWeekToList(inputs)
+        assertEquals(2, out.size)
+        assertTrue(out.all { it.totalQuantity == null })
+    }
+
+    @Test
+    fun aggregationNullQuantityMergesProvenanceIds() {
+        val inputs = listOf(
+            PlanGroceryInput("Salt", null, "", baseServings = 4.0, recipeId = "r1"),
+            PlanGroceryInput("salt", null, "", baseServings = 4.0, recipeId = "r2"),
+        )
+        val out = aggregateWeekToList(inputs)
+        assertEquals(1, out.size)
+        assertEquals(setOf("r1", "r2"), out[0].recipeIds.toSet())
+    }
+
+    @Test
+    fun planFeedSubscribeUrlEncodesHouseholdId() {
+        val url = planFeedSubscribeUrl("https://api.example.com", "hh 1&2")
+        assertEquals("webcal://api.example.com/plans/feed.ics?householdId=hh%201%262", url)
+    }
+
     // MARK: - Shop helpers
 
     @Test

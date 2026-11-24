@@ -1,5 +1,6 @@
 package com.keepcooking.app.ingest
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
@@ -10,12 +11,12 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 enum class ClipSource(val raw: String) {
-    URL("url"),
-    TIKTOK("tiktok"),
-    INSTAGRAM("instagram"),
-    YOUTUBE("youtube"),
-    OCR("ocr"),
-    CLIPBOARD("clipboard"),
+    @SerialName("url") URL("url"),
+    @SerialName("tiktok") TIKTOK("tiktok"),
+    @SerialName("instagram") INSTAGRAM("instagram"),
+    @SerialName("youtube") YOUTUBE("youtube"),
+    @SerialName("ocr") OCR("ocr"),
+    @SerialName("clipboard") CLIPBOARD("clipboard"),
 }
 
 @Serializable
@@ -27,10 +28,10 @@ data class ClipRequest(
 
 @Serializable
 enum class ClipStrategy(val raw: String) {
-    JSONLD("jsonld"),
-    READER("reader"),
-    CAPTION("caption"),
-    OCR("ocr"),
+    @SerialName("jsonld") JSONLD("jsonld"),
+    @SerialName("reader") READER("reader"),
+    @SerialName("caption") CAPTION("caption"),
+    @SerialName("ocr") OCR("ocr"),
 }
 
 @Serializable

@@ -217,33 +217,65 @@ private fun voiceCompoundWordNumber(words: List<String>): Double? {
     return (total + current).toDouble()
 }
 
-/** Finds the first duration in free text. Numeric forms use the UPPER bound for ranges. */
+/** Sums every duration segment in free text ("1 hour 30 minutes" -> 5400). Numeric ranges use the UPPER bound. */
 private fun voiceTimerSeconds(text: String): Int? {
+    var total = 0L
+    var found = false
     val numeric = Regex(
         """(\d+(?:\.\d+)?)\s*(?:(?:[-–]|to)\s*(\d+(?:\.\d+)?))?\s*(hours?|hrs?|minutes?|mins?|seconds?|secs?)\b""",
         RegexOption.IGNORE_CASE,
     )
-    numeric.find(text)?.let { m ->
+    val consumed = numeric.findAll(text).toList()
+    for (m in consumed) {
         val secondStr = m.groupValues[2]
         val numStr = if (secondStr.isNotEmpty()) secondStr else m.groupValues[1]
         val unit = m.groupValues[3].lowercase()
-        numStr.toDoubleOrNull()?.let { return voiceSeconds(num = it, unit = unit) }
+        voiceSecondsRaw(numStr.toDoubleOrNull() ?: continue, unit)?.let { total += it; found = true }
     }
+    val consumedRanges = consumed.map { it.range }
+    // Char spans of whitespace-separated tokens, to avoid double-counting numeric hits.
+    val spans = mutableListOf<IntRange>()
+    var i = 0
+    while (i < text.length) {
+        while (i < text.length && text[i].isWhitespace()) i++
+        if (i >= text.length) break
+        val start = i
+        while (i < text.length && !text[i].isWhitespace()) i++
+        spans.add(start until i)
+    }
+    val tokens = spans.map { text.substring(it.first, it.last + 1) }
+    fun isConsumed(span: IntRange) = consumedRanges.any { it.first <= span.last && span.first <= it.last }
     val hourWords = setOf("hour", "hours", "hr", "hrs")
     val minuteWords = setOf("minute", "minutes", "min", "mins")
     val secondWords = setOf("second", "seconds", "sec", "secs")
-    val tokens = text.split(" ")
-    for ((i, token) in tokens.withIndex()) {
+    for ((idx, token) in tokens.withIndex()) {
         if (token !in hourWords && token !in minuteWords && token !in secondWords) continue
-        val start = maxOf(0, i - 6)
-        val window = tokens.subList(start, i)
+        if (isConsumed(spans[idx])) continue
+        val window = mutableListOf<String>()
+        var j = idx - 1
+        while (j >= 0 && window.size < 6) {
+            if (!isConsumed(spans[j])) window.add(0, tokens[j])
+            j--
+        }
         for (length in window.size downTo 1) {
-            val slice = window.takeLast(length)
-            val num = voiceCompoundWordNumber(slice) ?: continue
-            return voiceSeconds(num = num, unit = token)
+            val num = voiceCompoundWordNumber(window.takeLast(length)) ?: continue
+            voiceSecondsRaw(num, token)?.let { total += it; found = true }
+            break
         }
     }
-    return null
+    if (!found || total < 1 || total > 43200) return null
+    return total.toInt()
+}
+
+private fun voiceSecondsRaw(num: Double, unit: String): Long? {
+    val multiplier: Double = when {
+        unit.startsWith("h") -> 3600.0
+        unit.startsWith("m") -> 60.0
+        unit.startsWith("s") -> 1.0
+        else -> return null
+    }
+    if (!num.isFinite()) return null
+    return kotlin.math.round(num * multiplier).toLong()
 }
 
 /**

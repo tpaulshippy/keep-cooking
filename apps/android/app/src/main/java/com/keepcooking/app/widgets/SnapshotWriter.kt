@@ -3,6 +3,7 @@ package com.keepcooking.app.widgets
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import com.keepcooking.app.data.AppDatabase
 import java.time.Instant
 import java.time.ZoneOffset
@@ -38,12 +39,19 @@ object SnapshotWriter {
         requestRefresh(context)
     }
 
-    /** Asks the launcher to re-read both widgets (parity with reloadAllTimelines). */
+    /** Asks the launcher to re-read both widgets via update broadcast. */
     fun requestRefresh(context: Context) {
         val manager = AppWidgetManager.getInstance(context)
         for (cls in listOf(TodayPlanWidget::class.java, ListProgressWidget::class.java)) {
             val ids = manager.getAppWidgetIds(ComponentName(context, cls))
-            if (ids.isNotEmpty()) manager.notifyAppWidgetViewDataChanged(ids, android.R.id.list)
+            if (ids.isNotEmpty()) {
+                context.sendBroadcast(
+                    Intent(AppWidgetManager.ACTION_APPWIDGET_UPDATE).apply {
+                        component = ComponentName(context, cls)
+                        putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids)
+                    },
+                )
+            }
         }
     }
 }

@@ -47,6 +47,22 @@ No `local.properties` is checked in — set `sdk.dir` / `ANDROID_HOME` locally.
 
 Same as iOS: `id · updatedAt (ISO8601) · deviceId · deleted` tombstone on every
 top-level entity, last-write-wins on `updatedAt`, ties break toward remote.
-Local Room is the source of truth; `SyncEngine.sync()` pushes the outbox then
-pulls + LWW-applies remote winners. Settings from DataStore: base URL
-(defaults to the production Workers URL), beta token, user id.
+Local Room is the source of truth; `SyncEngine.sync()` pulls + LWW-applies
+remote winners (a pending outbox edit shadows stale remotes), advances the
+pull cursor by ENVELOPE time, then pushes what remains. Server-won conflict
+envelopes apply via LWW and leave the outbox. Settings from DataStore: base
+URL (defaults to the production Workers URL), beta token, user id.
+
+## E2E (v1, blind-server /v2/sync/:hash)
+
+Sealed envelopes (AES-GCM-256, HKDF-SHA256 key from the invite syncCode)
+sync through `SyncEngine.syncE2E`; see `sync/SyncCrypto.kt` for the locked
+interfaces (key derivation, header AD binding, kid, household hash).
+
+> **Production gate — plaintext secret store.** The syncCode currently lives
+> in a dedicated plaintext Preferences DataStore file
+> (`keepcooking_e2e_secret`), split from the non-secret metadata. Before E2E
+> is enabled for real households, the syncCode MUST move to `EncryptedFile`
+> (Tink/Keystore-backed) or the Android Keystore — no Keystore dependency is
+> added in this pass on purpose. Tracked by `TODO(security)` on `E2EKeyStore`
+> in `sync/SyncCrypto.kt`; do not ship E2E onboarding until it is resolved.

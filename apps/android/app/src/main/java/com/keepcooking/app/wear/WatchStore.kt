@@ -53,6 +53,25 @@ object WatchStore {
         }
     }
 
+    /** Convenience overload so cook-session start sites stay one line. */
+    fun writeNowCooking(
+        context: Context,
+        recipeId: String,
+        title: String,
+        steps: List<WatchStepItem> = emptyList(),
+        timers: List<WatchTimerItem> = emptyList(),
+    ) {
+        writeNowCooking(
+            context,
+            NowCookingPayload(
+                recipeId = recipeId,
+                title = title,
+                steps = steps,
+                timers = timers,
+            ),
+        )
+    }
+
     fun clear(context: Context) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().remove(NOW_COOKING_KEY).apply()

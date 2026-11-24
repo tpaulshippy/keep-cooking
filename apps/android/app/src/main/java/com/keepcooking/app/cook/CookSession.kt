@@ -1,12 +1,21 @@
 package com.keepcooking.app.cook
 
+import android.app.AlarmManager
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.os.Build
+import androidx.core.app.NotificationCompat
 import java.util.UUID
 
 /**
  * Cook session state — port of apps/ios/Features/Cook/CookSession.swift.
  * Step pager state (index, crossed-off steps, per-ingredient cross-off, timers).
- * Pure Kotlin, no persistence layer, no Android framework dependency so it
- * stays unit-testable (keep-screen-on / notifications live in the UI layer).
+ * The session class itself is pure Kotlin (no Android framework dependency so
+ * it stays unit-testable); device alerts live in [CookActivityStub] below.
  */
 class CookSession(stepCount: Int = 1) {
     var stepIndex: Int = 0
@@ -108,11 +117,26 @@ object KeepAwake {
 }
 
 /**
- * Background timer-alert seam. Local-notification wiring lands here
- * (AlarmManager / NotificationManager); today this only mints stable IDs
- * and records pending timers, mirroring the iOS CookActivityStub contract.
+ * Background timer-alert seam. Timers armed through [CookActivityStub.schedule]
+ * with a [Context] fire a real device alert: `setExactAndAllowWhileIdle` (or
+ * the best inexact fallback when the exact-alarm grant is missing) wakes
+ * [CookTimerReceiver], which posts a high-priority notification. The pure
+ * [schedule] overload only mints stable IDs and records pending timers (kept
+ * for unit tests and call sites without a Context).
+ *
+ * UI copy rule: claim a live alert ("Timer started — we'll alert you") only
+ * when [CookActivityStub.hasRealAlarms] is true; otherwise use honest fallback
+ * copy ("Timer noted — enable notifications for alerts") since the alarm may
+ * never be seen.
  */
 object CookActivityStub {
+    const val ACTION_TIMER_FIRED = "com.keepcooking.app.cook.TIMER_FIRED"
+    const val EXTRA_TIMER_ID = "timer_id"
+    const val EXTRA_SECONDS = "seconds"
+    const val EXTRA_LABEL = "label"
+
+    const val CHANNEL_ID = "cook_timers"
+
     private val pending: MutableMap<String, ParsedTimer> = mutableMapOf()
 
     /** Pure ID builder: one UUID batch per call so per-timer starts never collide. */
@@ -121,10 +145,23 @@ object CookActivityStub {
         return forTimers.mapIndexed { index, timer -> "cook-timer-$batch-$index-${timer.seconds}" }
     }
 
-    /** Records pending timers and returns the scheduled ids. */
+    /** Records pending timers and returns the scheduled ids (no device alarms). */
     fun schedule(timers: List<ParsedTimer>): List<String> {
         val ids = makeIDs(timers)
         ids.zip(timers).forEach { (id, timer) -> pending[id] = timer }
+        return ids
+    }
+
+    /**
+     * Records pending timers AND arms a real device alarm per timer, posting
+     * a notification via [CookTimerReceiver] when each fires. Same ID contract
+     * as [schedule]. This is the timer path Cook UI and shortcuts share.
+     */
+    fun schedule(context: Context, timers: List<ParsedTimer>): List<String> {
+        val ids = schedule(timers)
+        val alarms = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return ids
+        ensureChannel(context)
+        ids.zip(timers).forEach { (id, timer) -> armAlarm(context, alarms, id, timer) }
         return ids
     }
 
@@ -132,9 +169,108 @@ object CookActivityStub {
         ids.forEach { pending.remove(it) }
     }
 
+    /** Cancels device alarms + posted notifications as well as pending records. */
+    fun cancel(context: Context, ids: List<String>) {
+        cancel(ids)
+        val alarms = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+        ids.forEach { id ->
+            if (alarms != null) alarms.cancel(timerPendingIntent(context, id))
+            timerPendingIntent(context, id).cancel()
+        }
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        ids.forEach { nm?.cancel(it.hashCode()) }
+    }
+
+    /**
+     * True when a scheduled timer will actually alert: an AlarmManager is
+     * present and notifications are enabled (API 33+ gates visible alerts on
+     * POST_NOTIFICATIONS). Gate "Timer started" copy on this.
+     */
+    fun hasRealAlarms(context: Context): Boolean {
+        if (context.getSystemService(Context.ALARM_SERVICE) !is AlarmManager) return false
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            ?: return false
+        return nm.areNotificationsEnabled()
+    }
+
+    /** Removes a fired timer from the pending record (called by the receiver). */
+    fun acknowledge(id: String) {
+        pending.remove(id)
+    }
+
     fun startLiveActivityStub(timerCount: Int) {
         // Intentional no-op: count only, no PII.
     }
 
     fun endLiveActivityStub() {}
+
+    fun ensureChannel(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+        if (nm.getNotificationChannel(CHANNEL_ID) == null) {
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, "Cook timers", NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = "Alerts when a cook timer finishes."
+                },
+            )
+        }
+    }
+
+    private fun armAlarm(context: Context, alarms: AlarmManager, id: String, timer: ParsedTimer) {
+        val at = System.currentTimeMillis() + timer.seconds * 1000L
+        val pi = timerPendingIntent(context, id, timer)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && alarms.canScheduleExactAlarms()) {
+            alarms.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+        } else {
+            alarms.set(AlarmManager.RTC_WAKEUP, at, pi)
+        }
+    }
+
+    private fun timerPendingIntent(context: Context, id: String, timer: ParsedTimer? = null): PendingIntent {
+        val intent = Intent(context, CookTimerReceiver::class.java).apply {
+            action = ACTION_TIMER_FIRED
+            putExtra(EXTRA_TIMER_ID, id)
+            if (timer != null) {
+                putExtra(EXTRA_SECONDS, timer.seconds)
+                putExtra(EXTRA_LABEL, timer.label)
+            }
+        }
+        return PendingIntent.getBroadcast(
+            context, id.hashCode(), intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+}
+
+/**
+ * Alarm receiver: fires when a cook timer elapses and posts the visible
+ * alert. Registered in AndroidManifest.xml (explicit intents only).
+ */
+class CookTimerReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action != CookActivityStub.ACTION_TIMER_FIRED) return
+        val id = intent.getStringExtra(CookActivityStub.EXTRA_TIMER_ID) ?: return
+        val label = intent.getStringExtra(CookActivityStub.EXTRA_LABEL).orEmpty().ifEmpty { "Timer" }
+        CookActivityStub.acknowledge(id)
+        CookActivityStub.ensureChannel(context)
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+        val openApp = context.packageManager.getLaunchIntentForPackage(context.packageName)?.let { launch ->
+            PendingIntent.getActivity(
+                context, id.hashCode(), launch,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        }
+        val notification = NotificationCompat.Builder(context, CookActivityStub.CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setContentTitle(label)
+            .setContentText("Your timer is up.")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setAutoCancel(true)
+            .setContentIntent(openApp)
+            .build()
+        nm.notify(id.hashCode(), notification)
+    }
 }

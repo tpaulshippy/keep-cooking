@@ -20,7 +20,6 @@ import com.keepcooking.app.data.resolveSyncWinner
 import com.keepcooking.app.network.ApiService
 import com.keepcooking.app.network.E2EPushResponse
 import com.keepcooking.app.network.EncryptedEnvelopeDto
-import com.keepcooking.app.network.PushRequest
 import com.keepcooking.app.network.SyncEnvelopeDto
 import java.time.Instant
 import java.time.LocalDate
@@ -36,6 +35,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonArray
@@ -90,63 +90,121 @@ class SyncEngine(
         )
     }
 
-    /** Full sync: push outbox, then pull + LWW-apply remote winners. */
+    /**
+     * Full sync, iOS parity: pull first and LWW-merge against the pending
+     * outbox (an unsynced offline edit shadows any stale remote), advance the
+     * cursor by ENVELOPE time, then push what remains. Server-won conflict
+     * envelopes (the bare-array push response) apply via LWW; pushed rows —
+     * accepted or superseded by a winner — leave the outbox so conflicts
+     * cannot retry forever.
+     */
     suspend fun sync(): SyncResult {
         val token = dataStore.data.map { it[KEY_BETA_TOKEN] }.first().orEmpty()
         val auth = token.ifBlank { null }?.let { "Bearer $it" }
-        val outbox = database.outbox().all()
-        val envelopes = outbox.map { Json.decodeFromString(SyncEnvelopeDto.serializer(), it.envelopeJson) }
 
-        var conflicts = 0
-        if (envelopes.isNotEmpty()) {
-            val res = api.push(auth, PushRequest(envelopes))
-            conflicts += res.conflicts
-            // Server-won envelopes apply locally via LWW.
-            for (winner in res.winners) applyRemote(winner)
-            // Idempotent LWW push: clear outbox on success (beta scale, same as iOS).
-            outbox.forEach { database.outbox().remove(it.id) }
-        }
-
+        // 1. Pull + LWW-apply. Pulled winners reconcile against the outbox:
+        //    a pending row the winner supersedes (same id, winner newer-or-equal)
+        //    is dropped instead of being pushed back up.
         val since = dataStore.data.map { it[KEY_LAST_SYNC] }.first()
         val household = "hh-demo"
-        val pulled = api.pull(auth, since, household).envelopes
-        for (env in pulled) applyRemote(env)
-        dataStore.edit { it[KEY_LAST_SYNC] = Instant.now().toString() }
-        return SyncResult(pushed = envelopes.size, pulled = pulled.size, conflicts = conflicts)
-    }
+        val pulled = api.pull(auth, since, household)
+        var applied = 0
+        for (env in pulled) {
+            if (applyRemote(env)) applied++
+        }
+        advancePullCursor(pulled)
 
-    /** LWW apply of one remote envelope (tombstones included). */
-    suspend fun applyRemote(env: SyncEnvelopeDto) {
-        val remoteTs = runCatching { Instant.parse(env.updatedAt).toEpochMilli() }.getOrDefault(0L)
-        when (env.entity) {
-            SyncEntityName.RECIPE.raw -> {
-                val local = database.recipes().byId(env.id)
-                if (local == null || resolveSyncWinner(local.updatedAt, remoteTs)) {
-                    upsertRecipe(env, remoteTs)
-                }
-            }
-            SyncEntityName.LIST.raw -> {
-                // Lists + items ride together in the list envelope (same as iOS applyList).
-                upsertList(env, remoteTs)
-            }
-            SyncEntityName.PANTRY_ITEM.raw -> {
-                val existing = database.pantry().liveItems().firstOrNull { it.id == env.id }
-                if (existing == null || resolveSyncWinner(existing.updatedAt, remoteTs)) {
-                    upsertPantry(env, remoteTs)
-                }
-            }
-            SyncEntityName.PLAN.raw -> upsertPlan(env, remoteTs)
-            SyncEntityName.MENU.raw -> upsertMenu(env, remoteTs)
-            SyncEntityName.INGREDIENT.raw, SyncEntityName.STEP.raw -> {
-                // Children normally ride inside recipe envelopes; standalone merge kept for parity.
+        // 2. Push whatever is still pending after the reconcile.
+        val outbox = database.outbox().all()
+        val envelopes = outbox.map { Json.decodeFromString(SyncEnvelopeDto.serializer(), it.envelopeJson) }
+        var conflicts = 0
+        var pushed = 0
+        if (envelopes.isNotEmpty()) {
+            val winners = api.push(auth, envelopes)
+            conflicts = winners.size
+            val wonIds = winners.map { "${it.entity}:${it.id}" }.toSet()
+            // Server-won envelopes apply locally via LWW.
+            for (winner in winners) applyRemote(winner)
+            for ((row, env) in outbox.zip(envelopes)) {
+                if ("${env.entity}:${env.id}" !in wonIds) pushed++
+                database.outbox().remove(row.id)
             }
         }
+        return SyncResult(pushed = pushed, pulled = applied, conflicts = conflicts)
+    }
+
+    /**
+     * LWW apply of one remote envelope (tombstones included). Returns true
+     * when the remote won (or there was nothing to compare against).
+     * Standalone children never apply here — they ride inside their parent
+     * recipe envelope (see foldEnvelopesForE2E / upsertRecipe).
+     */
+    suspend fun applyRemote(env: SyncEnvelopeDto): Boolean {
+        if (env.entity == SyncEntityName.INGREDIENT.raw || env.entity == SyncEntityName.STEP.raw) return false
+        val remoteTs = runCatching { Instant.parse(env.updatedAt).toEpochMilli() }.getOrDefault(0L)
+        val localTs = localTimestampFor(env)
+        // Header LWW runs against stored rows INCLUDING tombstones, so an
+        // older remote live envelope can never resurrect a newer local delete
+        // (and vice versa). Tombstones are just writes.
+        if (localTs != null && !resolveSyncWinner(localTs, remoteTs)) return false
+        when (env.entity) {
+            SyncEntityName.RECIPE.raw -> upsertRecipe(env, remoteTs)
+            SyncEntityName.LIST.raw -> upsertList(env, remoteTs)
+            SyncEntityName.PANTRY_ITEM.raw -> upsertPantry(env, remoteTs)
+            SyncEntityName.PLAN.raw -> upsertPlan(env, remoteTs)
+            SyncEntityName.MENU.raw -> upsertMenu(env, remoteTs)
+            else -> return false
+        }
+        reconcileOutboxRow(env, remoteTs)
+        return true
+    }
+
+    /** Stored header timestamp for LWW, including tombstoned rows. Null when unknown. */
+    private suspend fun localTimestampFor(env: SyncEnvelopeDto): Long? = when (env.entity) {
+        SyncEntityName.RECIPE.raw -> database.recipes().byId(env.id)?.updatedAt
+        SyncEntityName.LIST.raw -> database.shoppingLists().byIdIncludingDeleted(env.id)?.updatedAt
+        SyncEntityName.PANTRY_ITEM.raw -> database.pantry().byIdIncludingDeleted(env.id)?.updatedAt
+        SyncEntityName.PLAN.raw -> database.plans().byIdIncludingDeleted(env.id)?.updatedAt
+        SyncEntityName.MENU.raw -> database.menus().byIdIncludingDeleted(env.id)?.updatedAt
+        else -> null
+    }
+
+    /**
+     * Drops the pending outbox row for [env] when the remote winner supersedes
+     * it (same entity:id, remote newer-or-equal). A pending row NEWER than the
+     * winner stays queued for the next push.
+     */
+    private suspend fun reconcileOutboxRow(env: SyncEnvelopeDto, remoteTs: Long) {
+        val rowId = "${env.entity}:${env.id}"
+        val row = database.outbox().all().firstOrNull { it.id == rowId } ?: return
+        val pendingTs = runCatching {
+            Instant.parse(Json.decodeFromString(SyncEnvelopeDto.serializer(), row.envelopeJson).updatedAt).toEpochMilli()
+        }.getOrDefault(0L)
+        if (remoteTs >= pendingTs) database.outbox().remove(row.id)
     }
 
     // --- envelope → Room upserts (payload keys match iOS recipeEnvelope/listEnvelope/...) ---
 
     private suspend fun upsertRecipe(env: SyncEnvelopeDto, remoteTs: Long) {
         val p = env.payload
+        // Sparse child-only shells (see foldEnvelopesForE2E) carry a partial
+        // child set and placeholder parent fields: merge their children
+        // per-child LWW and preserve the local parent snapshot. Only a FULL
+        // recipe envelope may replace parent fields.
+        if (isFoldedShell(env) && !env.deleted) {
+            val local = database.recipes().byId(env.id)
+            if (local != null) {
+                mergeShellChildren(env, remoteTs)
+                if (resolveSyncWinner(local.updatedAt, remoteTs)) {
+                    database.recipes().upsert(
+                        local.copy(updatedAt = remoteTs, deviceId = env.deviceId, deleted = false),
+                    )
+                }
+                return
+            }
+            // No local row: fall through and materialize the shell minimally;
+            // a later full recipe envelope converges via normal header LWW.
+        }
         val photos = p["photoKeys"]?.takeIf { it != JsonNull }?.jsonObject
         database.recipes().upsert(
             RecipeEntity(
@@ -160,7 +218,7 @@ class SyncEngine(
                 rating = p.dbl("rating"),
                 source = p.str("source") ?: "",
                 sourceUrl = p.str("sourceUrl") ?: "",
-                categoriesJson = p["categories"]?.jsonArray.toString() ?: "[]",
+                categoriesJson = categoriesJsonOf(p),
                 photoOriginal = photos?.str("original"),
                 photoLarge1024 = photos?.str("large1024"),
                 photoThumb = photos?.str("thumb"),
@@ -202,6 +260,63 @@ class SyncEngine(
                 )
             },
         )
+    }
+
+    /**
+     * Merges a sparse shell's embedded children into the existing local rows
+     * WITHOUT touching parent fields or unrelated children. Each embedded
+     * entry carries its own updatedAt/deviceId stamps; an entry only replaces
+     * its local row when it wins that per-child LWW. Tombstone markers
+     * (deleted == true, sealed by older clients) are never resurrected —
+     * tombstones fold by absence.
+     */
+    private suspend fun mergeShellChildren(env: SyncEnvelopeDto, remoteTs: Long) {
+        val p = env.payload
+        val did = env.deviceId
+        val incomingIngs = p["ingredients"]?.takeIf { it != JsonNull }?.jsonArray.orEmpty()
+        if (incomingIngs.isNotEmpty()) {
+            val existing = database.ingredients().forRecipe(env.id).associateBy { it.id }
+            val writes = mutableListOf<IngredientEntity>()
+            for (el in incomingIngs) {
+                val o = runCatching { el.jsonObject }.getOrNull() ?: continue
+                val id = o["id"]?.takeIf { it != JsonNull }?.jsonPrimitive?.content ?: continue
+                val stamp = shellChildWriteStamp(o, existing[id]?.updatedAt, remoteTs) ?: continue
+                writes += IngredientEntity(
+                    id = id,
+                    recipeId = env.id,
+                    name = o.str("name") ?: existing[id]?.name ?: "",
+                    quantity = o.dbl("quantity") ?: existing[id]?.quantity,
+                    unit = o.str("unit") ?: existing[id]?.unit ?: "",
+                    display = o.str("display") ?: existing[id]?.display ?: "",
+                    position = o.int("position") ?: existing[id]?.position ?: 0,
+                    updatedAt = stamp,
+                    deviceId = o.str("deviceId") ?: did,
+                )
+            }
+            if (writes.isNotEmpty()) database.ingredients().upsertAll(writes)
+        }
+        val incomingSteps = p["steps"]?.takeIf { it != JsonNull }?.jsonArray.orEmpty()
+        if (incomingSteps.isNotEmpty()) {
+            val existing = database.steps().forRecipe(env.id).associateBy { it.id }
+            val writes = mutableListOf<StepEntity>()
+            for ((i, el) in incomingSteps.withIndex()) {
+                val o = runCatching { el.jsonObject }.getOrNull() ?: continue
+                val id = o["id"]?.takeIf { it != JsonNull }?.jsonPrimitive?.content ?: continue
+                val stamp = shellChildWriteStamp(o, existing[id]?.updatedAt, remoteTs) ?: continue
+                writes += StepEntity(
+                    id = id,
+                    recipeId = env.id,
+                    position = o.int("position") ?: existing[id]?.position ?: i,
+                    text = o.str("text") ?: existing[id]?.text ?: "",
+                    timersJson = o["timers"]?.takeIf { it != JsonNull }?.let { t ->
+                        runCatching { t.jsonArray }.getOrNull()?.toString()
+                    } ?: existing[id]?.timersJson ?: "[]",
+                    updatedAt = stamp,
+                    deviceId = o.str("deviceId") ?: did,
+                )
+            }
+            if (writes.isNotEmpty()) database.steps().upsertAll(writes)
+        }
     }
 
     private suspend fun upsertList(env: SyncEnvelopeDto, remoteTs: Long) {
@@ -322,8 +437,7 @@ class SyncEngine(
 
     /** Advances the pull cursor by ENVELOPE time (max updatedAt seen), never wall-clock. */
     private suspend fun advancePullCursor(remote: List<SyncEnvelopeDto>) {
-        val max = remote.mapNotNull { runCatching { Instant.parse(it.updatedAt) }.getOrNull() }.maxOrNull()
-            ?: return
+        val max = pullCursorMax(remote) ?: return
         val current = dataStore.data.map { it[KEY_LAST_SYNC] }.first()?.let {
             runCatching { Instant.parse(it) }.getOrNull()
         }
@@ -412,6 +526,80 @@ fun mergeOutcome(local: SyncEnvelopeDto, remote: SyncEnvelopeDto): MergeOutcome 
     if (remote.deleted == local.deleted && remote.deviceId == local.deviceId) return MergeOutcome.Identical
     return MergeOutcome.TakeRemote // tie-break: remote wins, deterministic convergence
 }
+
+// MARK: - Pure sync helpers (unit-tested; SyncEngine delegates to these)
+
+/**
+ * Header LWW decision: take the remote when there is no local row, or when
+ * the remote header is newer-or-equal. Tombstones are just writes — a newer
+ * tombstone beats an older live row and vice versa, so callers MUST pass
+ * stored timestamps that include tombstoned rows.
+ */
+fun remoteWins(localUpdatedAt: Long?, remoteUpdatedAt: Long): Boolean =
+    localUpdatedAt == null || resolveSyncWinner(localUpdatedAt, remoteUpdatedAt)
+
+/** Max envelope timestamp of a pull page; null when empty/unparseable. The v1 cursor advances from this, never wall-clock. */
+fun pullCursorMax(remote: List<SyncEnvelopeDto>): Instant? =
+    remote.mapNotNull { runCatching { Instant.parse(it.updatedAt) }.getOrNull() }.maxOrNull()
+
+/**
+ * Outbox row ids (entity:id) superseded by pulled winners: same id, winner
+ * newer-or-equal to the pending envelope. Those rows must leave the outbox
+ * so they are not pushed back up (conflicts retrying forever). A pending row
+ * NEWER than every winner for its id stays queued.
+ */
+fun outboxIdsSuperseded(pending: List<SyncEnvelopeDto>, winners: List<SyncEnvelopeDto>): Set<String> {
+    val byKey = winners.groupBy { "${it.entity}:${it.id}" }
+    val drop = mutableSetOf<String>()
+    for (p in pending) {
+        val key = "${p.entity}:${p.id}"
+        val contenders = byKey[key] ?: continue
+        val pendingTs = runCatching { Instant.parse(p.updatedAt).toEpochMilli() }.getOrDefault(0L)
+        if (contenders.any { w ->
+            runCatching { Instant.parse(w.updatedAt).toEpochMilli() }.getOrDefault(0L) >= pendingTs
+        }) {
+            drop.add(key)
+        }
+    }
+    return drop
+}
+
+/** True when [env] is a synthesized child-only shell (see foldEnvelopesForE2E). */
+fun isFoldedShell(env: SyncEnvelopeDto): Boolean =
+    env.payload["_foldedShell"]?.takeIf { it != JsonNull }?.jsonPrimitive?.booleanOrNull == true
+
+/** Embedded child stamp (epoch millis) for per-child LWW; unstamped legacy entries sort as [Long.MIN_VALUE]. */
+fun shellChildStamp(entry: JsonObject): Long =
+    entry["updatedAt"]?.takeIf { it != JsonNull }?.jsonPrimitive?.content?.toLongOrNull() ?: Long.MIN_VALUE
+
+/** True when an embedded child entry carries a tombstone marker (sealed by older clients); never resurrect these. */
+fun shellChildDeleted(entry: JsonObject): Boolean {
+    val v = entry["deleted"]?.takeIf { it != JsonNull }?.jsonPrimitive ?: return false
+    return v.booleanOrNull == true || v.content == "true"
+}
+
+/**
+ * Stamp to write for an embedded shell child, or null to skip it.
+ * Deleted markers are skipped; an unstamped incoming entry never clobbers a
+ * stamped local row; otherwise the incoming entry must win the per-child LWW
+ * (incoming newer-or-equal). New rows stamp the child's own millis so later
+ * per-child compares keep working (never the shell header time), falling
+ * back to [remoteTs] only for unstamped legacy entries.
+ */
+fun shellChildWriteStamp(entry: JsonObject, existingUpdatedAt: Long?, remoteTs: Long): Long? {
+    if (shellChildDeleted(entry)) return null
+    val incoming = shellChildStamp(entry)
+    if (existingUpdatedAt == null) return if (incoming == Long.MIN_VALUE) remoteTs else incoming
+    if (incoming == Long.MIN_VALUE) return null
+    return if (incoming >= existingUpdatedAt) incoming else null
+}
+
+/**
+ * Encoded `categories` array for a recipe row. Missing or explicit-null
+ * payloads default to `[]` — never the literal string `"null"`.
+ */
+fun categoriesJsonOf(payload: JsonObject): String =
+    (payload["categories"]?.takeIf { it != JsonNull }?.jsonArray ?: JsonArray(emptyList())).toString()
 
 // MARK: - Photo SHA-256 dedup
 
@@ -562,17 +750,23 @@ private fun foldChild(child: SyncEnvelopeDto, parent: SyncEnvelopeDto): SyncEnve
     val incomingMillis = e2eChildMillis(child.updatedAt)
     if (child.deleted) {
         // Tombstone-by-absence: drop the embedded entry so the receiver's
-        // rebuild restores nothing.
-        val before = list.size
-        val kept = list.filterNot {
+        // rebuild restores nothing — but only when the tombstone wins the
+        // per-child LWW against the embedded entry's own stamps. A stale
+        // re-push must not clobber a newer embedded child.
+        val idx = list.indexOfFirst {
             it.jsonObject["id"]?.takeIf { v -> v != JsonNull }?.jsonPrimitive?.content == child.id
         }
-        if (kept.size != before) {
-            val newPayload = JsonObject(parent.payload.toMutableMap().apply {
-                put(listKey, JsonArray(kept))
-            })
-            val bumped = if (child.updatedAt > parent.updatedAt) child.updatedAt else parent.updatedAt
-            return parent.copy(payload = newPayload, updatedAt = bumped)
+        if (idx >= 0) {
+            val existingMillis = list[idx].jsonObject["updatedAt"]?.takeIf { it != JsonNull }
+                ?.jsonPrimitive?.content?.toLongOrNull() ?: Long.MIN_VALUE
+            if (incomingMillis >= existingMillis) {
+                val next = list.toMutableList().apply { removeAt(idx) }
+                val newPayload = JsonObject(parent.payload.toMutableMap().apply {
+                    put(listKey, JsonArray(next))
+                })
+                val bumped = if (child.updatedAt > parent.updatedAt) child.updatedAt else parent.updatedAt
+                return parent.copy(payload = newPayload, updatedAt = bumped)
+            }
         }
         return parent
     }

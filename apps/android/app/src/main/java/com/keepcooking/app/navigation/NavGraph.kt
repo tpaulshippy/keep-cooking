@@ -1,5 +1,7 @@
 package com.keepcooking.app.navigation
 
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -11,6 +13,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -21,8 +24,16 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.keepcooking.app.AppContainer
+import com.keepcooking.app.data.IngredientEntity
+import com.keepcooking.app.data.RecipeEntity
+import com.keepcooking.app.data.StepEntity
+import com.keepcooking.app.library.DuplicateMergePlan
+import com.keepcooking.app.network.SyncEnvelopeDto
+import com.keepcooking.app.share.ShareHandler
 import com.keepcooking.app.ui.screens.CookScreen
 import com.keepcooking.app.ui.screens.ExportScreen
+import com.keepcooking.app.ui.screens.IngestDraft
 import com.keepcooking.app.ui.screens.IngestScreen
 import com.keepcooking.app.ui.screens.LibraryRecipeRow
 import com.keepcooking.app.ui.screens.LibraryScreen
@@ -31,6 +42,169 @@ import com.keepcooking.app.ui.screens.RecipeDetailScreen
 import com.keepcooking.app.ui.screens.ShareScreen
 import com.keepcooking.app.ui.screens.ShopScreen
 import com.keepcooking.app.wear.NowCookingScreen
+import java.time.Instant
+import java.util.UUID
+import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+
+/** Persists an ingest draft to Room + sync outbox. */
+private suspend fun saveIngestDraft(container: AppContainer, draft: IngestDraft) {
+    val db = container.db
+    val now = System.currentTimeMillis()
+    val deviceId = container.syncEngine.deviceId()
+    val id = UUID.randomUUID().toString()
+    db.recipes().upsert(
+        RecipeEntity(
+            id = id,
+            householdId = "hh-demo",
+            title = draft.title,
+            servings = 4.0,
+            source = draft.source,
+            sourceUrl = draft.sourceUrl,
+            updatedAt = now,
+            deviceId = deviceId,
+        ),
+    )
+    db.ingredients().upsertAll(
+        draft.ingredientLines.mapIndexed { i, line ->
+            IngredientEntity(
+                id = UUID.randomUUID().toString(),
+                recipeId = id,
+                name = line,
+                display = line,
+                position = i,
+                updatedAt = now,
+                deviceId = deviceId,
+            )
+        },
+    )
+    db.steps().upsertAll(
+        draft.stepLines.mapIndexed { i, line ->
+            StepEntity(
+                id = UUID.randomUUID().toString(),
+                recipeId = id,
+                position = i,
+                text = line,
+                updatedAt = now,
+                deviceId = deviceId,
+            )
+        },
+    )
+    container.syncEngine.enqueue(
+        SyncEnvelopeDto(
+            id = id,
+            updatedAt = Instant.ofEpochMilli(now).toString(),
+            deviceId = deviceId,
+            entity = "recipe",
+            payload = buildJsonObject {
+                put("id", id)
+                put("householdId", "hh-demo")
+                put("title", draft.title)
+                put("source", draft.source)
+                put("sourceUrl", draft.sourceUrl)
+                put("servings", 4.0)
+                put("categories", JsonArray(emptyList()))
+                put(
+                    "ingredients",
+                    JsonArray(
+                        draft.ingredientLines.mapIndexed { i, line ->
+                            buildJsonObject {
+                                put("id", UUID.randomUUID().toString())
+                                put("name", line)
+                                put("display", line)
+                                put("position", i)
+                            }
+                        },
+                    ),
+                )
+                put(
+                    "steps",
+                    JsonArray(
+                        draft.stepLines.mapIndexed { i, line ->
+                            buildJsonObject {
+                                put("id", UUID.randomUUID().toString())
+                                put("position", i)
+                                put("text", line)
+                            }
+                        },
+                    ),
+                )
+            },
+        ),
+    )
+}
+
+/** Applies a duplicate merge plan: unions into the survivor, tombstones losers. */
+private suspend fun applyDuplicateMerge(
+    container: AppContainer,
+    plan: DuplicateMergePlan,
+) {
+    val db = container.db
+    val now = System.currentTimeMillis()
+    val deviceId = container.syncEngine.deviceId()
+    val survivor = db.recipes().byId(plan.survivorId) ?: return
+    val existingCats = runCatching {
+        Json.parseToJsonElement(survivor.categoriesJson).jsonArray.map { it.jsonPrimitive.content }
+    }.getOrDefault(emptyList())
+    val mergedCats = (existingCats + plan.mergedCategories)
+        .map { it.lowercase() }.toSortedSet().toList()
+    db.recipes().upsert(
+        survivor.copy(
+            title = plan.survivorTitle,
+            categoriesJson = JsonArray(mergedCats.map { JsonPrimitive(it) }).toString(),
+            rating = plan.bestRating ?: survivor.rating,
+            photoOriginal = plan.bestPhotoOriginal ?: survivor.photoOriginal,
+            photoThumb = plan.bestPhotoThumb ?: survivor.photoThumb,
+            updatedAt = now,
+            deviceId = deviceId,
+        ),
+    )
+    // Union ingredient display names into the survivor.
+    val existing = db.ingredients().forRecipe(plan.survivorId)
+        .map { it.name.lowercase().trim() }.toSet()
+    val missing = plan.mergedIngredientNames.filter { it.lowercase().trim() !in existing }
+    if (missing.isNotEmpty()) {
+        val pos = (db.ingredients().forRecipe(plan.survivorId).maxOfOrNull { it.position } ?: -1) + 1
+        db.ingredients().upsertAll(
+            missing.mapIndexed { i, name ->
+                IngredientEntity(
+                    id = UUID.randomUUID().toString(),
+                    recipeId = plan.survivorId,
+                    name = name,
+                    display = name,
+                    position = pos + i,
+                    updatedAt = now,
+                    deviceId = deviceId,
+                )
+            },
+        )
+    }
+    // Tombstone the absorbed losers so sync converges.
+    for (loserId in plan.absorbedIds) {
+        db.recipes().byId(loserId)?.let { loser ->
+            db.recipes().upsert(loser.copy(deleted = true, updatedAt = now, deviceId = deviceId))
+            container.syncEngine.enqueue(
+                SyncEnvelopeDto(
+                    id = loserId,
+                    updatedAt = Instant.ofEpochMilli(now).toString(),
+                    deviceId = deviceId,
+                    deleted = true,
+                    entity = "recipe",
+                    payload = buildJsonObject {
+                        put("id", JsonPrimitive(loserId))
+                        put("deleted", JsonPrimitive(true))
+                    },
+                ),
+            )
+        }
+    }
+}
 
 /** App nav graph. Views never touch the network directly — they call SyncEngine via ViewModels. */
 @Composable
@@ -40,6 +214,7 @@ fun KeepCookingNav() {
     val container = remember(context) {
         (context.applicationContext as com.keepcooking.app.KeepCookingApp).container
     }
+    val scope = rememberCoroutineScope()
     Scaffold(
         bottomBar = {
             NavigationBar {
@@ -77,7 +252,7 @@ fun KeepCookingNav() {
                         val ings = container.db.ingredients().forRecipe(r.id)
                         val steps = container.db.steps().forRecipe(r.id)
                         val cats = runCatching {
-                            kotlinx.serialization.json.Json.decodeFromString<List<String>>(r.categoriesJson)
+                            Json.parseToJsonElement(r.categoriesJson).jsonArray.map { it.jsonPrimitive.content }
                         }.getOrDefault(emptyList())
                         LibraryRecipeRow(
                             recipeId = r.id,
@@ -96,14 +271,45 @@ fun KeepCookingNav() {
                         )
                     }
                 }
-                LibraryScreen(recipes = rows, onRecipeClick = { id ->
-                    navController.navigate(Routes.recipeDetail(id))
-                })
+                LibraryScreen(
+                    recipes = rows,
+                    onRecipeClick = { id ->
+                        navController.navigate(Routes.recipeDetail(id))
+                    },
+                    onMerge = { _, plan ->
+                        scope.launch {
+                            runCatching { applyDuplicateMerge(container, plan) }
+                            rows = rows.filterNot { it.recipeId in plan.absorbedIds }
+                        }
+                    },
+                )
             }
-            composable(TopDestination.Ingest.route) { IngestScreen() }
-            composable(TopDestination.Cook.route) { CookScreen() }
-            composable(TopDestination.Plan.route) { PlanScreen() }
-            composable(TopDestination.Shop.route) { ShopScreen() }
+            composable(TopDestination.Ingest.route) {
+                // Drain the pending-share queue + read the system clipboard so the
+                // clipboard banner can surface a link to clip.
+                var clipText by remember { mutableStateOf<String?>(null) }
+                LaunchedEffect(Unit) {
+                    clipText = ShareHandler.drainFirst(context)
+                        ?: runCatching {
+                            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            cm.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()
+                        }.getOrNull()
+                }
+                IngestScreen(
+                    clipboardText = clipText,
+                    onSaveRecipe = { draft ->
+                        scope.launch {
+                            runCatching { saveIngestDraft(container, draft) }
+                        }
+                        "Saved “${draft.title}”"
+                    },
+                )
+            }
+            composable(TopDestination.Cook.route) {
+                CookScreen(onExit = { navController.popBackStack() })
+            }
+            composable(TopDestination.Plan.route) { PlanScreen(container) }
+            composable(TopDestination.Shop.route) { ShopScreen(container) }
             composable(
                 route = Routes.RecipeDetail,
                 arguments = listOf(navArgument("recipeId") { type = NavType.StringType }),

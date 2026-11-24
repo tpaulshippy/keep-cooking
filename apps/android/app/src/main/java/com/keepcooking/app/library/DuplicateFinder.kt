@@ -99,8 +99,15 @@ fun <R : DuplicableRecipe> isDuplicatePair(
     thresholds: DuplicateThresholds = DuplicateThresholds(),
 ): Boolean {
     if (a.recipeId == b.recipeId) return false
-    if (jaccard(titleTokens(a.title), titleTokens(b.title)) >= thresholds.titleJaccard) return true
-    if (levenshteinSimilarity(normalizedTitle(a.title), normalizedTitle(b.title)) >= thresholds.titleEditSimilarity) return true
+    // Title signals need real text on BOTH sides: blank or punctuation-only
+    // titles normalize to "" (jaccard([],[]) and similarity("","") both score
+    // 1.0), which must never count as a match.
+    val normA = normalizedTitle(a.title)
+    val normB = normalizedTitle(b.title)
+    if (normA.isNotEmpty() && normB.isNotEmpty()) {
+        if (jaccard(titleTokens(a.title), titleTokens(b.title)) >= thresholds.titleJaccard) return true
+        if (levenshteinSimilarity(normA, normB) >= thresholds.titleEditSimilarity) return true
+    }
     val sa = strippedCopyTitle(a.title)
     val sb = strippedCopyTitle(b.title)
     if (sa.isNotEmpty() && sa == sb) return true
@@ -134,13 +141,18 @@ fun referenceFragment(title: String): String? {
     return ref.ifEmpty { null }
 }
 
+/**
+ * True when [title] explicitly references [other]: the reference fragment
+ * (from [referenceFragment]) must equal the other's full normalized title or
+ * match the tail of its record id. Substring/token-substring hits do NOT
+ * count — "dup of choc" must not claim "Chocolate Chip Cookies".
+ */
 private fun <R : DuplicableRecipe> referencesOther(title: String, other: R): Boolean {
     val ref = referenceFragment(title) ?: return false
     if (ref.length < 2) return false
     val lower = ref.lowercase()
     if (other.recipeId.lowercase().endsWith(lower)) return true
-    if (lower.length >= 3 && normalizedTitle(other.title).contains(lower)) return true
-    if (titleTokens(other.title).contains(lower)) return true
+    if (normalizedTitle(other.title).isNotEmpty() && normalizedTitle(other.title) == lower) return true
     return false
 }
 

@@ -52,6 +52,10 @@ interface ShoppingListDao {
     @Query("SELECT * FROM shopping_lists WHERE deleted = 0 ORDER BY updatedAt DESC")
     suspend fun liveLists(): List<ShoppingListEntity>
 
+    /** Lookup including tombstones: LWW must compare against deletes, not just live rows. */
+    @Query("SELECT * FROM shopping_lists WHERE id = :id LIMIT 1")
+    suspend fun byIdIncludingDeleted(id: String): ShoppingListEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(rows: List<ShoppingListEntity>)
 }
@@ -73,6 +77,10 @@ interface PantryDao {
     @Query("SELECT * FROM pantry_items WHERE deleted = 0 ORDER BY updatedAt DESC")
     suspend fun liveItems(): List<PantryItemEntity>
 
+    /** Lookup including tombstones: an older remote live envelope must not resurrect a delete. */
+    @Query("SELECT * FROM pantry_items WHERE id = :id LIMIT 1")
+    suspend fun byIdIncludingDeleted(id: String): PantryItemEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(rows: List<PantryItemEntity>)
 }
@@ -82,6 +90,10 @@ interface PlanDao {
     @Query("SELECT * FROM plans WHERE deleted = 0 ORDER BY date ASC")
     suspend fun livePlans(): List<PlanEntity>
 
+    /** Lookup including tombstones for header LWW. */
+    @Query("SELECT * FROM plans WHERE id = :id LIMIT 1")
+    suspend fun byIdIncludingDeleted(id: String): PlanEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(rows: List<PlanEntity>)
 }
@@ -90,6 +102,10 @@ interface PlanDao {
 interface MenuDao {
     @Query("SELECT * FROM menus WHERE deleted = 0 ORDER BY updatedAt DESC")
     suspend fun liveMenus(): List<MenuEntity>
+
+    /** Lookup including tombstones for header LWW. */
+    @Query("SELECT * FROM menus WHERE id = :id LIMIT 1")
+    suspend fun byIdIncludingDeleted(id: String): MenuEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(rows: List<MenuEntity>)

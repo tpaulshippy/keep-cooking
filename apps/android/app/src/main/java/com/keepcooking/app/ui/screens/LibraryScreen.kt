@@ -44,6 +44,7 @@ import com.keepcooking.app.library.Cookbook
 import com.keepcooking.app.library.DuplicableRecipe
 import com.keepcooking.app.library.LibraryRecipe
 import com.keepcooking.app.library.SavedSearch
+import com.keepcooking.app.library.DuplicateMergePlan
 import com.keepcooking.app.library.filterRecipes
 import com.keepcooking.app.library.findDuplicateGroups
 import com.keepcooking.app.library.planMerge
@@ -80,6 +81,7 @@ data class LibraryRecipeRow(
 fun LibraryScreen(
     recipes: List<LibraryRecipeRow> = emptyList(),
     onRecipeClick: (String) -> Unit = {},
+    onMerge: (List<LibraryRecipeRow>, DuplicateMergePlan) -> Unit = { _, _ -> },
 ) {
     var tab by remember { mutableStateOf(0) }
     val tabs = listOf("Search", "Cookbooks", "Duplicates", "Saved")
@@ -207,10 +209,9 @@ fun LibraryScreen(
                 }
                 2 -> DuplicateReview(
                     groups = groups,
-                    onMerge = { idx ->
-                        if (planMerge(groups[idx]) != null) {
-                            dismissed.value = dismissed.value + groups[idx].map { it.recipeId }.sorted().joinToString("+")
-                        }
+                    onMerge = { group, plan ->
+                        onMerge(group, plan)
+                        dismissed.value = dismissed.value + group.map { it.recipeId }.sorted().joinToString("+")
                     },
                     onDismiss = { idx ->
                         dismissed.value = dismissed.value + groups[idx].map { it.recipeId }.sorted().joinToString("+")
@@ -416,7 +417,7 @@ private fun CookbookDetail(
 @Composable
 private fun DuplicateReview(
     groups: List<List<LibraryRecipeRow>>,
-    onMerge: (Int) -> Unit,
+    onMerge: (List<LibraryRecipeRow>, DuplicateMergePlan) -> Unit,
     onDismiss: (Int) -> Unit,
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -438,7 +439,7 @@ private fun DuplicateReview(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         val plan = remember(group) { planMerge(group) }
                         if (plan != null) {
-                            Button(onClick = { onMerge(i) }) { Text("Merge into best (${plan.survivorTitle})") }
+                            Button(onClick = { onMerge(group, plan) }) { Text("Merge into best (${plan.survivorTitle})") }
                         }
                         OutlinedButton(onClick = { onDismiss(i) }) { Text("Keep both") }
                     }

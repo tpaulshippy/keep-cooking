@@ -91,4 +91,24 @@ class DuplicateFinderTest {
         assertTrue(isDuplicatePair(Stub("..000013", "dup of 09"), target))
         assertFalse(isDuplicatePair(Stub("..000099", "dup of 42"), target))
     }
+
+    // MARK: - Cubic fixes: blank titles + exact-only references
+
+    @Test fun `blank titles never match on title signals`() {
+        assertFalse(isDuplicatePair(Stub("a", ""), Stub("b", "")))
+        assertFalse(isDuplicatePair(Stub("a", "!!!"), Stub("b", "???")))
+        assertFalse(isDuplicatePair(Stub("a", "   "), Stub("b", "!!!")))
+    }
+
+    @Test fun `reference substring does not match`() {
+        // "choc" is a mere substring of the normalized title — not an exact
+        // title hit and not an id suffix — so no duplicate.
+        val target = Stub("..000009", "Chocolate Chip Cookies")
+        assertFalse(isDuplicatePair(Stub("..000099", "dup of choc"), target))
+    }
+
+    @Test fun `reference exact title matches`() {
+        val target = Stub("..000009", "Chocolate Chip Cookies")
+        assertTrue(isDuplicatePair(Stub("..000099", "dup of Chocolate Chip Cookies"), target))
+    }
 }

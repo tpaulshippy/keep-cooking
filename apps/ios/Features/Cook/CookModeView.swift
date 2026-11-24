@@ -114,6 +114,11 @@ public struct CookModeView: View {
         .onAppear {
             KeepAwake.enable()
             session.loadTimers(from: steps.map { $0.text })
+            // Mark the session active so Shortcuts nav intents accept
+            // handoffs while Cook mode can consume them (cleared below).
+            UserDefaults.standard.set(true, forKey: "cook.sessionActive")
+            // Sync voice scale from any restored servings before wiring.
+            session.scale = factor
             // Wire voice callbacks (idempotent per appearance).
             wireVoiceCallbacks()
             // Consume any Shortcuts/intent handoff written while away.
@@ -132,7 +137,10 @@ public struct CookModeView: View {
         }
         .onDisappear {
             KeepAwake.disable()
-            CookActivityStub.cancel(ids: scheduledIds)
+            UserDefaults.standard.set(false, forKey: "cook.sessionActive")
+            // Cancel both view-started timers and voice-started ones (the
+            // manager retains those ids in `scheduledTimerIds`).
+            CookActivityStub.cancel(ids: scheduledIds + voiceManager.scheduledTimerIds)
             // Manager's stopListening also persists listeningEnabled off,
             // fixing the stale-flag bug (was: stopped input, left flag true).
             voiceManager.stopListening()
@@ -141,6 +149,12 @@ public struct CookModeView: View {
             // Re-read on every step change (pager swipe, dots, Back/Next/Finish).
             // speakCurrentStep interrupts first so rapid swipes never pile up.
             speakCurrentStep()
+        }
+        .onChange(of: targetServings) {
+            // Manual stepper -> session sync (voice -> servings flows through
+            // onScaleCommand). Without this, "double it" after a manual
+            // change computes from a stale `session.scale`.
+            session.scale = factor
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             voiceBottomBar
@@ -631,9 +645,10 @@ public struct CookModeView: View {
             servingsBinding.wrappedValue = min(max(base * factor, lower), upper)
         }
         // onTimerCommand: intentionally unwired. The timer is scheduled by
-        // the manager; its reply is already set on lastReply and shown in
-        // the pill. No view-side scheduling (avoids double-scheduling with
-        // CookActivityStub) and no scheduledIds bookkeeping needed here.
+        // the manager, which retains its notification ids in
+        // `scheduledTimerIds`; onDisappear cancels those alongside this
+        // view's `scheduledIds` (no double-scheduling, no leaked alerts).
+        // Its reply is already set on lastReply and shown in the pill.
         // onStopCooking: intentionally no navigation. This view is
         // store-agnostic with no router; popping mid-cook would strand
         // timers/keep-awake state. The manager's "Done cooking." reply is

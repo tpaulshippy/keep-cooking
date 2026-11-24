@@ -1,6 +1,7 @@
 package com.keepcooking.app.cook
 
-import kotlin.math.round
+import kotlin.math.ceil
+import kotlin.math.floor
 
 /**
  * Recipe scaling — port of apps/ios/Features/Cook/RecipeScaler.swift.
@@ -24,8 +25,16 @@ fun scaledQuantity(quantity: Double?, factor: Double): Double? {
     return quantity * factor
 }
 
-/** Rounds a value to the nearest quarter (0.25 steps). */
-fun roundToQuarter(value: Double): Double = round(value * 4) / 4
+/**
+ * Rounds a value to the nearest quarter (0.25 steps), halves away from
+ * zero — parity with iOS `(value * 4).rounded()` (`.toNearestOrAwayFromZero`).
+ * kotlin.math.round is banker's (half to even): 0.125*4 = 0.5 would round to
+ * 0 ("0") instead of 1 ("¼"). Explicit half-away keeps 1/8 -> 1/4 etc.
+ */
+fun roundToQuarter(value: Double): Double {
+    val q = value * 4
+    return if (q >= 0) floor(q + 0.5) / 4 else ceil(q - 0.5) / 4
+}
 
 private val fractionGlyphs: List<Pair<Double, String>> = listOf(
     0.125 to "⅛", 0.25 to "¼", 0.333 to "⅓", 0.375 to "⅜",

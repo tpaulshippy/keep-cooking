@@ -14,6 +14,7 @@ import com.keepcooking.app.navigation.KeepCookingNav
 import com.keepcooking.app.share.ShareHandler
 import com.keepcooking.app.shortcuts.AppShortcuts
 import com.keepcooking.app.ui.theme.KeepCookingTheme
+import com.keepcooking.app.widgets.SnapshotWriter
 import kotlinx.coroutines.launch
 
 /**
@@ -25,8 +26,15 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        (application as KeepCookingApp).container.seedIfNeeded()
-        handleIncoming(intent)
+        val container = (application as KeepCookingApp).container
+        container.seedIfNeeded()
+        // Only handle the launch intent once — rotation recreates the activity
+        // with the same intent, which must not re-enqueue shortcut work.
+        if (savedInstanceState == null) handleIncoming(intent)
+        // Refresh widget/watch snapshot after setup (covers seed + plan/list writes).
+        lifecycleScope.launch {
+            runCatching { SnapshotWriter.refresh(this@MainActivity, container.db) }
+        }
         setContent {
             KeepCookingTheme {
                 Surface(

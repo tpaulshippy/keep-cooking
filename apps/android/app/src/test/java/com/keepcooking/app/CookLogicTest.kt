@@ -13,6 +13,7 @@ import com.keepcooking.app.cook.ingredientId
 import com.keepcooking.app.cook.normalizeVoiceText
 import com.keepcooking.app.cook.parseTimers
 import com.keepcooking.app.cook.parseVoiceCommand
+import com.keepcooking.app.cook.roundToQuarter
 import com.keepcooking.app.cook.scaleFactor
 import com.keepcooking.app.cook.scaledDisplay
 import com.keepcooking.app.cook.validatedStep
@@ -90,6 +91,49 @@ class CookLogicTest {
         assertTrue(parseTimers("chop the onions finely").isEmpty())
     }
 
+    // MARK: - Cubic fixes: scaler ties, timer fractions/compounds/labels
+
+    @Test
+    fun roundToQuarterTiesAwayFromZero() {
+        // 1/8 sits exactly between 0 and 1/4: iOS .rounded() goes to 1/4.
+        assertEquals(0.25, roundToQuarter(0.125), 0.0)
+        assertEquals(0.5, roundToQuarter(0.375), 0.0)
+        assertEquals(2.75, roundToQuarter(2.625), 0.0)
+        assertEquals(1.0, roundToQuarter(1.0), 0.0)
+    }
+
+    @Test
+    fun timerParserFractionYieldsNoTimer() {
+        // "1/2 hour" is a quantity, not a duration: neither the "1" (blocked
+        // by what follows) nor the "2" (preceded by "/") may match.
+        assertTrue(parseTimers("simmer 1/2 hour").isEmpty())
+        assertTrue(parseTimers("add 3/4 cup stock").isEmpty())
+    }
+
+    @Test
+    fun timerParserCompoundSums() {
+        val timers = parseTimers("simmer 1 hour 30 minutes")
+        assertEquals(1, timers.size)
+        assertEquals(90 * 60, timers[0].seconds)
+        assertEquals("simmer", timers[0].label)
+    }
+
+    @Test
+    fun timerParserCompoundWithAndSums() {
+        val timers = parseTimers("bake 1 hour and 30 minutes")
+        assertEquals(1, timers.size)
+        assertEquals(90 * 60, timers[0].seconds)
+    }
+
+    @Test
+    fun timerParserSecondLabelExcludesFirstDuration() {
+        val timers = parseTimers("bake 12-15 min, rest 1 hr")
+        assertEquals(2, timers.size)
+        assertEquals("bake", timers[0].label)
+        // Must be "rest", not "min rest" (words from the first duration leak).
+        assertEquals("rest", timers[1].label)
+    }
+
     // MARK: - Session: Finish is idempotent, card toggle unmarks
 
     @Test
@@ -152,6 +196,13 @@ class CookLogicTest {
         assertEquals(VoiceCommand.StartTimer(900, null), parseVoiceCommand("start a timer for 12-15 minutes"))
         assertEquals(VoiceCommand.StartTimer(600, null), parseVoiceCommand("start a timer for ten minutes"))
         assertEquals(VoiceCommand.StartTimer(null, null), parseVoiceCommand("start the timer"))
+    }
+
+    @Test
+    fun voiceTimerCompoundSums() {
+        assertEquals(VoiceCommand.StartTimer(5400, null), parseVoiceCommand("set a timer for 1 hour 30 minutes"))
+        assertEquals(VoiceCommand.StartTimer(5400, null), parseVoiceCommand("set a timer for one hour and thirty minutes"))
+        assertEquals(VoiceCommand.StartTimer(5400, null), parseVoiceCommand("set a timer for 1 hour thirty minutes"))
     }
 
     @Test

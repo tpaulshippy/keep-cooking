@@ -3,6 +3,8 @@ package com.keepcooking.app.plan
 import com.keepcooking.app.cook.scaleFactor
 import com.keepcooking.app.cook.scaledDisplay
 import com.keepcooking.app.cook.scaledQuantity
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 /**
  * Week aggregation + webcal feed — port of
@@ -43,7 +45,8 @@ data class AggregatedItem(
 /**
  * Aggregates a week's grocery inputs into merged list lines.
  * Same (name.lowercased(), unit.lowercased()) merge; unmeasured inputs
- * contribute a nil-quantity line that never absorbs measured ones.
+ * contribute a nil-quantity line per (name, unit) — never absorbing measured
+ * ones — and merge provenance ids when the same (name, unit) recurs.
  */
 fun aggregateWeekToList(inputs: List<PlanGroceryInput>): List<AggregatedItem> {
     val measured = LinkedHashMap<String, AggregatedItem>()
@@ -55,7 +58,13 @@ fun aggregateWeekToList(inputs: List<PlanGroceryInput>): List<AggregatedItem> {
         val key = "${input.name.lowercase()}\u001F${input.unit.lowercase()}"
         val q = scaledQuantity(input.quantity, factor)
         if (q == null) {
-            if (unmeasured.none { it.name.lowercase() == input.name.lowercase() }) {
+            // Null-quantity dedupe is per (name, unit): "Salt" by weight vs by
+            // volume are different lines. Repeats merge provenance ids.
+            val existingUnmeasured = unmeasured.firstOrNull {
+                it.name.lowercase() == input.name.lowercase() &&
+                    it.unit.lowercase() == input.unit.lowercase()
+            }
+            if (existingUnmeasured == null) {
                 unmeasured.add(
                     AggregatedItem(
                         name = input.name,
@@ -63,6 +72,11 @@ fun aggregateWeekToList(inputs: List<PlanGroceryInput>): List<AggregatedItem> {
                         totalQuantity = null,
                         recipeIds = input.recipeId?.let { listOf(it) } ?: emptyList(),
                     ),
+                )
+            } else if (input.recipeId != null && input.recipeId !in existingUnmeasured.recipeIds) {
+                val idx = unmeasured.indexOf(existingUnmeasured)
+                unmeasured[idx] = existingUnmeasured.copy(
+                    recipeIds = existingUnmeasured.recipeIds + input.recipeId,
                 )
             }
             continue
@@ -95,7 +109,10 @@ fun aggregateWeekToList(inputs: List<PlanGroceryInput>): List<AggregatedItem> {
 fun planFeedSubscribeUrl(baseUrl: String, householdId: String): String? {
     val trimmed = baseUrl.trimEnd('/')
     if (trimmed.isEmpty() || householdId.isEmpty()) return null
-    val https = "$trimmed/plans/feed.ics?householdId=$householdId"
+    // Percent-encode the query value (parity with iOS URLComponents
+    // queryItems: space -> %20, "&" -> %26, ...).
+    val encoded = URLEncoder.encode(householdId, StandardCharsets.UTF_8.toString()).replace("+", "%20")
+    val https = "$trimmed/plans/feed.ics?householdId=$encoded"
     return when {
         https.startsWith("https://") -> "webcal://" + https.removePrefix("https://")
         https.startsWith("http://") -> "webcal://" + https.removePrefix("http://")

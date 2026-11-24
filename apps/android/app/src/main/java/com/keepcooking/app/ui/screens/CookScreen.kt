@@ -43,6 +43,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -51,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -68,6 +70,10 @@ import com.keepcooking.app.cook.parseVoiceCommand
 import com.keepcooking.app.cook.scaleFactor
 import com.keepcooking.app.cook.scaledDisplay
 import com.keepcooking.app.cook.validatedStep
+import com.keepcooking.app.wear.NowCookingPayload
+import com.keepcooking.app.wear.WatchStepItem
+import com.keepcooking.app.wear.WatchStore
+import com.keepcooking.app.wear.WatchTimerItem
 
 private data class DemoIngredient(val id: String, val name: String, val quantity: Double?, val unit: String)
 private data class DemoStep(val id: String, val position: Int, val text: String)
@@ -80,7 +86,7 @@ private data class DemoStep(val id: String, val position: Int, val text: String)
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CookScreen() {
+fun CookScreen(onExit: () -> Unit = {}) {
     // Demo recipe (store-agnostic snapshots, like the iOS view's init args).
     val title = "Weeknight Pasta"
     val baseServings = 4.0
@@ -102,6 +108,22 @@ fun CookScreen() {
     }
 
     val session = remember { CookSession(stepCount = steps.size).also { it.loadTimers(steps.map { s -> s.text }) } }
+    val context = LocalContext.current
+
+    // Publish the Now Cooking payload so the watch companion + widgets can follow along.
+    LaunchedEffect(Unit) {
+        runCatching {
+            WatchStore.writeNowCooking(
+                context,
+                NowCookingPayload(
+                    recipeId = "demo-weeknight-pasta",
+                    title = title,
+                    steps = steps.map { WatchStepItem(position = it.position, text = it.text) },
+                    timers = session.timers.map { WatchTimerItem(label = it.label, seconds = it.seconds) },
+                ),
+            )
+        }
+    }
     var stepIndex by remember { mutableStateOf(0) }
     var targetServings by remember { mutableStateOf(baseServings) }
     var ingredientsExpanded by remember { mutableStateOf(true) }
@@ -216,7 +238,10 @@ fun CookScreen() {
                 }
             }
             VoiceCommand.StopSpeaking -> speak("")
-            VoiceCommand.StopCooking -> speak("Done cooking. Bon appétit!")
+            VoiceCommand.StopCooking -> {
+                speak("Done cooking. Bon appétit!")
+                onExit()
+            }
             VoiceCommand.Unknown -> speak("Sorry, I didn't catch that.")
         }
     }

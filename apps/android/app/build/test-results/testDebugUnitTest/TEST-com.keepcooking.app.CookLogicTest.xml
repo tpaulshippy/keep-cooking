@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.keepcooking.app.CookLogicTest" tests="68" skipped="0" failures="0" errors="0" timestamp="2026-11-24T21:29:11" hostname="Pauls-MacBook-Pro.local" time="0.028">
+  <properties/>
+  <testcase name="scaleFactorClamped" classname="com.keepcooking.app.CookLogicTest" time="0.001"/>
+  <testcase name="voiceTimerOneHundredMinutes" classname="com.keepcooking.app.CookLogicTest" time="0.004"/>
+  <testcase name="fuzzyExactEqualityWins" classname="com.keepcooking.app.CookLogicTest" time="0.001"/>
+  <testcase name="voiceTimerCompoundSums" classname="com.keepcooking.app.CookLogicTest" time="0.002"/>
+  <testcase name="voiceStartOver" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="fuzzyNonBoundarySubstringRejected" classname="com.keepcooking.app.CookLogicTest" time="0.001"/>
+  <testcase name="voiceTimerThirteenHoursUnknown" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="voiceGoToStep" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="fuzzyHyphenBoundaryMatches" classname="com.keepcooking.app.CookLogicTest" time="0.001"/>
+  <testcase name="voiceTimerZeroMinutesUnknown" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="voiceTimerOneHundredTwentyFiveMinutes" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="validatedStepOutOfRange" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="voiceTimerTwelveHoursOk" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="voiceMidSentenceGuard" classname="com.keepcooking.app.CookLogicTest" time="0.001"/>
+  <testcase name="timerParserCompoundSums" classname="com.keepcooking.app.CookLogicTest" time="0.001"/>
+  <testcase name="scaledDisplay4to6" classname="com.keepcooking.app.CookLogicTest" time="0.003"/>
+  <testcase name="fuzzyTokenOverlapBeatsSubstring" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="timerParserSecondLabelExcludesFirstDuration" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="voiceNormalizeCurlyApostrophe" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="voiceBareImDoneUnknown" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="timerParserCompoundWithAndSums" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="voiceTimerTwoHundredFiftyMinutesNoTruncation" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="validatedStepLastMapsToCount" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="fuzzyEmptyQueryReturnsNull" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="fuzzyEmptyCandidatesReturnsNull" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="voiceNormalizeAsciiApostrophe" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="voiceIngredientIdAmbiguousReturnsNull" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="voiceStopCommands" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="validatedStepEmptyRecipeNull" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="timerParserFractionYieldsNoTimer" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="voiceSmidgenImDone" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="scheduleIdsUniqueWithinBatch" classname="com.keepcooking.app.CookLogicTest" time="0.002"/>
+  <testcase name="scaleFactor4to6" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="timerParserRangeUsesUpperBound" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="validatedStepFirstAndLast" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="voiceScaleHelper" classname="com.keepcooking.app.CookLogicTest" time="0.001"/>
+  <testcase name="fuzzyLongestSpanWinsOnTokenCountTie" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="voiceSmidgenPrefixRule" classname="com.keepcooking.app.CookLogicTest" time="0.001"/>
+  <testcase name="voiceIngredientIdHelper" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="timerParserNoTimers" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="fuzzyExactDuplicateTieReturnsNull" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="validatedStepInRange" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="markStepDoneIdempotent" classname="com.keepcooking.app.CookLogicTest" time="0.001"/>
+  <testcase name="voiceTimerOneThousandSeconds" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="fractionDisplay" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="voiceTimerHugeSecondsUnknown" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="timerParserMultiTimer" classname="com.keepcooking.app.CookLogicTest" time="0.001"/>
+  <testcase name="voiceScaleCommands" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="voiceAddToList" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="voiceGoToStepParseCarriesAsIs" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="fuzzyPrefixSubstringRejected" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="fuzzyNoMatchReturnsNull" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="voiceTimerFractionalMinuteOk" classname="com.keepcooking.app.CookLogicTest" time="0.001"/>
+  <testcase name="scheduleIdsUniqueAcrossCalls" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="fuzzyTieReturnsNull" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="fuzzyMostMatchedTokensWins" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="voiceCrossUncrossFuzzy" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="validatedStepZeroNull" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="timerParserSeconds" classname="com.keepcooking.app.CookLogicTest" time="0.001"/>
+  <testcase name="voiceTimerBareHundredUnknown" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="voiceNextPreviousRepeat" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="voiceTimerHugeHoursUnknown" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="voiceIngredientAmount" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="voiceTimerExtraction" classname="com.keepcooking.app.CookLogicTest" time="0.001"/>
+  <testcase name="voiceNumberValueBasics" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="roundToQuarterTiesAwayFromZero" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="voiceTimerAHundredSeconds" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <testcase name="voiceTimerOneHundredAndFiveSeconds" classname="com.keepcooking.app.CookLogicTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

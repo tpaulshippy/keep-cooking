@@ -18,6 +18,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,13 +29,20 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
 import com.keepcooking.app.AppContainer
 import com.keepcooking.app.network.ShareCookbookRequest
 import com.keepcooking.app.network.ShareLinkDto
 import com.keepcooking.app.share.HouseholdInvite
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
+
+private val android.content.Context.betaTokenStore by preferencesDataStore(name = "keepcooking")
+private val BETA_TOKEN_KEY = stringPreferencesKey("beta_token")
 
 /**
  * Share UI — parity with iOS Features/Library/ShareViews.swift.
@@ -121,6 +129,12 @@ private fun CookbookShareCard(container: AppContainer) {
     var link by remember { mutableStateOf<ShareLinkDto?>(null) }
     var sharing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var betaToken by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        betaToken = runCatching {
+            context.betaTokenStore.data.map { it[BETA_TOKEN_KEY] }.first()
+        }.getOrNull()
+    }
 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
@@ -147,8 +161,9 @@ private fun CookbookShareCard(container: AppContainer) {
                     sharing = true
                     scope.launch {
                         try {
+                            val auth = betaToken?.takeIf { it.isNotBlank() }?.let { "Bearer $it" }
                             link = container.api.createCookbookShare(
-                                null,
+                                auth,
                                 ShareCookbookRequest(householdId.trim(), ids),
                             )
                             error = null

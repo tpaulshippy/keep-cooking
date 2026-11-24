@@ -19,21 +19,23 @@ import retrofit2.http.Query
 /**
  * API transport for SyncEngine. Parity with iOS APISyncTransport:
  * push envelopes up, pull changes down. Same /sync/pull + /sync/push shape
- * as packages/contracts/openapi.yaml.
+ * as packages/contracts/openapi.yaml: both directions are BARE JSON arrays
+ * of SyncEnvelope (`POST /sync/push` takes an array, returns the array of
+ * server-won conflict envelopes; `GET /sync/pull` returns an array).
  */
 interface ApiService {
     @POST("sync/push")
     suspend fun push(
         @Header("Authorization") auth: String?,
-        @Body body: PushRequest,
-    ): PushResponse
+        @Body body: List<SyncEnvelopeDto>,
+    ): List<SyncEnvelopeDto>
 
     @GET("sync/pull")
     suspend fun pull(
         @Header("Authorization") auth: String?,
         @Query("since") since: String?,
         @Query("householdId") householdId: String?,
-    ): PullResponse
+    ): List<SyncEnvelopeDto>
 
     // --- E2E V1 (/v2/sync/:hash — blind server, parity with APIE2ETransport) ---
 
@@ -65,19 +67,6 @@ interface ApiService {
         @Body body: ShareCookbookRequest,
     ): ShareLinkDto
 }
-
-@kotlinx.serialization.Serializable
-data class PushRequest(val envelopes: List<SyncEnvelopeDto>)
-
-@kotlinx.serialization.Serializable
-data class PushResponse(
-    val accepted: Int = 0,
-    val conflicts: Int = 0,
-    val winners: List<SyncEnvelopeDto> = emptyList(), // server-won envelopes to apply
-)
-
-@kotlinx.serialization.Serializable
-data class PullResponse(val envelopes: List<SyncEnvelopeDto> = emptyList())
 
 @kotlinx.serialization.Serializable
 data class SyncEnvelopeDto(

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.keepcooking.app.SyncParityFixesTest" tests="29" skipped="0" failures="0" errors="0" timestamp="2026-11-24T21:29:11" hostname="Pauls-MacBook-Pro.local" time="0.106">
+  <properties/>
+  <testcase name="mismatched kid fails verification" classname="com.keepcooking.app.SyncParityFixesTest" time="0.032"/>
+  <testcase name="pull takes since and householdId and returns a list" classname="com.keepcooking.app.SyncParityFixesTest" time="0.0"/>
+  <testcase name="seal open round-trips under bound AD" classname="com.keepcooking.app.SyncParityFixesTest" time="0.023"/>
+  <testcase name="matching pending row is superseded by equal winner" classname="com.keepcooking.app.SyncParityFixesTest" time="0.014"/>
+  <testcase name="categories default to empty array" classname="com.keepcooking.app.SyncParityFixesTest" time="0.002"/>
+  <testcase name="newer remote tombstone beats older live row" classname="com.keepcooking.app.SyncParityFixesTest" time="0.0"/>
+  <testcase name="deleted markers never write" classname="com.keepcooking.app.SyncParityFixesTest" time="0.0"/>
+  <testcase name="shell child replace follows per-child LWW" classname="com.keepcooking.app.SyncParityFixesTest" time="0.001"/>
+  <testcase name="unstamped new child falls back to header time" classname="com.keepcooking.app.SyncParityFixesTest" time="0.0"/>
+  <testcase name="unrelated ids never reconcile" classname="com.keepcooking.app.SyncParityFixesTest" time="0.0"/>
+  <testcase name="header AD round-trips hostile device ids" classname="com.keepcooking.app.SyncParityFixesTest" time="0.011"/>
+  <testcase name="mismatched hash fails verification" classname="com.keepcooking.app.SyncParityFixesTest" time="0.001"/>
+  <testcase name="v1 envelope wrapper types are gone" classname="com.keepcooking.app.SyncParityFixesTest" time="0.0"/>
+  <testcase name="older remote live does not beat newer tombstone" classname="com.keepcooking.app.SyncParityFixesTest" time="0.0"/>
+  <testcase name="header AD encoding is deterministic" classname="com.keepcooking.app.SyncParityFixesTest" time="0.0"/>
+  <testcase name="unknown row always takes remote" classname="com.keepcooking.app.SyncParityFixesTest" time="0.0"/>
+  <testcase name="newer pending edit survives older winner" classname="com.keepcooking.app.SyncParityFixesTest" time="0.0"/>
+  <testcase name="new shell child stamps its own millis not the header" classname="com.keepcooking.app.SyncParityFixesTest" time="0.0"/>
+  <testcase name="push takes a bare list body" classname="com.keepcooking.app.SyncParityFixesTest" time="0.0"/>
+  <testcase name="equal timestamps take remote for idempotent convergence" classname="com.keepcooking.app.SyncParityFixesTest" time="0.0"/>
+  <testcase name="cursor is the max envelope timestamp" classname="com.keepcooking.app.SyncParityFixesTest" time="0.0"/>
+  <testcase name="older pending row is superseded by newer winner" classname="com.keepcooking.app.SyncParityFixesTest" time="0.0"/>
+  <testcase name="consistent bundle verifies" classname="com.keepcooking.app.SyncParityFixesTest" time="0.0"/>
+  <testcase name="older live child does not clobber newer embedded entry" classname="com.keepcooking.app.SyncParityFixesTest" time="0.001"/>
+  <testcase name="cursor ignores unparseable timestamps and empties" classname="com.keepcooking.app.SyncParityFixesTest" time="0.0"/>
+  <testcase name="folded shell is detected" classname="com.keepcooking.app.SyncParityFixesTest" time="0.0"/>
+  <testcase name="winning tombstone removes embedded child and bumps parent" classname="com.keepcooking.app.SyncParityFixesTest" time="0.0"/>
+  <testcase name="envelope lists encode as bare json arrays" classname="com.keepcooking.app.SyncParityFixesTest" time="0.015"/>
+  <testcase name="stale tombstone does not remove newer embedded child" classname="com.keepcooking.app.SyncParityFixesTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

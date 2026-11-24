@@ -17,15 +17,17 @@
 //   - Key storage: syncCode lives in EncryptedSharedPreferences in prod; here
 //     it is kept in a dedicated DataStore file ("keepcooking_e2e_secret") so
 //     it never mixes with non-secret metadata (kid / hash / householdId).
+//     TODO(security, E2E gate): that DataStore file is PLAINTEXT. Migrate the
+//     syncCode to EncryptedFile/Keystore before enabling E2E in production.
 package com.keepcooking.app.sync
 
-import android.util.Base64
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import java.security.MessageDigest
 import java.security.SecureRandom
+import java.util.Base64 as JavaBase64
 import javax.crypto.Mac
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
@@ -33,6 +35,7 @@ import javax.crypto.spec.SecretKeySpec
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 
@@ -97,8 +100,7 @@ fun householdHash(syncCode: String, householdId: String): String {
 /** Key id: first 12 chars of base64url(SHA-256(syncCode UTF-8)), no padding. */
 fun kid(syncCode: String): String {
     val digest = MessageDigest.getInstance("SHA-256").digest(syncCode.toByteArray(Charsets.UTF_8))
-    val b64 = Base64.encodeToString(digest, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
-    return b64.take(12)
+    return JavaBase64.getUrlEncoder().withoutPadding().encodeToString(digest).take(12)
 }
 
 /** First 8 hex chars of a household hash — the secret-store account suffix. */
@@ -136,12 +138,28 @@ fun e2eHeaderAD(
         if (deleted) "1" else "0", entity,
     )
     val encoded = runCatching {
-        "[" + parts.joinToString(",") { "\"$it\"" } + "]"
+        // kotlinx-serialization JSON string array: deterministic, and fields
+        // containing quotes/backslashes (e.g. deviceIds) round-trip exactly.
+        // Manual "\"$it\"" quoting would corrupt them and break the AES-GCM
+        // associated-data binding on open.
+        jsonLenient.encodeToString(parts)
     }.getOrDefault(parts.joinToString(""))
     return encoded.toByteArray(Charsets.UTF_8)
 }
 
 // MARK: - Seal / open (AES-GCM)
+
+/** Standard-alphabet base-64 without padding (java.util: identical bytes on JVM + Android, no Robolectric needed). */
+private fun b64EncodeStd(bytes: ByteArray): String =
+    JavaBase64.getEncoder().withoutPadding().encodeToString(bytes)
+
+/** Decodes standard-alphabet base-64, accepting padded and unpadded inputs. */
+private fun b64DecodeStd(s: String): ByteArray {
+    val clean = s.trim()
+    require(clean.isNotEmpty()) { "empty base64" }
+    val padded = clean + "=".repeat((4 - clean.length % 4) % 4)
+    return JavaBase64.getDecoder().decode(padded)
+}
 
 sealed class SyncCryptoException(message: String) : Exception(message) {
     class InvalidNonceEncoding : SyncCryptoException("invalid nonce encoding")
@@ -172,11 +190,7 @@ fun seal(
         )
         if (authenticating.isNotEmpty()) cipher.updateAAD(authenticating)
         val combined = cipher.doFinal(payload) // ciphertext || 16-byte tag
-        val flags = Base64.NO_WRAP or Base64.NO_PADDING
-        return Pair(
-            Base64.encodeToString(nonce, flags),
-            Base64.encodeToString(combined, flags),
-        )
+        return Pair(b64EncodeStd(nonce), b64EncodeStd(combined))
     } catch (t: Throwable) {
         throw SyncCryptoException.SealFailed(t)
     }
@@ -189,13 +203,10 @@ fun open(
     key: SecretKey,
     authenticating: ByteArray = ByteArray(0),
 ): ByteArray {
-    val flags = Base64.NO_WRAP or Base64.NO_PADDING
-    // Accept both padded and unpadded inputs.
-    val nonceData = runCatching { Base64.decode(nonceB64, flags) }.getOrNull()
-        ?: runCatching { Base64.decode(nonceB64, Base64.NO_WRAP) }.getOrNull()
+    // Accept both padded and unpadded inputs (standard alphabet).
+    val nonceData = runCatching { b64DecodeStd(nonceB64) }.getOrNull()
         ?: throw SyncCryptoException.InvalidNonceEncoding()
-    val combined = runCatching { Base64.decode(ciphertextB64, flags) }.getOrNull()
-        ?: runCatching { Base64.decode(ciphertextB64, Base64.NO_WRAP) }.getOrNull()
+    val combined = runCatching { b64DecodeStd(ciphertextB64) }.getOrNull()
         ?: throw SyncCryptoException.InvalidCiphertextEncoding()
     if (nonceData.size != 12) throw SyncCryptoException.MalformedNonce()
     if (combined.size < 16) throw SyncCryptoException.MalformedCiphertext()
@@ -248,8 +259,15 @@ data class SyncInviteBundle(
     val hash: String,
     val endpointHint: String? = null,
 ) {
-    /** True when `hash` equals the hash derived from `syncCode`+`householdId`. */
-    fun verify(): Boolean = hash == householdHash(syncCode, householdId)
+    /**
+     * True when `hash` equals the hash derived from `syncCode`+`householdId`
+     * AND `kid` equals the key id derived from `syncCode`. The kid check
+     * rejects bundles whose key locator does not match the code (iOS parity);
+     * without it a mismatched kid would derive a wrong household key and
+     * every open would fail closed later instead of failing fast here.
+     */
+    fun verify(): Boolean =
+        hash == householdHash(syncCode, householdId) && kid == kid(syncCode)
 
     companion object {
         fun make(householdId: String, syncCode: String, kid: String, endpointHint: String? = null) =
@@ -280,7 +298,16 @@ data class E2ECredential(val metadata: E2EMetadata, val syncCode: String) {
 /**
  * E2E key store. Secret (syncCode) lives in [secretStore] under account
  * "smidgen.e2ee.<hashPrefix8>"; metadata lives in [metaStore]. Parity with
- * iOS E2EKeyStore (Keychain + UserDefaults split).
+ * iOS E2EKeyStore (Keychain + UserDefaults split) — EXCEPT the secret
+ * storage backend (see below).
+ *
+ * TODO(security): [secretStore] persists the syncCode in PLAINTEXT
+ * (Preferences DataStore XML). This is a pass-1 placeholder so E2E sync can
+ * be exercised end to end. Production MUST move the syncCode to EncryptedFile
+ * (Tink/Keystore-backed) or the Android Keystore before E2E is enabled for
+ * real households — enabling E2E on this plaintext store would leave the
+ * household key recoverable from app-private storage. Gate: do not ship E2E
+ * onboarding until this TODO is resolved (see apps/android/README.md).
  */
 object E2EKeyStore {
     private val KEY_KID = stringPreferencesKey("smidgen.e2ee.kid")
@@ -289,6 +316,8 @@ object E2EKeyStore {
     private val KEY_HINT = stringPreferencesKey("smidgen.e2ee.endpointHint")
 
     fun secretAccount(hash: String) = "smidgen.e2ee.${hashPrefix8(hash)}"
+    // TODO(security): plaintext DataStore key — see the E2EKeyStore KDoc gate
+    // (EncryptedFile/Keystore) before enabling E2E in production.
     private fun secretKey(hash: String) = stringPreferencesKey(secretAccount(hash))
 
     suspend fun saveSyncCode(secretStore: DataStore<Preferences>, syncCode: String, hash: String): Boolean =

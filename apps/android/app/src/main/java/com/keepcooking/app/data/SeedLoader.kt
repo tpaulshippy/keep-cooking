@@ -33,7 +33,9 @@ class SeedLoader(
     private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun seedIfNeeded(): Result {
-        if (db.recipes().count() > 0) return Result(0, 0)
+        // No global count() early-skip: an interrupted seed must retry on the
+        // next launch. Each file is still idempotent via the per-ID check in
+        // insertSeed, so completed recipes are skipped individually.
         var loaded = 0
         var skipped = 0
         val files = (context.assets.list("seed") ?: emptyArray()).sorted()

@@ -517,4 +517,54 @@ extension CookTests {
         XCTAssertNil(validatedStep(requested: 1, stepCount: 0))
         XCTAssertNil(validatedStep(requested: VoiceCommand.lastStep, stepCount: 0))
     }
+
+    // Fix 6: explicit ambiguity signal (fuzzy nil is ambiguous OR no-match).
+    func testAmbiguousTieTrue() {
+        XCTAssertTrue(
+            isFuzzyVoiceMatchAmbiguous("flour", candidates: ["white flour", "wheat flour"]))
+    }
+
+    func testAmbiguousExactDuplicateTrue() {
+        XCTAssertTrue(
+            isFuzzyVoiceMatchAmbiguous("flour", candidates: ["Flour", "flour"]))
+    }
+
+    func testAmbiguousSingleMatchFalse() {
+        XCTAssertFalse(
+            isFuzzyVoiceMatchAmbiguous("flour", candidates: ["All-purpose flour", "Sugar"]))
+    }
+
+    func testAmbiguousNoMatchFalse() {
+        XCTAssertFalse(
+            isFuzzyVoiceMatchAmbiguous("cinnamon", candidates: ["flour", "sugar"]))
+    }
+
+    func testAmbiguousEmptyQueryFalse() {
+        XCTAssertFalse(isFuzzyVoiceMatchAmbiguous("  ", candidates: ["flour"]))
+    }
+
+    // Fix 7: compound durations sum instead of truncating.
+    func testVoiceTimerCompoundHourAndMinutes() {
+        XCTAssertEqual(
+            parseVoiceCommand("start a timer for 1 hour 30 minutes"),
+            .startTimer(seconds: 5400, label: nil))
+    }
+
+    func testVoiceTimerCompoundWords() {
+        XCTAssertEqual(
+            parseVoiceCommand("start a timer for one hour thirty minutes"),
+            .startTimer(seconds: 5400, label: nil))
+    }
+
+    func testVoiceTimerCompoundMixedDigitAndWords() {
+        XCTAssertEqual(
+            parseVoiceCommand("start a timer for 1 hour thirty minutes"),
+            .startTimer(seconds: 5400, label: nil))
+    }
+
+    func testVoiceTimerCompoundTooLargeUnknown() {
+        // 11h + 2h = 13h exceeds the 12h bound.
+        XCTAssertEqual(
+            parseVoiceCommand("start a timer for 11 hours 2 hours"), .unknown)
+    }
 }

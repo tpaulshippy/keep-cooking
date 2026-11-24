@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
@@ -18,19 +18,24 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.keepcooking.app.widgets.TodaySnapshot
 import com.keepcooking.app.widgets.WidgetSnapshotStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -42,11 +47,23 @@ import kotlinx.coroutines.launch
  * screens reading [WatchStore]/[WidgetSnapshotStore] so they run in the phone
  * app today; the Wear OS module reuses the same store + payload with
  * Wear Material (drop-in: swap imports, same state logic).
+ *
+ * Timer countdown state + ticker jobs live on [NowCookingScreen] and are
+ * passed down, so tab switches never orphan a ticker and Stop/restart always
+ * cancels the previous job before starting a new one.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NowCookingScreen() {
     var tab by remember { mutableStateOf(0) }
+    // Hoisted timer state: seconds left per unique timer key + running set.
+    val remaining = remember { mutableStateMapOf<String, Int>() }
+    val runningState = remember { mutableStateOf(setOf<String>()) }
+    val tickers = remember { mutableMapOf<String, Job>() }
+    val scope = rememberCoroutineScope()
+    DisposableEffect(Unit) {
+        onDispose { tickers.values.forEach { it.cancel() } }
+    }
     Scaffold(topBar = { TopAppBar(title = { Text("Now Cooking") }) }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             TabRow(selectedTabIndex = tab) {
@@ -56,7 +73,12 @@ fun NowCookingScreen() {
             }
             when (tab) {
                 0 -> WatchStepsPane()
-                1 -> WatchTimersPane()
+                1 -> WatchTimersPane(
+                    remaining = remaining,
+                    runningState = runningState,
+                    tickers = tickers,
+                    scope = scope,
+                )
                 2 -> WatchListPane()
             }
         }
@@ -67,7 +89,8 @@ fun NowCookingScreen() {
 private fun WatchStepsPane() {
     val context = LocalContext.current
     var payload by remember { mutableStateOf<NowCookingPayload?>(null) }
-    var done by remember { mutableStateOf(setOf<Int>()) }
+    // Local done-override: explicit user taps win over the stored step.done flag.
+    var doneOverride by remember { mutableStateOf(mapOf<Int, Boolean>()) }
     LaunchedEffect(Unit) { payload = WatchStore.readNowCooking(context) }
     val steps = payload?.steps?.sortedBy { it.position }.orEmpty()
     if (steps.isEmpty()) {
@@ -80,12 +103,12 @@ private fun WatchStepsPane() {
     }
     LazyColumn(Modifier.fillMaxSize().padding(16.dp)) {
         item { Text(payload?.title.orEmpty(), style = MaterialTheme.typography.titleMedium) }
-        items(steps, key = { it.position }) { step ->
-            val isDone = step.position in done || step.done
+        itemsIndexed(steps, key = { _, step -> "step-${step.position}" }) { _, step ->
+            val isDone = doneOverride[step.position] ?: step.done
             Row(
                 Modifier.fillMaxWidth().padding(vertical = 8.dp)
                     .clickable {
-                        done = if (isDone) done - step.position else done + step.position
+                        doneOverride = doneOverride + (step.position to !isDone)
                     },
             ) {
                 Text(
@@ -100,13 +123,18 @@ private fun WatchStepsPane() {
 }
 
 @Composable
-private fun WatchTimersPane() {
+private fun WatchTimersPane(
+    remaining: SnapshotStateMap<String, Int>,
+    runningState: MutableState<Set<String>>,
+    tickers: MutableMap<String, Job>,
+    scope: CoroutineScope,
+) {
     val context = LocalContext.current
     var payload by remember { mutableStateOf<NowCookingPayload?>(null) }
-    val remaining = remember { mutableStateMapOf<String, Int>() }
-    var running by remember { mutableStateOf(setOf<String>()) }
-    val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { payload = WatchStore.readNowCooking(context) }
+    DisposableEffect(Unit) {
+        onDispose { tickers.values.forEach { it.cancel() } }
+    }
     val timers = payload?.timers.orEmpty()
     if (timers.isEmpty()) {
         Text(
@@ -117,8 +145,10 @@ private fun WatchTimersPane() {
         return
     }
     LazyColumn(Modifier.fillMaxSize().padding(16.dp)) {
-        items(timers, key = { it.label }) { timer ->
-            val left = remaining[timer.label] ?: timer.seconds
+        itemsIndexed(timers, key = { index, timer -> "timer-$index-${timer.label}-${timer.seconds}" }) { index, timer ->
+            val key = "timer-$index-${timer.label}-${timer.seconds}"
+            val left = remaining[key] ?: timer.seconds
+            val running = runningState.value
             Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                 Text(timer.label, style = MaterialTheme.typography.titleSmall)
                 Text(
@@ -126,20 +156,24 @@ private fun WatchTimersPane() {
                     style = MaterialTheme.typography.headlineMedium,
                 )
                 Button(onClick = {
-                    if (timer.label in running) {
-                        running = running - timer.label
+                    if (key in runningState.value) {
+                        tickers.remove(key)?.cancel()
+                        runningState.value = runningState.value - key
                     } else {
-                        remaining[timer.label] = remaining[timer.label] ?: timer.seconds
-                        running = running + timer.label
-                        scope.launch {
-                            while ((remaining[timer.label] ?: 0) > 0 && timer.label in running) {
+                        tickers.remove(key)?.cancel()
+                        remaining[key] = remaining[key] ?: timer.seconds
+                        runningState.value = runningState.value + key
+                        tickers[key] = scope.launch {
+                            // Stop/restart cancels this job; the loop only counts down.
+                            while ((remaining[key] ?: 0) > 0) {
                                 delay(1000)
-                                remaining[timer.label] = maxOf(0, (remaining[timer.label] ?: 0) - 1)
+                                remaining[key] = maxOf(0, (remaining[key] ?: 0) - 1)
                             }
-                            running = running - timer.label
+                            tickers.remove(key)
+                            runningState.value = runningState.value - key
                         }
                     }
-                }) { Text(if (timer.label in running) "Stop" else "Start") }
+                }) { Text(if (key in running) "Stop" else "Start") }
             }
         }
     }
@@ -159,7 +193,7 @@ private fun WatchListPane() {
         return
     }
     LazyColumn(Modifier.fillMaxSize().padding(16.dp)) {
-        items(snapshot.lists, key = { it.listId }) { list ->
+        itemsIndexed(snapshot.lists, key = { _, list -> "list-${list.listId}" }) { _, list ->
             Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                 Text(list.name, style = MaterialTheme.typography.titleSmall)
                 LinearProgressIndicator(progress = list.fraction, modifier = Modifier.fillMaxWidth())

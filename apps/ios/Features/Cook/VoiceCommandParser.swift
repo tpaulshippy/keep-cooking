@@ -167,6 +167,49 @@ public func fuzzyVoiceMatch(_ query: String, candidates: [String]) -> String? {
     return bestCandidate
 }
 
+/// Ambiguity signal for a spoken ingredient name. Mirrors `fuzzyVoiceMatch`
+/// scoring but reports whether the top score is shared by 2+ candidates.
+/// The manager lane uses this: `fuzzyVoiceMatch` returns nil on ties AND on
+/// no-match, so callers must check this (not `fuzzyVoiceMatch(...) != nil`)
+/// to decide between "Which <name>?" (ambiguous) and "I don't see ..." .
+public func isFuzzyVoiceMatchAmbiguous(_ query: String, candidates: [String]) -> Bool {
+    let q = voiceNormalizedName(query)
+    guard !q.isEmpty else { return false }
+    let qTokens = q.split(separator: " ").map(String.init)
+    let qSet = Set(qTokens)
+    var bestKey: (Int, Int, Int)?
+    var bestCount = 0
+    for candidate in candidates {
+        let c = voiceNormalizedName(candidate)
+        guard !c.isEmpty else { continue }
+        let cTokens = c.split(separator: " ").map(String.init)
+        let key: (Int, Int, Int)?
+        if c == q {
+            key = (3, qTokens.count, q.count)
+        } else {
+            let cSet = Set(cTokens)
+            let overlap = qSet.intersection(cSet)
+            if !overlap.isEmpty {
+                let span = overlap.reduce(0) { $0 + $1.count }
+                key = (2, overlap.count, span)
+            } else if voiceTokenBoundaryContains(c, q) || voiceTokenBoundaryContains(q, c) {
+                let needle = c.count > q.count ? q : c
+                key = (1, 1, needle.count)
+            } else {
+                continue
+            }
+        }
+        guard let k = key else { continue }
+        if bestKey == nil || k > bestKey! {
+            bestKey = k
+            bestCount = 1
+        } else if k == bestKey! {
+            bestCount += 1
+        }
+    }
+    return bestCount > 1
+}
+
 /// Token-boundary containment: `needle` appears in `haystack` as a whole
 /// phrase of tokens (hyphens/slashes count as boundaries).
 private func voiceTokenBoundaryContains(_ haystack: String, _ needle: String) -> Bool {
@@ -244,27 +287,50 @@ private func voiceCompoundWordNumber(_ words: [String]) -> Double? {
     return Double(total + current)
 }
 
-/// Finds the first duration in free text. Numeric forms use the UPPER bound
-/// for ranges ("12-15 minutes" -> 15 min), matching `parseTimers`.
+/// Finds the total duration in free text, SUMMING every "<number> <unit>"
+/// segment so compounds like "1 hour 30 minutes" yield 5400 (not 3600).
+/// Numeric forms use the UPPER bound for ranges ("12-15 minutes" -> 15 min),
+/// matching `parseTimers`. Returns nil when no duration is found or the
+/// total falls outside 1...43200s (so "0 minutes" and "13 hours" stay
+/// `.unknown`).
 private func voiceTimerSeconds(in text: String) -> Int? {
     let pattern = #"(\d+(?:\.\d+)?)\s*(?:(?:[-–]|to)\s*(\d+(?:\.\d+)?))?\s*(hours?|hrs?|minutes?|mins?|seconds?|secs?)\b"#
+    var total = 0
+    var found = false
+    // Remainder for the word scan: digit "<number> <unit>" spans are blanked
+    // so mixed compounds ("1 hour thirty minutes") count both halves once.
+    var remainder = text
     if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
         let range = NSRange(text.startIndex..., in: text)
-        if let m = regex.firstMatch(in: text, range: range) {
+        let matches = regex.matches(in: text, range: range)
+        if !matches.isEmpty {
             let ns = text as NSString
-            let secondRange = m.range(at: 2)
-            let numStr = secondRange.location != NSNotFound
-                ? ns.substring(with: secondRange)
-                : ns.substring(with: m.range(at: 1))
-            let unit = ns.substring(with: m.range(at: 3)).lowercased()
-            if let num = Double(numStr) { return voiceSeconds(num: num, unit: unit) }
+            var stripped = text
+            for m in matches {
+                let secondRange = m.range(at: 2)
+                let numStr = secondRange.location != NSNotFound
+                    ? ns.substring(with: secondRange)
+                    : ns.substring(with: m.range(at: 1))
+                let unit = ns.substring(with: m.range(at: 3)).lowercased()
+                guard let num = Double(numStr),
+                      let part = voiceSeconds(num: num, unit: unit) else { return nil }
+                total += part
+                found = true
+                if let r = Range(m.range, in: stripped) {
+                    stripped.replaceSubrange(r, with: String(repeating: " ", count: m.range.length))
+                }
+            }
+            remainder = stripped
         }
     }
     // Number-word forms ("ten minutes", "an hour", "twenty five seconds").
+    // Every "<number words> <unit>" segment contributes to the total so
+    // "one hour thirty minutes" sums instead of truncating. Runs on the
+    // post-digit remainder so mixed compounds count both halves once.
     let hourWords: Set<String> = ["hour", "hours", "hr", "hrs"]
     let minuteWords: Set<String> = ["minute", "minutes", "min", "mins"]
     let secondWords: Set<String> = ["second", "seconds", "sec", "secs"]
-    let tokens = text.split(separator: " ").map(String.init)
+    let tokens = remainder.split(separator: " ").map(String.init)
     for (i, token) in tokens.enumerated() {
         let isUnit = hourWords.contains(token)
             || minuteWords.contains(token)
@@ -276,14 +342,23 @@ private func voiceTimerSeconds(in text: String) -> Int? {
         let start = max(0, i - 6)
         let window = Array(tokens[start..<i])
         // Try the longest trailing slice first ("twenty five"), then shorter.
+        var matched: Int?
         for length in stride(from: window.count, through: 1, by: -1) {
             let slice = Array(window.suffix(length))
-            if let num = voiceCompoundWordNumber(slice) {
-                return voiceSeconds(num: num, unit: token)
+            if let num = voiceCompoundWordNumber(slice),
+               let part = voiceSeconds(num: num, unit: token) {
+                matched = part
+                break
             }
         }
+        // A unit with no parseable number ("minutes" alone) contributes
+        // nothing; a number word shared with an earlier unit (e.g. "ten" in
+        // "ten minutes thirty seconds") fails the longer slices and falls
+        // back to its own trailing number ("thirty").
+        if let part = matched { total += part; found = true }
     }
-    return nil
+    guard found, total >= 1, total <= 43200 else { return nil }
+    return total
 }
 
 // MARK: - Parser

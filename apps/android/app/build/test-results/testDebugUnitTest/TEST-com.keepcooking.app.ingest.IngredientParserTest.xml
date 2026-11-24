@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.keepcooking.app.ingest.IngredientParserTest" tests="15" skipped="0" failures="0" errors="0" timestamp="2026-11-24T21:29:11" hostname="Pauls-MacBook-Pro.local" time="0.008">
+  <properties/>
+  <testcase name="attached unicode" classname="com.keepcooking.app.ingest.IngredientParserTest" time="0.001"/>
+  <testcase name="clip host" classname="com.keepcooking.app.ingest.IngredientParserTest" time="0.0"/>
+  <testcase name="fraction string" classname="com.keepcooking.app.ingest.IngredientParserTest" time="0.001"/>
+  <testcase name="empty line" classname="com.keepcooking.app.ingest.IngredientParserTest" time="0.001"/>
+  <testcase name="range cloves" classname="com.keepcooking.app.ingest.IngredientParserTest" time="0.0"/>
+  <testcase name="ocr splitter" classname="com.keepcooking.app.ingest.IngredientParserTest" time="0.002"/>
+  <testcase name="detector finds url" classname="com.keepcooking.app.ingest.IngredientParserTest" time="0.001"/>
+  <testcase name="metric units" classname="com.keepcooking.app.ingest.IngredientParserTest" time="0.0"/>
+  <testcase name="tablespoon variants" classname="com.keepcooking.app.ingest.IngredientParserTest" time="0.0"/>
+  <testcase name="ascii fraction" classname="com.keepcooking.app.ingest.IngredientParserTest" time="0.001"/>
+  <testcase name="mixed number" classname="com.keepcooking.app.ingest.IngredientParserTest" time="0.0"/>
+  <testcase name="detector looks like recipe" classname="com.keepcooking.app.ingest.IngredientParserTest" time="0.001"/>
+  <testcase name="bare name" classname="com.keepcooking.app.ingest.IngredientParserTest" time="0.0"/>
+  <testcase name="parse lines skips blanks" classname="com.keepcooking.app.ingest.IngredientParserTest" time="0.0"/>
+  <testcase name="unicode half" classname="com.keepcooking.app.ingest.IngredientParserTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
