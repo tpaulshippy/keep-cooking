@@ -37,5 +37,11 @@
 	<true/>
 	<key>SMIDGEN_API_BASE_URL</key>
 	<string>$(SMIDGEN_API_BASE_URL)</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Listen for hands-free cook commands while the recipe is on screen.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Recognize cook commands like Next step on-device.</string>
+	<!-- NOTE (project.yml): `xcodegen generate` rewrites Config plists from
+	     scratch — re-apply the two keys above by hand after any regen. -->
 </dict>
 </plist>

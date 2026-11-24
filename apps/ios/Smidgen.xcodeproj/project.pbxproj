@@ -9,10 +9,13 @@
 /* Begin PBXBuildFile section */
 		146B4607ACF94CD235B22A99 /* ShopHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3297070733AC64326D629042 /* ShopHelpers.swift */; };
 		7C2A9E4B1D3F4A8B9E123456 /* CookSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98BD4B83DAED27582CD5E9C /* CookSession.swift */; };
+		C001CE5025EED4A1B9B0C7D01 /* VoiceCommandParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11CE3025EED4A1B9B0C7D2A /* VoiceCommandParser.swift */; };
 		15F5E222D96C0BF5A0B2758A /* ShopViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B49F0C98D1D42A92BAAC37D /* ShopViews.swift */; };
 		1A9B1E92D6226B11D146CF49 /* CookModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE64A7F90524D00758BED160 /* CookModeView.swift */; };
 		1D7D8265EA70F7516559552F /* PlanViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 001753EFE47673C0075BB23A /* PlanViews.swift */; };
 		237356453E8CA48A6C10880B /* CookSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98BD4B83DAED27582CD5E9C /* CookSession.swift */; };
+		C001CE5025EED4A1B9B0C7D02 /* VoiceCommandParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11CE3025EED4A1B9B0C7D2A /* VoiceCommandParser.swift */; };
+		9A8B7C6D5E4F3A2B1C0D9E801 /* VoiceCookManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A8B7C6D5E4F3A2B1C0D9E8F /* VoiceCookManager.swift */; };
 		24AF59A73F6E2C90572C38DE /* SeedLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB072D7F5ECACC2922F3EBD6 /* SeedLoader.swift */; };
 		283E34988CC8C6258483837B /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = C29A1009A84B444254CD7415 /* Models.swift */; };
 		29C96541DCCC06E1DF27E2BB /* LibraryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64208EF15E7B5BC7A25C6337 /* LibraryModels.swift */; };
@@ -194,6 +197,8 @@
 		E048AEAE306958C06CF0B8AD /* ClipboardBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardBanner.swift; sourceTree = "<group>"; };
 		E2A8C22786FA68F1E6CC4BC9 /* OCRScanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OCRScanView.swift; sourceTree = "<group>"; };
 		E98BD4B83DAED27582CD5E9C /* CookSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CookSession.swift; sourceTree = "<group>"; };
+		F11CE3025EED4A1B9B0C7D2A /* VoiceCommandParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCommandParser.swift; sourceTree = "<group>"; };
+		9A8B7C6D5E4F3A2B1C0D9E8F /* VoiceCookManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCookManager.swift; sourceTree = "<group>"; };
 		E9A30DB2326B9C248EB3FFAC /* recipe-07.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "recipe-07.json"; sourceTree = "<group>"; };
 		EAAEC2770664BE6E156485AA /* recipe-02.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "recipe-02.json"; sourceTree = "<group>"; };
 		EACF5E755C544FFBD1793665 /* ShareViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViews.swift; sourceTree = "<group>"; };
@@ -257,6 +262,8 @@
 			children = (
 				CE64A7F90524D00758BED160 /* CookModeView.swift */,
 				E98BD4B83DAED27582CD5E9C /* CookSession.swift */,
+				F11CE3025EED4A1B9B0C7D2A /* VoiceCommandParser.swift */,
+				9A8B7C6D5E4F3A2B1C0D9E8F /* VoiceCookManager.swift */,
 				3950650623396EA2ADBCA9E2 /* CookTests.swift */,
 				4A40A587E766B41D3A54B7F6 /* RecipeScaler.swift */,
 				B399F5950B23BA7D5BCE68A9 /* StepTimerParser.swift */,
@@ -661,6 +668,7 @@
 				2B20935642F9BED4293DF27A /* ClipboardBanner.swift in Sources */,
 				AF6EAE9A96B3786B457342CD /* CookTests.swift in Sources */,
 				7C2A9E4B1D3F4A8B9E123456 /* CookSession.swift in Sources */,
+				C001CE5025EED4A1B9B0C7D01 /* VoiceCommandParser.swift in Sources */,
 				6ED184ED02D444C21775EF2E /* DuplicateFinder.swift in Sources */,
 				3543E32D27FE72EE997DE03F /* DuplicateFinderTests.swift in Sources */,
 				5CBB976656FD84F211C61808 /* IngestHumanPolishTests.swift in Sources */,
@@ -703,6 +711,8 @@
 				41637B0E1053163C90E1450D /* ClipboardBanner.swift in Sources */,
 				1A9B1E92D6226B11D146CF49 /* CookModeView.swift in Sources */,
 				237356453E8CA48A6C10880B /* CookSession.swift in Sources */,
+				C001CE5025EED4A1B9B0C7D02 /* VoiceCommandParser.swift in Sources */,
+				9A8B7C6D5E4F3A2B1C0D9E801 /* VoiceCookManager.swift in Sources */,
 				DA47E527D252EA31D02388F6 /* DemoFlows.swift in Sources */,
 				4568A05235233561F22480F0 /* DuplicateFinder.swift in Sources */,
 				53892542916A3E727C80880B /* ExportView.swift in Sources */,

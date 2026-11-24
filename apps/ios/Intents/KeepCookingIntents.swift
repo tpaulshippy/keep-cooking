@@ -1,7 +1,9 @@
 // Keep Cooking — Lane 5 Organize
 // apps/ios/Intents/KeepCookingIntents.swift
 //
-// 3 Shortcuts via AppIntents (iOS 17+): Add Recipe, Start Timer, Add to List.
+// 8 Shortcuts via AppIntents (iOS 17+): Add Recipe, Start Timer, Add to List,
+// plus 5 cook controls (Next/Previous/Repeat step, Cross off ingredient,
+// Start Cook Timer).
 // Intents write through SnapshotWriter-visible SwiftData paths only — they
 // never touch the network or SyncEngine directly; sync picks up the new
 /// updated records via the normal outbox on next launch/refresh.
@@ -13,11 +15,27 @@ import Foundation
 #if canImport(AppIntents)
 import AppIntents
 import SwiftData
+import UserNotifications
 #if canImport(UIKit)
 import UIKit
 #endif
 
 // MARK: - Shared helpers
+
+/// Handoff bridge to the live Cook session. Intent extensions run in a
+/// separate process with no access to the in-memory CookSession /
+/// CookVoiceManager, so stateless nav intents write a pending command that
+/// the app consumes (and clears) on launch/foreground. Key is consumed by
+/// the Cook view + manager — do not rename without updating both sides.
+private enum CookPendingHandoff {
+    static let suiteName = "group.com.smidgen.share"
+    static let key = "cook.pendingCommand"
+
+    static func write(_ value: String) {
+        let defaults = UserDefaults(suiteName: suiteName) ?? .standard
+        defaults.set(value, forKey: key)
+    }
+}
 
 @MainActor
 private enum IntentStore {
@@ -169,9 +187,168 @@ struct AddToListIntent: AppIntent {
     }
 }
 
+// MARK: - 4. Cook controls (parity with in-app voice)
+//
+// LIMITATION: AppIntent extensions run in a separate process with no access
+// to the live in-memory CookSession / CookVoiceManager. These intents are
+// therefore handoff-based: each one writes UserDefaults
+// (group.com.smidgen.share, key "cook.pendingCommand") — "next" /
+// "previous" / "repeat" / "crossoff:<normalized-name>" — and opens the app
+// (openAppWhenRun=true) where the live session consumes + clears the
+// command. None of them performs continuous listening — the Siri path is
+// one-shot per invocation.
+
+/// "Next step" — writes a "next" pending command for the live session to
+/// consume on foreground, then opens the app. Stateless by design (no live
+/// CookSession access from the intent process).
+struct NextStepIntent: AppIntent {
+    static var title: LocalizedStringResource = "Next step"
+    static var description = IntentDescription("Advances to the next cooking step in Keep Cooking.")
+    static var openAppWhenRun: Bool = true
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        CookPendingHandoff.write("next")
+        return .result(dialog: "Opening Keep Cooking to go to the next step.")
+    }
+}
+
+/// "Previous step" — writes a "previous" pending command, then opens the app.
+struct PreviousStepIntent: AppIntent {
+    static var title: LocalizedStringResource = "Previous step"
+    static var description = IntentDescription("Goes back to the previous cooking step in Keep Cooking.")
+    static var openAppWhenRun: Bool = true
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        CookPendingHandoff.write("previous")
+        return .result(dialog: "Opening Keep Cooking to go back a step.")
+    }
+}
+
+/// "Repeat that / Read current step" — writes a "repeat" pending command,
+/// then opens the app where the live session re-reads the current step.
+struct RepeatStepIntent: AppIntent {
+    static var title: LocalizedStringResource = "Repeat step"
+    static var description = IntentDescription("Repeats the current cooking step in Keep Cooking.")
+    static var openAppWhenRun: Bool = true
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        CookPendingHandoff.write("repeat")
+        return .result(dialog: "Opening Keep Cooking to repeat this step.")
+    }
+}
+
+/// "Cross off <ingredient>" — resolves a fuzzy ingredient match in the
+/// most-recent recipes (same VoiceCommandParser resolution as in-app
+/// voice), writes a "crossoff:<name>" pending command for the live session
+/// to consume, then opens the app. Never reports success without the
+/// handoff: unknown names throw a spoken message.
+struct CrossOffIngredientIntent: AppIntent {
+    static var title: LocalizedStringResource = "Cross off ingredient"
+    static var description = IntentDescription("Crosses off an ingredient in Keep Cooking.")
+    static var openAppWhenRun: Bool = true
+
+    @Parameter(title: "Ingredient") var ingredient: String
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Cross off \(\.$ingredient)")
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let needle = ingredient.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty else {
+            throw IntentExecutionError.message("Tell me which ingredient to cross off.")
+        }
+        let container = try IntentStore.container()
+        let context = ModelContext(container)
+        let recipes = (try? context.fetch(FetchDescriptor<Recipe>(
+            predicate: #Predicate { !$0.deleted },
+            sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]))) ?? []
+        // Shared fuzzy resolution (VoiceCommandParser lives in the same app
+        // target as these intents). Deleted rows are excluded so a removed
+        // ingredient can never match.
+        var matched: Ingredient?
+        for recipe in recipes {
+            let live = recipe.ingredients.filter { !$0.deleted }
+            let pairs = live.map { (id: $0.id, name: $0.name) }
+            if let id = ingredientId(matching: needle, in: pairs) {
+                matched = live.first { $0.id == id }
+                break
+            }
+        }
+        guard let found = matched else {
+            throw IntentExecutionError.message("I don't see \(needle) in your recent recipes.")
+        }
+        let display = found.display.isEmpty ? found.name : found.display
+        CookPendingHandoff.write("crossoff:\(voiceNormalizedName(found.name))")
+        return .result(dialog: "Opening Keep Cooking to cross off \(display).")
+    }
+}
+
+/// "Start cook timer" — logs a StepTimer on the "Shortcut Timers" recipe
+/// (so Cook mode sees it) AND schedules a real local notification mirroring
+/// CookActivityStub.schedule. Offline; does not drive the live CookSession.
+struct StartCookTimerIntent: AppIntent {
+    static var title: LocalizedStringResource = "Start Cook Timer"
+    static var description = IntentDescription("Starts a cook timer and logs it on a recipe step.")
+    static var openAppWhenRun: Bool = false
+
+    @Parameter(title: "Minutes") var minutes: Int
+    @Parameter(title: "Label", default: "") var label: String
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Start a \(\.$minutes)-minute cook timer")
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        guard minutes > 0, minutes <= 720 else {
+            throw IntentExecutionError.message("Keep timers between 1 minute and 12 hours.")
+        }
+        let container = try IntentStore.container()
+        let context = ModelContext(container)
+        let name = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        let timerLabel = name.isEmpty ? "\(minutes)-minute timer" : name
+        // Same "Shortcut Timers" logging as StartTimerIntent so Cook mode sees it.
+        let existing = try? context.fetch(FetchDescriptor<Recipe>(
+            predicate: #Predicate { $0.title == "Shortcut Timers" && !$0.deleted }))
+        let recipe: Recipe
+        if let found = existing?.first {
+            recipe = found
+        } else {
+            recipe = Recipe(householdId: "hh-demo", title: "Shortcut Timers", deviceId: IntentStore.deviceId())
+            context.insert(recipe)
+        }
+        let position = (recipe.steps.map { $0.position }.max() ?? -1) + 1
+        let step = Step(recipeId: recipe.id, position: position,
+                        text: timerLabel, timers: [StepTimer(seconds: minutes * 60, label: timerLabel)],
+                        updatedAt: Date(), deviceId: recipe.deviceId)
+        step.recipe = recipe
+        context.insert(step)
+        recipe.updatedAt = Date()
+        try context.save()
+        // Real timer: mirror CookActivityStub.schedule — a local notification
+        // that fires even if the app is backgrounded. Authorization cannot be
+        // prompted well from an intent, so schedule and let the countdown
+        // dialog stand; the StepTimer log above keeps Cook mode in sync.
+        let content = UNMutableNotificationContent()
+        content.title = "Keep Cooking timer"
+        content.body = "\(timerLabel) — done!"
+        content.sound = .default
+        let trigger = UNTimeIntervalNotificationTrigger(
+            timeInterval: max(1, TimeInterval(minutes * 60)), repeats: false)
+        try await UNUserNotificationCenter.current().add(UNNotificationRequest(
+            identifier: "cook-timer-\(UUID().uuidString)", content: content, trigger: trigger))
+        return .result(dialog: "Timer set for \(minutes) minutes: \(timerLabel).")
+    }
+}
+
 // MARK: - Shortcuts provider
 
-/// Surfaces all three intents in the Shortcuts app.
+/// Surfaces all eight intents in the Shortcuts app.
 struct KeepCookingShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
@@ -191,6 +368,36 @@ struct KeepCookingShortcuts: AppShortcutsProvider {
             phrases: ["Add to \(.applicationName) list", "Add groceries with \(.applicationName)"],
             shortTitle: "Add to List",
             systemImageName: "cart"
+        )
+        AppShortcut(
+            intent: NextStepIntent(),
+            phrases: ["Next step with \(.applicationName)", "Next cooking step with \(.applicationName)"],
+            shortTitle: "Next Step",
+            systemImageName: "chevron.right"
+        )
+        AppShortcut(
+            intent: PreviousStepIntent(),
+            phrases: ["Previous step with \(.applicationName)", "Go back a step with \(.applicationName)"],
+            shortTitle: "Previous Step",
+            systemImageName: "chevron.left"
+        )
+        AppShortcut(
+            intent: RepeatStepIntent(),
+            phrases: ["Repeat step with \(.applicationName)", "Read current step with \(.applicationName)"],
+            shortTitle: "Repeat Step",
+            systemImageName: "repeat"
+        )
+        AppShortcut(
+            intent: CrossOffIngredientIntent(),
+            phrases: ["Cross off ingredient with \(.applicationName)", "Check off ingredient with \(.applicationName)"],
+            shortTitle: "Cross Off Ingredient",
+            systemImageName: "checkmark.circle"
+        )
+        AppShortcut(
+            intent: StartCookTimerIntent(),
+            phrases: ["Start cook timer with \(.applicationName)", "Set cook timer with \(.applicationName)"],
+            shortTitle: "Start Cook Timer",
+            systemImageName: "timer"
         )
     }
 }

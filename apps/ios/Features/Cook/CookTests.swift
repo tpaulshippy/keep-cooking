@@ -193,4 +193,328 @@ final class CookTests: XCTestCase {
         XCTAssertEqual(ids.count, 2)
         XCTAssertNotEqual(ids[0], ids[1])
     }
+
+    // MARK: - Voice parser (Option A, Lane 10)
+
+    func testVoiceNextPreviousRepeat() {
+        XCTAssertEqual(parseVoiceCommand("next"), .next)
+        // Standalone-utterance match: trim + trailing period + case.
+        XCTAssertEqual(parseVoiceCommand("  Next. "), .next)
+        XCTAssertEqual(parseVoiceCommand("previous step"), .previous)
+        XCTAssertEqual(parseVoiceCommand("repeat that"), .repeatStep)
+        // Wake-word prefix is stripped generally.
+        XCTAssertEqual(parseVoiceCommand("smidgen next"), .next)
+        XCTAssertEqual(parseVoiceCommand("hey smidgen, previous step"), .previous)
+    }
+
+    func testVoiceGoToStep() {
+        XCTAssertEqual(parseVoiceCommand("go to step 3"), .goToStep(3))
+        XCTAssertEqual(parseVoiceCommand("go to step three"), .goToStep(3))
+        XCTAssertEqual(parseVoiceCommand("go to the last step"), .goToStep(VoiceCommand.lastStep))
+    }
+
+    func testVoiceStartOver() {
+        XCTAssertEqual(parseVoiceCommand("start over"), .startOver)
+    }
+
+    func testVoiceTimerExtraction() {
+        XCTAssertEqual(
+            parseVoiceCommand("start a timer for 10 minutes"),
+            .startTimer(seconds: 600, label: nil))
+        // Ranges use the upper bound, matching parseTimers.
+        XCTAssertEqual(
+            parseVoiceCommand("start a timer for 12-15 minutes"),
+            .startTimer(seconds: 900, label: nil))
+        XCTAssertEqual(
+            parseVoiceCommand("start a timer for ten minutes"),
+            .startTimer(seconds: 600, label: nil))
+        // No duration: the caller resolves the current step via parseTimers.
+        XCTAssertEqual(
+            parseVoiceCommand("start the timer"),
+            .startTimer(seconds: nil, label: nil))
+    }
+
+    func testVoiceScaleCommands() {
+        XCTAssertEqual(parseVoiceCommand("double the recipe"), .doubleScale)
+        XCTAssertEqual(parseVoiceCommand("halve the recipe"), .halveScale)
+        XCTAssertEqual(parseVoiceCommand("reset the scale"), .resetScale)
+    }
+
+    func testVoiceSmidgenPrefixRule() {
+        // Bare ambiguous utterances stay unknown ...
+        XCTAssertEqual(parseVoiceCommand("halve it"), .unknown)
+        XCTAssertEqual(parseVoiceCommand("double it"), .unknown)
+        XCTAssertEqual(parseVoiceCommand("come again"), .unknown)
+        // ... but are honored with the "smidgen" prefix.
+        XCTAssertEqual(parseVoiceCommand("smidgen halve it"), .halveScale)
+        XCTAssertEqual(parseVoiceCommand("smidgen double it"), .doubleScale)
+        XCTAssertEqual(parseVoiceCommand("smidgen come again"), .repeatStep)
+        XCTAssertEqual(parseVoiceCommand("smidgen what was that?"), .repeatStep)
+        XCTAssertEqual(parseVoiceCommand("smidgen cancel"), .stopCooking)
+    }
+
+    func testVoiceMidSentenceGuard() {
+        // Parser only handles standalone utterances; embedded commands stay
+        // unknown (mid-sentence gating lives with the caller).
+        XCTAssertEqual(parseVoiceCommand("please tell me the next step"), .unknown)
+        XCTAssertEqual(parseVoiceCommand("can you go to step 3 for me"), .unknown)
+    }
+
+    func testVoiceCrossUncrossFuzzy() {
+        XCTAssertEqual(parseVoiceCommand("cross off the flour"), .crossOff(name: "flour"))
+        XCTAssertEqual(parseVoiceCommand("uncross flour"), .uncross(name: "flour"))
+        // Fuzzy helper: a short spoken name matches the longer label.
+        XCTAssertEqual(
+            fuzzyVoiceMatch("flour", candidates: ["All-purpose flour", "Sugar"]),
+            "All-purpose flour")
+    }
+
+    func testVoiceAddToList() {
+        XCTAssertEqual(
+            parseVoiceCommand("add the ingredients to my list"),
+            .addToList(listName: nil))
+        XCTAssertEqual(
+            parseVoiceCommand("add the ingredients to my costco list"),
+            .addToList(listName: "costco"))
+    }
+
+    func testVoiceIngredientAmount() {
+        XCTAssertEqual(
+            parseVoiceCommand("how much flour do i need"),
+            .ingredientAmount(name: "flour"))
+    }
+
+    func testVoiceStopCommands() {
+        XCTAssertEqual(parseVoiceCommand("stop speaking"), .stopSpeaking)
+        XCTAssertEqual(parseVoiceCommand("stop cooking"), .stopCooking)
+    }
+
+    func testVoiceScaleHelper() {
+        var target = 4.0
+        applyScaleCommand(.double, baseServings: 4, targetServings: &target)
+        XCTAssertEqual(target, 8)
+        applyScaleCommand(.halve, baseServings: 4, targetServings: &target)
+        XCTAssertEqual(target, 2)
+        applyScaleCommand(.reset, baseServings: 4, targetServings: &target)
+        XCTAssertEqual(target, 4)
+    }
+
+    func testVoiceIngredientIdHelper() {
+        let ingredients = [(id: "i1", name: "All-purpose flour"), (id: "i2", name: "Sugar")]
+        XCTAssertEqual(ingredientId(matching: "flour", in: ingredients), "i1")
+        XCTAssertNil(ingredientId(matching: "cinnamon", in: ingredients))
+    }
+}
+
+// MARK: - Voice parser cubic fixes (Lane 10 P1/P2, appended only)
+
+extension CookTests {
+    // Fix 1: normalize strips ASCII + curly apostrophes.
+    func testVoiceNormalizeAsciiApostrophe() {
+        XCTAssertEqual(normalizeVoiceText("I'm done"), "im done")
+    }
+
+    func testVoiceNormalizeCurlyApostrophe() {
+        XCTAssertEqual(normalizeVoiceText("I\u{2019}m done"), "im done")
+    }
+
+    func testVoiceNormalizeLeftSingleQuote() {
+        XCTAssertEqual(normalizeVoiceText("I\u{2018}m done"), "im done")
+    }
+
+    func testVoiceNormalizeBacktickApostrophe() {
+        XCTAssertEqual(normalizeVoiceText("I`m done"), "im done")
+    }
+
+    func testVoiceSmidgenImDoneCurly() {
+        XCTAssertEqual(parseVoiceCommand("smidgen I\u{2019}m done"), .next)
+    }
+
+    func testVoiceSmidgenImDoneAscii() {
+        XCTAssertEqual(parseVoiceCommand("smidgen I'm done"), .next)
+    }
+
+    func testVoiceBareImDoneUnknownBothQuotes() {
+        XCTAssertEqual(parseVoiceCommand("I'm done"), .unknown)
+        XCTAssertEqual(parseVoiceCommand("I\u{2019}m done"), .unknown)
+    }
+
+    // Fix 2: token-boundary-aware fuzzy scoring + tie rejection.
+    func testFuzzyExactEqualityWins() {
+        XCTAssertEqual(
+            fuzzyVoiceMatch("sea salt", candidates: ["sea salt", "sea salt flakes"]),
+            "sea salt")
+    }
+
+    func testFuzzyTokenOverlapBeatsSubstring() {
+        // "salt" is an exact token of "sea salt" but only a non-boundary
+        // substring of "salty snacks" -> the token match must win.
+        XCTAssertEqual(
+            fuzzyVoiceMatch("salt", candidates: ["salty snacks", "sea salt"]),
+            "sea salt")
+    }
+
+    func testFuzzyNonBoundarySubstringRejected() {
+        XCTAssertNil(fuzzyVoiceMatch("our", candidates: ["flour"]))
+    }
+
+    func testFuzzyPrefixSubstringRejected() {
+        XCTAssertNil(fuzzyVoiceMatch("flo", candidates: ["flour"]))
+    }
+
+    func testFuzzyMostMatchedTokensWins() {
+        XCTAssertEqual(
+            fuzzyVoiceMatch(
+                "flour sugar salt",
+                candidates: ["flour sugar", "flour sugar salt"]),
+            "flour sugar salt")
+    }
+
+    func testFuzzyLongestSpanWinsOnTokenCountTie() {
+        // Both overlap 1 token; "pepper" (6 chars) beats "salt" (4 chars).
+        XCTAssertEqual(
+            fuzzyVoiceMatch(
+                "pepper salt",
+                candidates: ["pepper flakes", "pepperoni salt"]),
+            "pepper flakes")
+    }
+
+    func testFuzzyTieReturnsNil() {
+        XCTAssertNil(
+            fuzzyVoiceMatch("flour", candidates: ["white flour", "wheat flour"]))
+    }
+
+    func testFuzzyExactDuplicateTieReturnsNil() {
+        XCTAssertNil(fuzzyVoiceMatch("flour", candidates: ["Flour", "flour"]))
+    }
+
+    func testFuzzyNoMatchReturnsNil() {
+        XCTAssertNil(fuzzyVoiceMatch("cinnamon", candidates: ["flour", "sugar"]))
+    }
+
+    func testFuzzyEmptyQueryReturnsNil() {
+        XCTAssertNil(fuzzyVoiceMatch("  ", candidates: ["flour"]))
+    }
+
+    func testFuzzyEmptyCandidatesReturnsNil() {
+        XCTAssertNil(fuzzyVoiceMatch("flour", candidates: []))
+    }
+
+    func testFuzzyHyphenBoundaryMatches() {
+        XCTAssertEqual(
+            fuzzyVoiceMatch("purpose", candidates: ["all-purpose flour", "sugar"]),
+            "all-purpose flour")
+    }
+
+    func testVoiceIngredientIdAmbiguousReturnsNil() {
+        let ingredients = [(id: "i1", name: "white flour"), (id: "i2", name: "wheat flour")]
+        XCTAssertNil(ingredientId(matching: "flour", in: ingredients))
+    }
+
+    // Fix 3: bounded timer durations (1...43200s), finite guard.
+    func testVoiceTimerZeroMinutesUnknown() {
+        XCTAssertEqual(parseVoiceCommand("start a timer for 0 minutes"), .unknown)
+    }
+
+    func testVoiceTimerHugeHoursUnknown() {
+        XCTAssertEqual(parseVoiceCommand("start a timer for 100 hours"), .unknown)
+    }
+
+    func testVoiceTimerTwelveHoursOk() {
+        XCTAssertEqual(
+            parseVoiceCommand("start a timer for 12 hours"),
+            .startTimer(seconds: 43200, label: nil))
+    }
+
+    func testVoiceTimerThirteenHoursUnknown() {
+        XCTAssertEqual(parseVoiceCommand("start a timer for 13 hours"), .unknown)
+    }
+
+    func testVoiceTimerHugeSecondsUnknown() {
+        XCTAssertEqual(parseVoiceCommand("start a timer for 50000 seconds"), .unknown)
+    }
+
+    func testVoiceTimerFractionalMinuteOk() {
+        XCTAssertEqual(
+            parseVoiceCommand("start a timer for 0.5 minutes"),
+            .startTimer(seconds: 30, label: nil))
+    }
+
+    func testVoiceTimerAstronomicalHoursUnknown() {
+        XCTAssertEqual(
+            parseVoiceCommand("start a timer for 99999999999999999999 hours"), .unknown)
+    }
+
+    // Fix 4: hundreds/thousands words, no partial-number fallback.
+    func testVoiceTimerOneHundredMinutes() {
+        XCTAssertEqual(
+            parseVoiceCommand("start a timer for one hundred minutes"),
+            .startTimer(seconds: 6000, label: nil))
+    }
+
+    func testVoiceTimerOneHundredTwentyFiveMinutes() {
+        XCTAssertEqual(
+            parseVoiceCommand("start a timer for one hundred twenty five minutes"),
+            .startTimer(seconds: 7500, label: nil))
+    }
+
+    func testVoiceTimerTwoHundredFiftyMinutesNoTruncation() {
+        XCTAssertEqual(
+            parseVoiceCommand("start a timer for two hundred fifty minutes"),
+            .startTimer(seconds: 15000, label: nil))
+    }
+
+    func testVoiceTimerAHundredSeconds() {
+        XCTAssertEqual(
+            parseVoiceCommand("set a timer for a hundred seconds"),
+            .startTimer(seconds: 100, label: nil))
+    }
+
+    func testVoiceTimerOneHundredAndFiveSeconds() {
+        XCTAssertEqual(
+            parseVoiceCommand("set a timer for one hundred and five seconds"),
+            .startTimer(seconds: 105, label: nil))
+    }
+
+    func testVoiceTimerOneThousandSeconds() {
+        XCTAssertEqual(
+            parseVoiceCommand("set a timer for one thousand seconds"),
+            .startTimer(seconds: 1000, label: nil))
+    }
+
+    func testVoiceTimerBareHundredUnknown() {
+        XCTAssertEqual(parseVoiceCommand("start a timer for hundred minutes"), .unknown)
+    }
+
+    // Fix 5: step validation helper; parse stays pure.
+    func testVoiceGoToStepParseCarriesAsIs() {
+        XCTAssertEqual(parseVoiceCommand("go to step 99"), .goToStep(99))
+    }
+
+    func testValidatedStepInRange() {
+        XCTAssertEqual(validatedStep(requested: 3, stepCount: 5), 3)
+    }
+
+    func testValidatedStepFirstAndLast() {
+        XCTAssertEqual(validatedStep(requested: 1, stepCount: 5), 1)
+        XCTAssertEqual(validatedStep(requested: 5, stepCount: 5), 5)
+    }
+
+    func testValidatedStepOutOfRange() {
+        XCTAssertNil(validatedStep(requested: 9, stepCount: 5))
+    }
+
+    func testValidatedStepZeroNil() {
+        XCTAssertNil(validatedStep(requested: 0, stepCount: 5))
+    }
+
+    func testValidatedStepLastMapsToCount() {
+        XCTAssertEqual(
+            validatedStep(requested: VoiceCommand.lastStep, stepCount: 5), 5)
+    }
+
+    func testValidatedStepEmptyRecipeNil() {
+        XCTAssertNil(validatedStep(requested: 1, stepCount: 0))
+        XCTAssertNil(validatedStep(requested: VoiceCommand.lastStep, stepCount: 0))
+    }
 }

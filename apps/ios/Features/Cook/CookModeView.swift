@@ -4,6 +4,8 @@
 // Start, visible keep-awake pill. iPad (.regular) keeps 2-column layout.
 
 import SwiftUI
+import UIKit
+import Foundation
 
 /// Cook mode for one recipe. Caller passes live SwiftData values as plain
 /// snapshots so this view stays store-agnostic (works with @Query or previews).
@@ -36,6 +38,10 @@ public struct CookModeView: View {
     @State private var targetServings: Double
     @State private var ingredientsExpanded = true
     @Environment(\.horizontalSizeClass) private var sizeClass
+    // Reconciled: VoiceCookManager owns read-aloud + listening state
+    // (same UserDefaults keys: cook.readAloudEnabled default true,
+    // cook.listeningEnabled default false).
+    @State private var voiceManager = VoiceCookManager()
 
     public init(title: String, baseServings: Double,
                 ingredients: [IngredientSnapshot], steps: [StepSnapshot],
@@ -108,10 +114,36 @@ public struct CookModeView: View {
         .onAppear {
             KeepAwake.enable()
             session.loadTimers(from: steps.map { $0.text })
+            // Wire voice callbacks (idempotent per appearance).
+            wireVoiceCallbacks()
+            // Consume any Shortcuts/intent handoff written while away.
+            // Shared key "cook.pendingCommand" (next/previous/repeat/
+            // crossoff:<name>/gotostep:<n>). Manager owns parsing + clearing;
+            // the view only maps its store-agnostic snapshots.
+            _ = voiceManager.consumePendingCommand(session: session, ingredients: voiceIngredients, steps: steps.map { $0.text })
+            // Resume listening when the persisted flag is on. The manager
+            // persists cook.listeningEnabled; permission-then-start avoids
+            // starting the engine before mic access resolves.
+            if voiceManager.listeningEnabled {
+                beginListening()
+            }
+            // VoiceCookManager owns speak on appear (interrupting read).
+            speakCurrentStep()
         }
         .onDisappear {
             KeepAwake.disable()
             CookActivityStub.cancel(ids: scheduledIds)
+            // Manager's stopListening also persists listeningEnabled off,
+            // fixing the stale-flag bug (was: stopped input, left flag true).
+            voiceManager.stopListening()
+        }
+        .onChange(of: session.stepIndex) {
+            // Re-read on every step change (pager swipe, dots, Back/Next/Finish).
+            // speakCurrentStep interrupts first so rapid swipes never pile up.
+            speakCurrentStep()
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            voiceBottomBar
         }
     }
 
@@ -456,6 +488,185 @@ public struct CookModeView: View {
         .clipShape(Capsule())
         .frame(maxWidth: .infinity)
         .accessibilityLabel("Screen stays awake while cooking")
+    }
+
+    // MARK: - Voice bottom bar (Paprika parity pill + reply + mic-denied)
+
+    // Bound to VoiceCookManager: pill toggles drive the manager, reply text
+    // and mic-denied state observe it.
+    private var voiceBottomBar: some View {
+        VStack(spacing: 8) {
+            if !voiceManager.lastReply.isEmpty {
+                voiceReplyView
+            }
+            if voiceManager.micDenied {
+                micDeniedPlacard
+            }
+            stepPillBar
+        }
+        .padding(.horizontal)
+        .padding(.top, 8)
+        .padding(.bottom, 10)
+        .background(.bar)
+    }
+
+    /// Reply area directly above the pill: last spoken/heard reply.
+    private var voiceReplyView: some View {
+        Text(voiceManager.lastReply)
+            .font(.body)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(Color(.secondarySystemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .accessibilityLabel("Voice reply: \(voiceManager.lastReply)")
+    }
+
+    /// Shown when listening was requested but mic access was denied.
+    private var micDeniedPlacard: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "mic.slash.fill")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+            Text("Microphone off — enable in Settings")
+                .font(.subheadline).bold()
+                .multilineTextAlignment(.leading)
+            Spacer()
+            Button("Settings") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.regular)
+            .frame(minHeight: 44)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(Color(.tertiarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .accessibilityLabel("Microphone off — enable in Settings")
+    }
+
+    /// Paprika-style bottom pill: Step X of N + read-aloud + listening toggles.
+    private var stepPillBar: some View {
+        HStack(spacing: 8) {
+            Text(steps.isEmpty ? "No steps" : "Step \(session.stepIndex + 1) of \(steps.count)")
+                .font(.headline)
+                .monospacedDigit()
+                .lineLimit(1)
+                .accessibilityLabel(steps.isEmpty ? "No steps" : "Step \(session.stepIndex + 1) of \(steps.count)")
+            Spacer()
+            // Read-aloud toggle (speaker icon).
+            Button {
+                voiceManager.readAloudEnabled.toggle()
+                if voiceManager.readAloudEnabled {
+                    speakCurrentStep()
+                } else {
+                    // Read-aloud OFF must silence in-flight TTS immediately.
+                    voiceManager.stopSpeakingOutput()
+                }
+            } label: {
+                Image(systemName: voiceManager.readAloudEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                    .font(.title3)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(voiceManager.readAloudEnabled ? "Read aloud on" : "Read aloud off")
+            .accessibilityHint("Toggles spoken step replies")
+            // Listening toggle (mic icon + live dot).
+            Button {
+                toggleListening()
+            } label: {
+                HStack(spacing: 6) {
+                    if voiceManager.listeningEnabled {
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 8, height: 8)
+                            .accessibilityHidden(true)
+                    }
+                    Image(systemName: voiceManager.listeningEnabled ? "mic.fill" : "mic.slash.fill")
+                        .font(.title3)
+                }
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(voiceManager.listeningEnabled ? "Listening on" : "Listening off")
+            .accessibilityHint("Toggles voice commands")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .background(Color(.secondarySystemBackground))
+        .clipShape(Capsule())
+    }
+
+    private func speakCurrentStep() {
+        #if os(iOS)
+        // Interrupting read stops any in-flight utterance first so rapid
+        // step changes never pile up. (Manager lane provides the combined
+        // call; fallback would be stopSpeakingOutput() + readCurrentStep.)
+        voiceManager.readCurrentStepInterrupting(steps: steps.map { $0.text }, session: session, locale: Locale.current)
+        #endif
+    }
+
+    /// Store-agnostic snapshots mapped to the manager's voice contract.
+    private var voiceIngredients: [VoiceIngredient] {
+        ingredients.map { VoiceIngredient(id: $0.id, name: $0.name, quantity: $0.quantity, unit: $0.unit) }
+    }
+
+    /// Wires manager callbacks. Only scale drives view state; the rest are
+    /// intentionally observed via `lastReply` (see comments below).
+    private func wireVoiceCallbacks() {
+        // Scale voice commands ("double it") drive the sticky servings
+        // stepper. Capture the Binding — not self — so the escaping
+        // callback can write through (View is a struct).
+        let servingsBinding = $targetServings
+        let base = baseServings
+        voiceManager.onScaleCommand = { factor in
+            let lower = max(0.25, base * 0.25)
+            let upper = base * 4
+            servingsBinding.wrappedValue = min(max(base * factor, lower), upper)
+        }
+        // onTimerCommand: intentionally unwired. The timer is scheduled by
+        // the manager; its reply is already set on lastReply and shown in
+        // the pill. No view-side scheduling (avoids double-scheduling with
+        // CookActivityStub) and no scheduledIds bookkeeping needed here.
+        // onStopCooking: intentionally no navigation. This view is
+        // store-agnostic with no router; popping mid-cook would strand
+        // timers/keep-awake state. The manager's "Done cooking." reply is
+        // shown in the pill and the user exits via the normal back button.
+        // onAddToList: intentionally unwired. This view only holds snapshot
+        // structs (no SwiftData context), so it cannot insert ListItems. The
+        // manager gives the honest spoken + pill reply ("Added to your …").
+    }
+
+    /// Permission-then-start entry point (shared by toggle-ON + onAppear resume).
+    /// Never starts the engine synchronously after requesting — the start
+    /// happens inside the permission completion.
+    private func beginListening() {
+        voiceManager.requestPermissionsThenStart { [voiceManager, session] in
+            voiceManager.startListening { transcript in
+                _ = voiceManager.handle(
+                    transcript: transcript,
+                    session: session,
+                    ingredients: voiceIngredients,
+                    steps: steps.map { $0.text }
+                )
+            }
+        }
+    }
+
+    private func toggleListening() {
+        if voiceManager.listeningEnabled {
+            voiceManager.listeningEnabled = false
+            voiceManager.stopListening()
+        } else {
+            voiceManager.listeningEnabled = true
+            beginListening()
+        }
     }
 
     private func durationString(_ seconds: Int) -> String {
