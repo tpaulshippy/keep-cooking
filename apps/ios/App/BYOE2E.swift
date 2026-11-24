@@ -39,10 +39,12 @@ public struct E2EJoinResult: Sendable, Equatable {
 public enum E2EJoinError: LocalizedError, Sendable {
     case notInvite
     case hashMismatch
+    case kidMismatch
     public var errorDescription: String? {
         switch self {
         case .notInvite: return "That text is not a Smidgen invite bundle."
         case .hashMismatch: return "Hash mismatch — code was mistyped or tampered with."
+        case .kidMismatch: return "Key ID mismatch — bundle was tampered with or created by an incompatible app."
         }
     }
 }
@@ -65,21 +67,31 @@ public func e2eInviteJSONString(_ bundle: SyncInviteBundle) -> String {
 }
 
 /// Parses pasted invite text into a `SyncInviteBundle`, verifying
-/// hash == householdHash(syncCode:householdId:) before returning.
-/// Stores nothing — the caller decides whether to `acceptInvite`.
+/// hash == householdHash(syncCode:householdId:) AND kid == kid(syncCode:)
+/// before returning. Stores nothing — the caller decides whether to
+/// `acceptInvite`.
 public func e2eParseInvite(_ pasted: String) throws -> SyncInviteBundle {
     let t = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
     guard let data = t.data(using: .utf8),
           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+          // Envelope version gate: only v2 bundles are accepted. Check
+          // before touching any other field so legacy/forged shapes fail
+          // closed here rather than falling through to crypto verification.
+          let version = obj["v"], version == "2",
           let householdId = obj["householdId"], !householdId.isEmpty,
           let syncCode = obj["syncCode"], !syncCode.isEmpty,
-          let kid = obj["kid"], !kid.isEmpty,
+          let bundleKid = obj["kid"], !bundleKid.isEmpty,
           let hash = obj["hash"], !hash.isEmpty
     else { throw E2EJoinError.notInvite }
+    // Recompute the key id from the presented code via the Sync layer hash
+    // and reject bundles whose kid does not match — before acceptInvite
+    // stores anything. Catches kid-swapping / cross-key paste attacks that
+    // hash verification alone would not flag on its own terms.
+    guard kid(syncCode: syncCode) == bundleKid else { throw E2EJoinError.kidMismatch }
     let bundle = SyncInviteBundle(
         householdId: householdId,
         syncCode: syncCode,
-        kid: kid,
+        kid: bundleKid,
         hash: hash,
         endpointHint: obj["endpointHint"]
     )
@@ -92,6 +104,9 @@ public func e2eParseInvite(_ pasted: String) throws -> SyncInviteBundle {
 /// Returns identifiers only — the code itself never surfaces.
 public func e2eJoin(pasted: String) throws -> E2EJoinResult {
     let bundle = try e2eParseInvite(pasted)
+    // Defense in depth: re-assert the kid binding immediately before
+    // acceptInvite persists anything, even though the parser already checked.
+    guard kid(syncCode: bundle.syncCode) == bundle.kid else { throw E2EJoinError.kidMismatch }
     guard E2EKeyStore.acceptInvite(bundle) else { throw E2EJoinError.hashMismatch }
     return E2EJoinResult(
         householdId: bundle.householdId,

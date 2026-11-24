@@ -414,16 +414,19 @@ export function createApp(
   app.get('/v2/sync/:hash', async (c) => {
     const hash = c.req.param('hash') ?? '';
     if (!E2E_HASH_RE.test(hash)) return c.json({ error: 'invalid household hash' }, 400);
-    const since = c.req.query('since') ?? '1970-01-01T00:00:00Z';
-    if (Number.isNaN(Date.parse(since))) return c.json({ error: 'invalid since' }, 400);
-    return c.json(await getStore().e2eList(hash, since));
+    const raw = c.req.query('since') ?? '1970-01-01T00:00:00.000Z';
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return c.json({ error: 'invalid since' }, 400);
+    return c.json(await getStore().e2eList(hash, parsed.toISOString()));
   });
   app.put('/v2/sync/:hash', async (c) => {
     const hash = c.req.param('hash') ?? '';
     if (!E2E_HASH_RE.test(hash)) return c.json({ error: 'invalid household hash' }, 400);
     const raw = await c.req.json().catch(() => null);
     if (!Array.isArray(raw)) return c.json({ error: 'expected an array of encrypted envelopes' }, 400);
-    const stored: string[] = [];
+    // Validate-first: parse every envelope (schema + householdHash match +
+    // entity set) before writing any, so a bad batch never partially lands.
+    const batch: EncryptedEnvelope[] = [];
     for (const item of raw) {
       const entity = (item as { entity?: unknown } | null | undefined)?.entity;
       if (entity === 'ingredient' || entity === 'step') {
@@ -438,6 +441,10 @@ export function createApp(
       const parsed = parseOrThrow(encryptedEnvelopeSchema, item);
       const env: EncryptedEnvelope = { ...parsed, deleted: parsed.deleted ?? false };
       if (env.householdHash !== hash) return c.json({ error: 'householdHash mismatch' }, 400);
+      batch.push(env);
+    }
+    const stored: string[] = [];
+    for (const env of batch) {
       if (await getStore().e2ePut(hash, env)) stored.push(env.id);
     }
     return c.json({ stored });

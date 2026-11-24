@@ -80,8 +80,12 @@ CREATE INDEX IF NOT EXISTS idx_recipes_household ON recipes(household_id);
 CREATE INDEX IF NOT EXISTS idx_ingredients_recipe ON ingredients(recipe_id);
 CREATE INDEX IF NOT EXISTS idx_steps_recipe ON steps(recipe_id);
 CREATE INDEX IF NOT EXISTS idx_plans_date ON plans(household_id, date);
--- E2E V1 blind blobs (also shipped as drizzle/0002_e2e_blobs.sql for
--- existing DBs; duplicated here so fresh `db:apply:local` includes it).
+-- E2E V1 blind blobs (canonical backfill: drizzle/0002_e2e_blobs.sql;
+-- duplicated here so a fresh DB gets the table from 0001 alone).
+-- Canonical apply order for new or existing DBs: 0001_init.sql, then
+-- 0002_e2e_blobs.sql (`npm run db:apply:local` / `db:apply:remote`;
+-- scripts/deploy-backend.sh applies the same order). All statements are
+-- IF NOT EXISTS, so re-applying is safe.
 CREATE TABLE IF NOT EXISTS sync_blobs_v2 (
   household_hash TEXT NOT NULL,
   id TEXT NOT NULL,

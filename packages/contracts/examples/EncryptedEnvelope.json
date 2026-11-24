@@ -1,0 +1,13 @@
+{
+  "v": 2,
+  "alg": "AES-GCM-256",
+  "kid": "AbC123xYzOpQ",
+  "householdHash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "id": "0190c8a1-7a2e-7b3c-9d1e-000000000001",
+  "entity": "recipe",
+  "updatedAt": "2026-11-20T12:00:00Z",
+  "deviceId": "iphone-17-a",
+  "deleted": false,
+  "nonce": "MDEyMzQ1Njc4OTAx",
+  "ciphertext": "qrvM2K7pl+8f0w==REDACTED-OPAQUE-BYTES=="
+}

@@ -391,9 +391,22 @@ private let e2eRecipeIdKeys = ["recipeId", "recipe_id"]
 
 /// Folds ingredient/step envelopes into their parent recipe envelope
 /// BEFORE encryption. Children are embedded as entries in the parent's
-/// `ingredients` / `steps` payload arrays (each entry carries the child's
-/// own id + deleted flag so tombstones survive the fold); the parent's
-/// updatedAt is bumped to the newest folded child.
+/// `ingredients` / `steps` payload arrays; the parent's updatedAt bumps only
+/// when the fold actually changes content (new entry, winning replacement,
+/// or tombstone removal — never on a losing LWW compare).
+///
+/// Tombstones fold by ABSENCE: a `deleted: true` child REMOVES its entry from
+/// the embedded array instead of appending a `deleted: true` marker. The
+/// receiver rebuilds children from the embedded set (delete-all + recreate),
+/// so a lingering marker would restore the child as live. Absence survives
+/// that apply path, and the parent's bumped header LWW decides the winner.
+/// (Decrypt additionally prunes any `deleted: true` entries sealed by older
+/// clients — see `pruneDeletedFoldedChildren`.)
+///
+/// Each embedded entry carries the child's own `updatedAt` (epoch millis) +
+/// `deviceId` stamps; a re-fold replaces an existing same-id entry only when
+/// the incoming child wins that per-child LWW (newer, ties to incoming),
+/// so a stale re-push cannot clobber a newer embedded child.
 ///
 /// - Children whose parent recipe envelope is in the same batch merge into it.
 /// - Children whose parent is NOT in the batch get a synthesized parent
@@ -401,8 +414,7 @@ private let e2eRecipeIdKeys = ["recipeId", "recipe_id"]
 ///   children, so no standalone child is ever emitted. A later real recipe
 ///   envelope for the same id converges via normal header LWW.
 /// - Non-child entities (recipe, list, pantryItem, plan, menu) pass through.
-/// - Tombstone (`deleted: true`) children fold as deleted entries; a
-///   tombstoned recipe passes through untouched (its payload is irrelevant).
+/// - A tombstoned recipe passes through untouched (its payload is irrelevant).
 public func foldEnvelopesForE2E(_ envelopes: [SyncEnvelope]) -> [SyncEnvelope] {
     var recipes: [String: SyncEnvelope] = [:]
     var recipeOrder: [String] = []
@@ -465,29 +477,105 @@ public func foldEnvelopesForE2E(_ envelopes: [SyncEnvelope]) -> [SyncEnvelope] {
 
 private func foldChild(_ child: SyncEnvelope, into parent: SyncEnvelope) -> SyncEnvelope {
     var parent = parent
-    var entry = child.payload
-    entry["id"] = .string(child.id)
-    entry["deleted"] = .bool(child.deleted)
     let listKey = child.entity == .ingredient ? "ingredients" : "steps"
     var list = parent.payload[listKey]?.arrayValue ?? []
-    // Replace any existing entry for the same child id (idempotent fold),
-    // otherwise append.
+    let incomingMillis = e2eChildMillis(child.updatedAt)
+    if child.deleted {
+        // Tombstone-by-absence: drop the embedded entry so the receiver's
+        // rebuild restores nothing. No marker is appended (a marker would
+        // restore as live on apply).
+        let before = list.count
+        list.removeAll { $0.objectValue?["id"]?.stringValue == child.id }
+        if list.count != before {
+            parent.payload[listKey] = .array(list)
+            if child.updatedAt > parent.updatedAt {
+                parent.updatedAt = child.updatedAt
+            }
+        }
+        return parent
+    }
+    var entry = child.payload
+    entry["id"] = .string(child.id)
+    entry["deleted"] = .bool(false)
+    entry["updatedAt"] = .int(incomingMillis)
+    entry["deviceId"] = .string(child.deviceId)
+    var changed = false
     if let index = list.firstIndex(where: { $0.objectValue?["id"]?.stringValue == child.id }) {
-        list[index] = .object(entry)
+        // Per-child LWW: replace only when the incoming child wins.
+        // Unstamped (legacy/locally-collected) entries sort as epoch 0, so a
+        // real child envelope always wins over them; ties go to incoming,
+        // matching the header tie-break (deterministic convergence).
+        let existingMillis = list[index].objectValue?["updatedAt"]?.intValue ?? Int.min
+        if incomingMillis >= existingMillis {
+            list[index] = .object(entry)
+            changed = true
+        }
     } else {
         list.append(.object(entry))
+        changed = true
     }
-    parent.payload[listKey] = .array(list)
-    if child.updatedAt > parent.updatedAt {
-        parent.updatedAt = child.updatedAt
+    if changed {
+        parent.payload[listKey] = .array(list)
+        if child.updatedAt > parent.updatedAt {
+            parent.updatedAt = child.updatedAt
+        }
     }
     return parent
 }
 
+/// Whole-millisecond instant of a child envelope for embedded LWW stamps.
+/// Integer millis are exact through JSON; doubles would risk precision loss.
+private func e2eChildMillis(_ date: Date) -> Int {
+    Int((date.timeIntervalSince1970 * 1000).rounded())
+}
+
+/// The wire id a pending envelope is carried under after folding: standalone
+/// children ride inside their parent recipe/shell, everything else under its
+/// own id. Used to reconcile the PUT `{stored}` response (which names folded
+/// envelope ids) back to pre-fold outbox entries.
+private func e2eCarrierId(for envelope: SyncEnvelope) -> String {
+    if envelope.entity == .ingredient || envelope.entity == .step {
+        if let parentId = e2eRecipeIdKeys.compactMap({ envelope.payload[$0]?.stringValue }).first,
+           !parentId.isEmpty
+        {
+            return parentId
+        }
+    }
+    return envelope.id
+}
+
+/// Strips embedded entries still carrying `deleted == true` (sealed by older
+/// clients that folded tombstones as markers). New clients fold tombstones by
+/// absence and never emit these, but without pruning the receiver's rebuild
+/// would restore them as live children. Applied on every decrypt.
+private func pruneDeletedFoldedChildren(_ envelope: SyncEnvelope) -> SyncEnvelope {
+    var envelope = envelope
+    for key in ["ingredients", "steps"] {
+        guard let list = envelope.payload[key]?.arrayValue else { continue }
+        let live = list.filter { $0.objectValue?["deleted"]?.boolValue != true }
+        if live.count != list.count {
+            envelope.payload[key] = .array(live)
+        }
+    }
+    return envelope
+}
+
 // MARK: Envelope encrypt / decrypt
 
-/// Seals a plaintext envelope's payload; the header stays plaintext.
+/// Seals a plaintext envelope's payload; the header stays plaintext but is
+/// cryptographically BOUND to the payload via AES-GCM associated data (see
+/// `e2eHeaderAD`). `updatedAt` is canonicalized to whole seconds first so the
+/// seal-time and open-time bindings agree after the second-precision JSON
+/// round-trip. A header swap in transit fails open (`decryptFailed`).
 public func e2eEncrypt(_ envelope: SyncEnvelope, identity: E2ESyncIdentity) throws -> EncryptedEnvelope {
+    let sealedAt = canonicalE2ETimestamp(envelope.updatedAt)
+    let associatedData = e2eHeaderAD(
+        v: 2, alg: "AES-GCM-256",
+        kid: identity.kid, householdHash: identity.hash,
+        id: envelope.id, updatedAt: sealedAt,
+        deviceId: envelope.deviceId, deleted: envelope.deleted,
+        entity: envelope.entity
+    )
     let payloadData: Data
     do {
         payloadData = try JSONEncoder().encode(envelope.payload)
@@ -496,7 +584,10 @@ public func e2eEncrypt(_ envelope: SyncEnvelope, identity: E2ESyncIdentity) thro
     }
     let (nonceB64, ciphertextB64): (String, String)
     do {
-        (nonceB64, ciphertextB64) = try seal(payloadData, using: identity.symmetricKey)
+        (nonceB64, ciphertextB64) = try seal(
+            payloadData, using: identity.symmetricKey,
+            authenticating: associatedData
+        )
     } catch {
         throw E2EError.payloadEncode(String(describing: error))
     }
@@ -506,7 +597,7 @@ public func e2eEncrypt(_ envelope: SyncEnvelope, identity: E2ESyncIdentity) thro
         kid: identity.kid,
         householdHash: identity.hash,
         id: envelope.id,
-        updatedAt: envelope.updatedAt,
+        updatedAt: sealedAt,
         deviceId: envelope.deviceId,
         deleted: envelope.deleted,
         entity: envelope.entity,
@@ -516,8 +607,14 @@ public func e2eEncrypt(_ envelope: SyncEnvelope, identity: E2ESyncIdentity) thro
 }
 
 /// Opens an encrypted envelope back into a plaintext `SyncEnvelope`.
+/// Rejects unknown versions / algorithms BEFORE touching crypto
+/// (version-guard), then re-derives the header binding — boxes sealed without
+/// it (pre-AD v2 envelopes) or under a tampered header fail authentication
+/// and surface as `decryptFailed`. No downgrade path: old boxes are rejected,
+/// never silently accepted.
 /// LWW merge runs on the resulting header (`updatedAt`); tombstones pass
-/// through like any other write.
+/// through like any other write. Embedded `deleted: true` child entries from
+/// older clients are pruned so they cannot restore as live.
 public func e2eDecrypt(_ encrypted: EncryptedEnvelope, identity: E2ESyncIdentity) throws -> SyncEnvelope {
     guard encrypted.v == 2 else {
         throw E2EError.unsupportedVersion(encrypted.v)
@@ -525,9 +622,19 @@ public func e2eDecrypt(_ encrypted: EncryptedEnvelope, identity: E2ESyncIdentity
     guard encrypted.alg == "AES-GCM-256" else {
         throw E2EError.unsupportedAlg(encrypted.alg)
     }
+    let associatedData = e2eHeaderAD(
+        v: encrypted.v, alg: encrypted.alg,
+        kid: encrypted.kid, householdHash: encrypted.householdHash,
+        id: encrypted.id, updatedAt: encrypted.updatedAt,
+        deviceId: encrypted.deviceId, deleted: encrypted.deleted,
+        entity: encrypted.entity
+    )
     let payload: [String: JSONValue]
     do {
-        payload = try openJSON(nonceB64: encrypted.nonce, ciphertextB64: encrypted.ciphertext, using: identity.symmetricKey)
+        payload = try openJSON(
+            nonceB64: encrypted.nonce, ciphertextB64: encrypted.ciphertext,
+            using: identity.symmetricKey, authenticating: associatedData
+        )
     } catch let error as SyncCryptoError {
         switch error {
         case .payloadDecode(let detail):
@@ -538,14 +645,14 @@ public func e2eDecrypt(_ encrypted: EncryptedEnvelope, identity: E2ESyncIdentity
     } catch {
         throw E2EError.decryptFailed(id: encrypted.id)
     }
-    return SyncEnvelope(
+    return pruneDeletedFoldedChildren(SyncEnvelope(
         id: encrypted.id,
         updatedAt: encrypted.updatedAt,
         deviceId: encrypted.deviceId,
         deleted: encrypted.deleted,
         entity: encrypted.entity,
         payload: payload
-    )
+    ))
 }
 
 /// Folds (ingredient/step into parent recipe) then encrypts a batch.
@@ -563,8 +670,18 @@ public func e2eEncryptBatch(_ envelopes: [SyncEnvelope], identity: E2ESyncIdenti
 
 public protocol E2EEncryptedTransport: Sendable {
     func pullEncrypted(hash: String, since: Date?) async throws -> [EncryptedEnvelope]
-    /// Pushes a batch; returns server-won conflict envelopes (empty = accepted).
-    func pushEncrypted(hash: String, _ envelopes: [EncryptedEnvelope]) async throws -> [EncryptedEnvelope]
+    /// Pushes a batch; returns the ids the server newly stored. Ids ABSENT
+    /// from the result were NOT overwritten — the server already holds an
+    /// equal-or-newer version (stored-wins-ties) and keeps it.
+    func pushEncrypted(hash: String, _ envelopes: [EncryptedEnvelope]) async throws -> [String]
+}
+
+/// PUT /v2/sync/:hash response body: `{ "stored": [<id>, ...] }` (see
+/// api/src/index.ts). This is NOT an envelope array — the blind server never
+/// returns conflicting envelopes, only the ids it accepted. Internal (not
+/// private) so tests can pin the `{stored}` contract against regressions.
+struct E2EPushResponse: Decodable {
+    var stored: [String]
 }
 
 /// URLSession transport for /v2/sync/:hash, sharing the `baseURL` + auth
@@ -618,11 +735,13 @@ public struct APIE2ETransport: E2EEncryptedTransport {
         guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
             throw SyncTransportError.httpStatus((resp as? HTTPURLResponse)?.statusCode ?? -1)
         }
+        // GET returns a bare array of encrypted envelopes (e2eList) — verify
+        // against api/src/index.ts if this decode ever fails.
         do { return try decoder.decode([EncryptedEnvelope].self, from: data) }
         catch { throw SyncTransportError.decode(error) }
     }
 
-    public func pushEncrypted(hash: String, _ envelopes: [EncryptedEnvelope]) async throws -> [EncryptedEnvelope] {
+    public func pushEncrypted(hash: String, _ envelopes: [EncryptedEnvelope]) async throws -> [String] {
         var req = URLRequest(url: try bucketURL(hash: hash))
         req.httpMethod = "PUT"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -631,7 +750,8 @@ public struct APIE2ETransport: E2EEncryptedTransport {
         guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
             throw SyncTransportError.httpStatus((resp as? HTTPURLResponse)?.statusCode ?? -1)
         }
-        do { return try decoder.decode([EncryptedEnvelope].self, from: data) }
+        // PUT returns `{ "stored": [id] }`, NOT envelopes.
+        do { return try decoder.decode(E2EPushResponse.self, from: data).stored }
         catch { throw SyncTransportError.decode(error) }
     }
 }
@@ -657,7 +777,12 @@ public extension SyncEngine {
         transport: any E2EEncryptedTransport,
         applyRemote: (@Sendable (SyncEnvelope) async -> Void)? = nil
     ) async throws -> SyncResult {
-        let remoteEncrypted = try await transport.pullEncrypted(hash: identity.hash, since: lastPulledAt)
+        // The server compares `updatedAt > since` (strict), so the request
+        // rewinds one tick behind the cursor: same-second writes that landed
+        // after the cursor advanced would otherwise be skipped forever.
+        // Replays are idempotent — `mergeOutcome` dedupes by id (identical =
+        // clear outbox, no re-apply, no count).
+        let remoteEncrypted = try await transport.pullEncrypted(hash: identity.hash, since: pullSinceDate())
         var remote: [SyncEnvelope] = []
         remote.reserveCapacity(remoteEncrypted.count)
         for enc in remoteEncrypted {
@@ -685,34 +810,86 @@ public extension SyncEngine {
                 pulled += 1
             }
         }
-        if let maxRemote = remote.map(\.updatedAt).max() {
-            lastPulledAt = max(lastPulledAt ?? .distantPast, maxRemote)
-        }
+        advancePullCursor(with: remote)
 
         let pending = Array(outbox.values)
         var conflicts = 0
         var pushed = 0
         if !pending.isEmpty {
             let encrypted = try e2eEncryptBatch(pending, identity: identity)
-            let serverWonEncrypted = try await transport.pushEncrypted(hash: identity.hash, encrypted)
-            let serverWon = try serverWonEncrypted.map { try e2eDecrypt($0, identity: identity) }
-            let wonIds = Set(serverWon.map { $0.id })
-            conflicts = serverWon.count
-            for env in serverWon {
+            let storedIds = Set(try await transport.pushEncrypted(hash: identity.hash, encrypted))
+            // `stored` names folded envelope ids; map pre-fold outbox entries
+            // back via their carrier (children ride under the parent id).
+            // Stored → accepted (drain + count). Unstored → the server kept
+            // an equal-or-newer version (stored-wins-ties): drain the outbox
+            // entry optimistically and count a conflict — the next pull
+            // reconciles any genuinely newer server state via header LWW.
+            for env in pending {
+                if storedIds.contains(e2eCarrierId(for: env)) {
+                    pushed += 1
+                } else {
+                    conflicts += 1
+                }
                 baseline[env.id] = env
                 outbox.removeValue(forKey: env.id)
-                await applyRemote?(env)
-            }
-            for env in pending where !wonIds.contains(env.id) {
-                baseline[env.id] = env
-                outbox.removeValue(forKey: env.id)
-                pushed += 1
             }
         }
         return SyncResult(pulled: pulled, pushed: pushed, conflicts: conflicts)
     }
 }
 
+
+// MARK: - Sync route (v1 vs E2E credential selection, thin gating)
+//
+// `resolveSyncRoute()` is the entire credential decision: an active E2E
+// credential (`E2EKeyStore.loadActive()`) routes to /v2, otherwise legacy v1.
+// `SyncEngine.syncRouted(route:e2eTransport:applyRemote:)` executes it — one
+// engine instance serves ONE mode per call, but `outbox`/`baseline`/cursor
+// state is shared, so flipping routes never loses pending writes.
+//
+// Coordinator adoption (apps/ios/App, no UI changes — one call-site swap):
+//   let route = resolveSyncRoute()
+//   let res = try await engine.syncRouted(
+//       route: route,
+//       e2eTransport: APIE2ETransport(baseURL: base, auth: auth),
+//       applyRemote: { box.append($0) })
+/// Which sync backend a sync run should use.
+public enum SyncRoute: Sendable {
+    case legacyV1
+    case e2e(E2ESyncIdentity)
+}
+
+/// Credential selection: active E2E credential → /v2, else legacy v1.
+public func resolveSyncRoute(defaults: UserDefaults = .standard) -> SyncRoute {
+    guard let credential = E2EKeyStore.loadActive(defaults: defaults) else {
+        return .legacyV1
+    }
+    return .e2e(E2ESyncIdentity(credential: credential))
+}
+
+public extension SyncEngine {
+    /// Runs `syncE2E` when `route` is `.e2e` (and an E2E transport is
+    /// supplied), else the legacy v1 `sync()`. A missing E2E transport under
+    /// an E2E route falls back to v1 rather than failing the sync.
+    func syncRouted(
+        route: SyncRoute,
+        e2eTransport: (any E2EEncryptedTransport)? = nil,
+        applyRemote: (@Sendable (SyncEnvelope) async -> Void)? = nil
+    ) async throws -> SyncResult {
+        switch route {
+        case .legacyV1:
+            return try await sync(applyRemote: applyRemote)
+        case .e2e(let identity):
+            guard let e2eTransport else {
+                return try await sync(applyRemote: applyRemote)
+            }
+            return try await syncE2E(
+                identity: identity, transport: e2eTransport,
+                applyRemote: applyRemote
+            )
+        }
+    }
+}
 
 // MARK: - SyncEngine (actor: outbox + pull/push orchestration)
 
@@ -770,6 +947,27 @@ public actor SyncEngine {
         knownPhotoHashes.insert(hex)
     }
 
+    // MARK: Pull cursor ((updatedAt, id) semantics)
+
+    /// The `since` bound for the next pull. Rewinds one tick behind the
+    /// cursor because both servers compare strictly (`updatedAt > since`):
+    /// without the rewind, same-second writes landing after the cursor
+    /// advanced would be skipped on every subsequent pull. Replays are
+    /// idempotent (`mergeOutcome` identical → dedupe by id, no re-apply).
+    private func pullSinceDate() -> Date? {
+        lastPulledAt?.addingTimeInterval(-1)
+    }
+
+    /// Advances the cursor by ENVELOPE time (max updatedAt seen), never
+    /// wall-clock: backdated restores, clock jumps, or frozen test fixtures
+    /// would otherwise make pulls silently skip remote writes. Monotonic —
+    /// a pull returning only older replays never moves the cursor back.
+    private func advancePullCursor(with remote: [SyncEnvelope]) {
+        if let maxRemote = remote.map(\.updatedAt).max() {
+            lastPulledAt = max(lastPulledAt ?? .distantPast, maxRemote)
+        }
+    }
+
     // MARK: Sync
 
     /// Pull remote changes, merge LWW, then push the outbox.
@@ -777,7 +975,7 @@ public actor SyncEngine {
     /// (provided by the caller so the engine stays store-agnostic and
     /// testable). Returns counts for UI badges / logging.
     public func sync(applyRemote: (@Sendable (SyncEnvelope) async -> Void)? = nil) async throws -> SyncResult {
-        let remote = try await transport.pull(since: lastPulledAt)
+        let remote = try await transport.pull(since: pullSinceDate())
         var pulled = 0
         for env in remote {
             // Local truth is the newest local write: a pending outbox entry
@@ -804,12 +1002,8 @@ public actor SyncEngine {
                 pulled += 1
             }
         }
-        // Advance the pull cursor by ENVELOPE time (max updatedAt seen),
-        // never wall-clock: backdated restores, clock jumps, or frozen test
-        // fixtures would otherwise make pulls silently skip remote writes.
-        if let maxRemote = remote.map(\.updatedAt).max() {
-            lastPulledAt = max(lastPulledAt ?? .distantPast, maxRemote)
-        }
+        // Advance the pull cursor by ENVELOPE time (see advancePullCursor).
+        advancePullCursor(with: remote)
 
         let pending = Array(outbox.values)
         var conflicts = 0

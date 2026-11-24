@@ -92,12 +92,63 @@ public enum SyncCryptoError: Error, Sendable, Equatable {
     case payloadDecode(String)
 }
 
+/// Canonical E2E timestamp: whole seconds (floor). The wire encodes
+/// `updatedAt` as second-precision ISO-8601, so both seal and open must bind
+/// the same truncated instant — otherwise a fractional local `Date` would
+/// authenticate at seal time and fail at open time after the JSON round-trip.
+public func canonicalE2ETimestamp(_ date: Date) -> Date {
+    Date(timeIntervalSince1970: floor(date.timeIntervalSince1970))
+}
+
+/// Domain separator for the E2E header associated-data binding.
+public let e2eADContext = "smidgen-e2e-ad-v1"
+
+/// Canonical associated data binding the sealed payload to its plaintext
+/// routing header. AES-GCM authenticates (but does not encrypt) these bytes,
+/// so a blind-server header swap (id/entity/updatedAt/tombstone/kid/bucket)
+/// fails open instead of decrypting under a forged header. Encoded as a JSON
+/// string array — deterministic and unambiguous without locale pitfalls.
+/// `updatedAt` is canonicalized to whole seconds (see
+/// `canonicalE2ETimestamp`) so seal-time and open-time agree.
+public func e2eHeaderAD(
+    v: Int,
+    alg: String,
+    kid: String,
+    householdHash: String,
+    id: String,
+    updatedAt: Date,
+    deviceId: String,
+    deleted: Bool,
+    entity: SyncEntityName
+) -> Data {
+    let seconds = Int64(floor(updatedAt.timeIntervalSince1970))
+    let parts = [
+        e2eADContext, String(v), alg, kid, householdHash, id,
+        String(seconds), deviceId, deleted ? "1" : "0", entity.rawValue,
+    ]
+    // JSON string-array encoding cannot realistically fail; the unit
+    // separator fallback preserves determinism if it ever does.
+    return (try? JSONEncoder().encode(parts))
+        ?? Data(parts.joined(separator: "\u{1F}").utf8)
+}
+
 /// AES-GCM seals `payload`. Returns base-64 `(nonce, ciphertext)` where
 /// `ciphertext` is raw-ciphertext ‖ 16-byte tag, base-64 encoded.
-public func seal(_ payload: Data, using symmetricKey: SymmetricKey) throws -> (nonceB64: String, ciphertextB64: String) {
+/// `authenticating`, when non-empty, is bound as associated data: open must
+/// present the identical bytes or authentication fails. Boxes sealed WITHOUT
+/// associated data (pre-AD v2 envelopes) do NOT open when AD is required —
+/// that rejection is intentional (no downgrade path).
+public func seal(
+    _ payload: Data,
+    using symmetricKey: SymmetricKey,
+    authenticating associatedData: Data? = nil
+) throws -> (nonceB64: String, ciphertextB64: String) {
     let sealedBox: AES.GCM.SealedBox
     do {
-        sealedBox = try AES.GCM.seal(payload, using: symmetricKey)
+        sealedBox = try AES.GCM.seal(
+            payload, using: symmetricKey,
+            authenticating: associatedData ?? Data()
+        )
     } catch {
         throw SyncCryptoError.sealFailed
     }
@@ -107,9 +158,16 @@ public func seal(_ payload: Data, using symmetricKey: SymmetricKey) throws -> (n
     return (nonceB64: nonceData.base64EncodedString(), ciphertextB64: combined.base64EncodedString())
 }
 
-/// Inverse of `seal(_:using:)`. Throws `SyncCryptoError` (never the
+/// Inverse of `seal(_:using:authenticating:)`. Throws `SyncCryptoError` (never the
 /// underlying CryptoKit error, which can carry key-material-adjacent detail).
-public func open(nonceB64: String, ciphertextB64: String, using symmetricKey: SymmetricKey) throws -> Data {
+/// A wrong `authenticating` value (e.g. a tampered header, or an old box
+/// opened under the new AD binding) surfaces as `openFailed`.
+public func open(
+    nonceB64: String,
+    ciphertextB64: String,
+    using symmetricKey: SymmetricKey,
+    authenticating associatedData: Data? = nil
+) throws -> Data {
     guard let nonceData = Data(base64Encoded: nonceB64) else {
         throw SyncCryptoError.invalidNonceEncoding
     }
@@ -128,7 +186,10 @@ public func open(nonceB64: String, ciphertextB64: String, using symmetricKey: Sy
         throw SyncCryptoError.malformedCiphertext
     }
     do {
-        return try AES.GCM.open(sealedBox, using: symmetricKey)
+        return try AES.GCM.open(
+            sealedBox, using: symmetricKey,
+            authenticating: associatedData ?? Data()
+        )
     } catch {
         throw SyncCryptoError.openFailed
     }
@@ -137,14 +198,28 @@ public func open(nonceB64: String, ciphertextB64: String, using symmetricKey: Sy
 // MARK: - Seal / open (envelope-payload JSON level)
 
 /// Seals a `[String: JSONValue]` envelope payload (canonical JSON encoding).
-public func sealJSON(_ payload: [String: JSONValue], using symmetricKey: SymmetricKey) throws -> (nonceB64: String, ciphertextB64: String) {
+/// Pass the envelope's `e2eHeaderAD(...)` as `authenticating` so the payload
+/// is bound to its plaintext header (E2E path always does).
+public func sealJSON(
+    _ payload: [String: JSONValue],
+    using symmetricKey: SymmetricKey,
+    authenticating associatedData: Data? = nil
+) throws -> (nonceB64: String, ciphertextB64: String) {
     let data = try JSONEncoder().encode(payload)
-    return try seal(data, using: symmetricKey)
+    return try seal(data, using: symmetricKey, authenticating: associatedData)
 }
 
-/// Inverse of `sealJSON(_:using:)`.
-public func openJSON(nonceB64: String, ciphertextB64: String, using symmetricKey: SymmetricKey) throws -> [String: JSONValue] {
-    let data = try open(nonceB64: nonceB64, ciphertextB64: ciphertextB64, using: symmetricKey)
+/// Inverse of `sealJSON(_:using:authenticating:)`.
+public func openJSON(
+    nonceB64: String,
+    ciphertextB64: String,
+    using symmetricKey: SymmetricKey,
+    authenticating associatedData: Data? = nil
+) throws -> [String: JSONValue] {
+    let data = try open(
+        nonceB64: nonceB64, ciphertextB64: ciphertextB64,
+        using: symmetricKey, authenticating: associatedData
+    )
     do {
         return try JSONDecoder().decode([String: JSONValue].self, from: data)
     } catch {
@@ -245,7 +320,15 @@ public enum E2EKeyStore {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
-        SecItemDelete(query as CFDictionary)
+        // Update in place when the item already exists: the old secret stays
+        // readable until the new bytes commit, and a failure (e.g. device
+        // lock) never destroys the working credential. Add only when missing.
+        let updateStatus = SecItemUpdate(
+            query as CFDictionary,
+            [kSecValueData as String: Data(syncCode.utf8)] as CFDictionary
+        )
+        if updateStatus == errSecSuccess { return true }
+        guard updateStatus == errSecItemNotFound else { return false }
         var add = query
         add[kSecValueData as String] = Data(syncCode.utf8)
         // Device-only, available after first unlock (background sync safe);
@@ -320,10 +403,14 @@ public enum E2EKeyStore {
 
     /// Verifies the bundle (hash == derive), then stores the code in the
     /// Keychain and the metadata in UserDefaults. Returns false when the
-    /// bundle fails verification (nothing is stored).
+    /// bundle fails verification (nothing is stored). The Keychain write
+    /// commits FIRST: metadata is persisted only after the secret is safe,
+    /// so a Keychain failure leaves the prior credential fully intact
+    /// (metadata still points at the old, still-present code).
     @discardableResult
     public static func acceptInvite(_ bundle: SyncInviteBundle, defaults: UserDefaults = .standard) -> Bool {
         guard bundle.verify() else { return false }
+        guard saveSyncCode(bundle.syncCode, hash: bundle.hash) else { return false }
         let metadata = E2EMetadata(
             householdId: bundle.householdId,
             kid: bundle.kid,
@@ -331,7 +418,7 @@ public enum E2EKeyStore {
             endpointHint: bundle.endpointHint
         )
         saveMetadata(metadata, defaults: defaults)
-        return saveSyncCode(bundle.syncCode, hash: bundle.hash)
+        return true
     }
 
     /// Loads the active credential: metadata from UserDefaults + code from

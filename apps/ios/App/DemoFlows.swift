@@ -823,6 +823,12 @@ struct SettingsView: View {
     @State private var pasteInput: String = ""
     @State private var joinResult: String = ""
     @State private var showQR = false
+    // Pending endpoint hint from the last joined invite bundle. NEVER
+    // auto-applied: the user must explicitly confirm AND the hint must pass
+    // GET /health before it becomes the backend URL.
+    @State private var pendingEndpointHint: String? = nil
+    @State private var hintHealthResult: String = ""
+    @State private var hintTesting = false
 
     /// Effective base URL with the locked fallback chain:
     /// UserDefaults smidgen.apiBaseURL (blank = skip) -> Bundle
@@ -917,6 +923,28 @@ struct SettingsView: View {
                 if !joinResult.isEmpty {
                     Text(joinResult).font(.caption).foregroundStyle(.secondary)
                 }
+                if let hint = pendingEndpointHint {
+                    Section("Suggested server (from invite)") {
+                        Text(hint)
+                            .font(.caption.monospaced())
+                            .textSelection(.enabled)
+                            .lineLimit(2).truncationMode(.middle)
+                        Text("This came from the invite bundle — it is not your server until you confirm it. Confirming checks GET /health first.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        HStack {
+                            Button(hintTesting ? "Checking…" : "Test & use this server") {
+                                Task { await confirmEndpointHint() }
+                            }
+                            .disabled(hintTesting)
+                            Spacer()
+                            Button("Keep current server") { dismissEndpointHint() }
+                                .disabled(hintTesting)
+                        }
+                        if !hintHealthResult.isEmpty {
+                            Text(hintHealthResult).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
             } header: {
                 Text("End-to-end encryption")
             } footer: {
@@ -992,14 +1020,62 @@ struct SettingsView: View {
             kid = res.kid
             hashPrefix = res.hashPrefix8
             householdName = res.householdId
-            if let hint = res.endpointHint, !hint.isEmpty {
-                baseURLString = hint
+            // SECURITY: never auto-apply the invite's endpointHint. An
+            // attacker-controlled bundle must not silently redirect this
+            // device's backend. Stage it for explicit user confirmation +
+            // GET /health validation instead (see pendingEndpointHint UI).
+            if let hint = res.endpointHint?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !hint.isEmpty, hint != baseURLString, hint != effectiveBaseURL {
+                pendingEndpointHint = hint
+                hintHealthResult = ""
+                joinResult = "Joined household \(res.householdId) — kid \(res.kid) · hash \(res.hashPrefix8). Verify the hash matches the other device. The invite suggests a server below — review it before switching."
+            } else {
+                pendingEndpointHint = nil
+                hintHealthResult = ""
+                joinResult = "Joined household \(res.householdId) — kid \(res.kid) · hash \(res.hashPrefix8). Verify the hash matches the other device."
             }
             pasteInput = ""
-            joinResult = "Joined household \(res.householdId) — kid \(res.kid) · hash \(res.hashPrefix8). Verify the hash matches the other device."
         } catch {
             joinResult = error.localizedDescription
         }
+    }
+
+    /// Confirmed adoption of the staged endpoint hint: validates
+    /// GET <hint>/health, then — and only then — persists the hint as the
+    /// backend URL. Requires explicit user action; never called implicitly.
+    private func confirmEndpointHint() async {
+        guard let hint = pendingEndpointHint?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !hint.isEmpty,
+              let url = URL(string: hint + "/health"),
+              let scheme = URL(string: hint)?.scheme?.lowercased(),
+              scheme == "https" || scheme == "http"
+        else {
+            hintHealthResult = "Invalid server URL — keeping current server."
+            return
+        }
+        hintTesting = true
+        defer { hintTesting = false }
+        do {
+            let (data, resp) = try await URLSession.shared.data(from: url)
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
+            guard code == 200 else {
+                let body = String(data: data, encoding: .utf8) ?? ""
+                hintHealthResult = "Server rejected (HTTP \(code)): \(body.prefix(120)) — keeping current server."
+                return
+            }
+            baseURLString = hint
+            UserDefaults.standard.set(hint, forKey: "smidgen.apiBaseURL")
+            pendingEndpointHint = nil
+            hintHealthResult = ""
+            joinResult = "Server updated — now using \(hint)."
+        } catch {
+            hintHealthResult = "Unreachable: \(error.localizedDescription) — keeping current server."
+        }
+    }
+
+    private func dismissEndpointHint() {
+        pendingEndpointHint = nil
+        hintHealthResult = ""
     }
 
     /// Re-reads Keychain/UserDefaults identifiers into the displayed state.

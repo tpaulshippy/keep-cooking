@@ -41,6 +41,20 @@ export async function householdHash(syncCode: string, householdId: string): Prom
 /** E2E entities: whole-object only. ingredient/step must fold into recipe. */
 export const e2eEntitySchema = z.enum(['recipe', 'list', 'pantryItem', 'plan', 'menu']);
 
+/**
+ * Byte length of a strict standard-base64 payload, or -1 when malformed
+ * (wrong alphabet, bad padding, or length not a multiple of 4). Pure
+ * arithmetic — no atob/Buffer, so it runs in workers, node, and browsers.
+ */
+export function base64ByteLength(s: string): number {
+  if (typeof s !== 'string' || s.length === 0 || s.length % 4 !== 0) return -1;
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$/.test(s)) return -1;
+  let pad = 0;
+  if (s.endsWith('==')) pad = 2;
+  else if (s.endsWith('=')) pad = 1;
+  return (s.length / 4) * 3 - pad;
+}
+
 export const encryptedEnvelopeSchema = z.object({
   v: z.literal(2),
   alg: z.literal('AES-GCM-256'),
@@ -51,8 +65,14 @@ export const encryptedEnvelopeSchema = z.object({
   updatedAt: z.string().datetime(),
   deviceId: z.string().min(1).max(200),
   deleted: z.boolean().default(false),
-  nonce: z.string().min(1).max(512),
-  ciphertext: z.string().min(1),
+  // AES-GCM standard nonce: exactly 12 bytes, base64-encoded (16 chars).
+  nonce: z.string().refine((s) => base64ByteLength(s) === 12, {
+    message: 'nonce must be base64 of exactly 12 bytes',
+  }),
+  // Ciphertext carries at least the 16-byte GCM auth tag.
+  ciphertext: z.string().refine((s) => base64ByteLength(s) >= 16, {
+    message: 'ciphertext must be base64 of at least 16 bytes',
+  }),
 });
 
 export type EncryptedEnvelope = z.infer<typeof encryptedEnvelopeSchema>;

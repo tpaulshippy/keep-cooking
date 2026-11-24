@@ -133,6 +133,21 @@ export const newId = () =>
     ? crypto.randomUUID()
     : `id-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
 
+/**
+ * E2E LWW comparison on parsed timestamps (never lexical, so mixed ISO-8601
+ * shapes order correctly). Incoming wins only when strictly newer — stored
+ * wins ties (idempotent). An invalid incoming timestamp never wins; an
+ * invalid stored timestamp loses to any valid incoming one. Both invalid:
+ * stored wins.
+ */
+export function e2eIsNewer(incomingUpdatedAt: string, currentUpdatedAt: string): boolean {
+  const ni = Date.parse(incomingUpdatedAt);
+  if (Number.isNaN(ni)) return false;
+  const nc = Date.parse(currentUpdatedAt);
+  if (Number.isNaN(nc)) return true;
+  return ni > nc;
+}
+
 export interface Store {
   // households / memberships
   ensureHousehold(id: string, name?: string): Promise<Household>;
@@ -545,8 +560,11 @@ export class MemoryStore implements Store {
   }
 
   // ---------- E2E V1 blind blobs (MemoryStore fallback when no D1) ----------
-  // Buckets keyed by householdHash; LWW per id on header.updatedAt (string
-  // compare of ISO-8601 timestamps). Server never inspects ciphertext.
+  // Buckets keyed by householdHash; LWW per id on parsed header.updatedAt
+  // timestamps (Date.parse — never lexical, so mixed ISO shapes order
+  // correctly). Invalid incoming timestamps never win; an invalid stored
+  // timestamp loses to any valid incoming one. Server never inspects
+  // ciphertext.
 
   e2eBlobs = new Map<string, Map<string, EncryptedEnvelope>>();
 
@@ -557,7 +575,7 @@ export class MemoryStore implements Store {
       this.e2eBlobs.set(hash, bucket);
     }
     const cur = bucket.get(env.id);
-    if (cur && cur.updatedAt >= env.updatedAt) return false; // stored wins ties: idempotent
+    if (cur && !e2eIsNewer(env.updatedAt, cur.updatedAt)) return false; // stored wins ties: idempotent
     bucket.set(env.id, env);
     return true;
   }
@@ -565,8 +583,12 @@ export class MemoryStore implements Store {
   async e2eList(hash: string, since: string): Promise<EncryptedEnvelope[]> {
     const bucket = this.e2eBlobs.get(hash);
     if (!bucket) return [];
+    const sinceT = Date.parse(since);
     return [...bucket.values()]
-      .filter((e) => e.updatedAt > since)
+      .filter((e) => {
+        const t = Date.parse(e.updatedAt);
+        return !Number.isNaN(t) && !Number.isNaN(sinceT) && t > sinceT;
+      })
       .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt) || a.id.localeCompare(b.id));
   }
 

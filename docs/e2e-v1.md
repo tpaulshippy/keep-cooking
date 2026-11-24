@@ -1,10 +1,16 @@
 # Smidgen E2E v1 — zero-knowledge recipe sync
 
-> **Zero-knowledge statement.** Recipe content is encrypted on-device before
-> it ever reaches the backend. The Worker, D1, R2, logs, and backups hold
-> only opaque blobs plus routing metadata (household id, key id, timestamps).
-> Smidgen cannot see or recover your recipes. Lose code+devices =
-> permanent loss.
+> **Zero-knowledge statement (scope: /v2 E2E envelopes only).** Recipe
+> content inside `PUT/GET /v2/sync/:hash` envelopes is encrypted on-device
+> before it ever reaches the backend. The Worker, D1 `sync_blobs_v2`, logs,
+> and backups hold only opaque blobs plus routing metadata (household hash,
+> key id, timestamps) for that route. Smidgen cannot see or recover those
+> recipes. Lose code+devices = permanent loss.
+>
+> Out of scope: the legacy plaintext pipes `GET /sync/pull` and
+> `POST /sync/push` are NOT zero-knowledge, and R2 photo routes (signed
+> URLs, variant fetches) carry operator-visible bytes. Do not route private
+> content through them and expect E2E protection.
 
 ## Envelope v2 shape
 
@@ -77,14 +83,18 @@ produce or verify plaintext.
    bundle. The bundle is JSON:
    `{"v":"2","householdId","syncCode","kid","hash","endpointHint"}`.
 2. A shows it as QR; manual copy is the fallback for large bundles.
-3. Device B: paste into "Paste invite bundle to join". B recomputes
-   `householdHash = hex(SHA256("smidgen-hh-v1" || syncCode || householdId))`
-   and **rejects on hash mismatch** before storing anything.
+3. Device B: paste into "Paste invite bundle to join". B rejects unless
+   ALL of these hold: `v == "2"`, `kid == kid(syncCode:)` (recomputed via
+   the Sync layer hash), and `householdHash = hex(SHA256("smidgen-hh-v1" ||
+   syncCode || householdId))` matches `hash` — before storing anything.
 4. B stores the `syncCode` in the Keychain (account
    `smidgen.e2ee.<hashPrefix8>`) + non-secret metadata (`kid`,
-   `householdHash`, `householdId`) in UserDefaults, optionally adopts
-   `endpointHint` as its backend URL, then syncs. Both devices show the same
-   `kid` / `hashPrefix8` — compare them out-of-band to confirm no tampering.
+   `householdHash`, `householdId`) in UserDefaults, then syncs. The
+   bundle's `endpointHint` is NEVER auto-applied: B stages it under
+   "Suggested server (from invite)" and adopts it only after the user
+   taps "Test & use this server" AND `GET <hint>/health` returns 200.
+   Both devices show the same `kid` / `hashPrefix8` — compare them
+   out-of-band to confirm no tampering.
 5. **Second-device nudge:** got a new phone or iPad? Add it now while you
    still have this one — open Settings here on both devices. Without at
    least one joined device (or the saved recovery kit), the new device
@@ -110,16 +120,25 @@ produce or verify plaintext.
 ## BYO steps (fresh backend)
 
 1. `wrangler login` (once per machine).
-2. From the repo root: `./scripts/deploy-backend.sh`
-   - Creates D1 `smidgen` (copy new `database_id` into `api/wrangler.toml`
-     on first run), R2 `smidgen-photos`, sets `INTERNAL_BETA_TOKEN` when
-     `INTERNAL_BETA_TOKEN=…` is in env, deploys the Worker, curls `/health`.
+2. Mint a beta token and deploy from the repo root:
+   `INTERNAL_BETA_TOKEN=$(openssl rand -base64 32) ./scripts/deploy-backend.sh`
+   - Creates D1 `smidgen` (writes the new `database_id` into
+     `api/wrangler.toml` on first run), R2 `smidgen-photos`, applies the D1
+     schema remotely (`api/drizzle/0001_init.sql` + `0002_e2e_blobs.sql`),
+     sets `INTERNAL_BETA_TOKEN` as a Worker secret, writes
+     `PUBLIC_BASE_URL` into `api/wrangler.toml [vars]` when provided, deploys
+     the Worker, then curls `/health` on the actual published URL.
+   - The token is REQUIRED: without it the script aborts (pass
+     `BYO_NO_TOKEN=1` only for an explicit local/no-token setup, where
+     writes are ungated and the backend must never be exposed).
 3. The script prints the Worker URL, e.g.
    `https://smidgen-api.<account>.workers.dev`.
 4. In the app: Settings → Server (BYO backend) → paste URL → **Test**
    (expects `GET /health` → 200) → Save. Blank resets to the Bundle
    `SMIDGEN_API_BASE_URL` → prod fallback chain.
-5. Join/create the household key in Settings → End-to-end encryption,
+5. In the app: Settings → Server (BYO backend) → enter the same
+   `INTERNAL_BETA_TOKEN` in the Beta token field → Save & sync now.
+   Join/create the household key in Settings → End-to-end encryption,
    then sync.
 
 ## Blindness acceptance (prove the server learns nothing)

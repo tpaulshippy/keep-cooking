@@ -10,6 +10,8 @@
 // with an in-memory fake transport — no SwiftData, no network, no CloudKit.
 
 import XCTest
+import CryptoKit
+import Foundation
 
 // MARK: - Fake transport (in-memory Lane 1 stand-in)
 
@@ -70,6 +72,295 @@ func makeEnv(id: String, at date: Date, device: String, deleted: Bool = false,
 }
 
 let base = Date(timeIntervalSince1970: 1_790_000_000)
+
+// MARK: - 4. E2E fold (ingredient/step -> parent recipe)
+
+/// In-memory /v2 stand-in: newest-wins per id (ties keep stored), `{stored}`
+/// push shape, strict `updatedAt > since` pull filter on ISO strings.
+actor FakeE2EServer {
+    var store: [String: EncryptedEnvelope] = [:]
+    var pullSinceBounds: [Date?] = []
+    private let iso: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        return f
+    }()
+
+    func pullEncrypted(hash: String, since: Date?) async -> [EncryptedEnvelope] {
+        pullSinceBounds.append(since)
+        let bound = since.map { iso.string(from: $0) } ?? "1970-01-01T00:00:00Z"
+        return store.values
+            .filter { iso.string(from: $0.updatedAt) > bound }
+            .sorted {
+                if $0.updatedAt != $1.updatedAt { return $0.updatedAt < $1.updatedAt }
+                return $0.id < $1.id
+            }
+    }
+
+    func pushEncrypted(hash: String, _ envs: [EncryptedEnvelope]) async -> [String] {
+        var stored: [String] = []
+        for env in envs {
+            if let cur = store[env.id], cur.updatedAt >= env.updatedAt { continue }
+            store[env.id] = env
+            stored.append(env.id)
+        }
+        return stored
+    }
+}
+
+struct FakeE2ETransport: E2EEncryptedTransport {
+    let server: FakeE2EServer
+    let hash: String
+    func pullEncrypted(hash: String, since: Date?) async throws -> [EncryptedEnvelope] {
+        await server.pullEncrypted(hash: hash, since: since)
+    }
+    func pushEncrypted(hash: String, _ envelopes: [EncryptedEnvelope]) async throws -> [String] {
+        await server.pushEncrypted(hash: hash, envelopes)
+    }
+}
+
+func makeE2EIdentity() -> E2ESyncIdentity {
+    E2ESyncIdentity(syncCode: "test-code-1234567890", householdId: "hh-test", kid: "testkid0001")
+}
+
+func makeChildEnv(
+    id: String, recipeId: String, at date: Date, device: String,
+    deleted: Bool = false, name: String = "Sugar",
+    entity: SyncEntityName = .ingredient
+) -> SyncEnvelope {
+    SyncEnvelope(
+        id: id, updatedAt: date, deviceId: device, deleted: deleted,
+        entity: entity,
+        payload: ["recipeId": .string(recipeId), "name": .string(name)]
+    )
+}
+
+final class E2EFoldTests: XCTestCase {
+    func testFoldRemovesTombstonedChildByAbsence() {
+        let parent = makeEnv(id: "r1", at: base, device: "seed")
+        let live = makeChildEnv(id: "c1", recipeId: "r1", at: base, device: "seed")
+        let tombstone = makeChildEnv(
+            id: "c1", recipeId: "r1",
+            at: base.addingTimeInterval(30), device: "device-a", deleted: true
+        )
+        // First fold embeds c1 live, then the tombstone removes it.
+        let withLive = foldEnvelopesForE2E([parent, live])
+        XCTAssertEqual(withLive.count, 1)
+        XCTAssertEqual(withLive[0].payload["ingredients"]?.arrayValue?.count, 1)
+        let folded = foldEnvelopesForE2E(withLive + [tombstone])
+        XCTAssertEqual(folded.count, 1)
+        XCTAssertEqual(folded[0].payload["ingredients"]?.arrayValue?.count, 0)
+        XCTAssertEqual(folded[0].updatedAt, base.addingTimeInterval(30))
+    }
+
+    func testFoldChildLWWNewerWinsStaleLoses() {
+        let parent = makeEnv(id: "r1", at: base, device: "seed")
+        let newer = makeChildEnv(id: "c1", recipeId: "r1", at: base.addingTimeInterval(20), device: "b", name: "New")
+        let folded = foldEnvelopesForE2E([parent, newer])
+        XCTAssertEqual(folded[0].payload["ingredients"]?.arrayValue?.first?.objectValue?["name"]?.stringValue, "New")
+        // A stale re-push must not clobber the newer embedded child, and the
+        // parent timestamp must not move.
+        let stale = makeChildEnv(id: "c1", recipeId: "r1", at: base.addingTimeInterval(5), device: "a", name: "Stale")
+        let refolded = foldEnvelopesForE2E(folded + [stale])
+        XCTAssertEqual(refolded[0].payload["ingredients"]?.arrayValue?.first?.objectValue?["name"]?.stringValue, "New")
+        XCTAssertEqual(refolded[0].updatedAt, base.addingTimeInterval(20))
+        // Ties go to incoming (deterministic convergence).
+        let tie = makeChildEnv(id: "c1", recipeId: "r1", at: base.addingTimeInterval(20), device: "c", name: "Tie")
+        let retied = foldEnvelopesForE2E(refolded + [tie])
+        XCTAssertEqual(retied[0].payload["ingredients"]?.arrayValue?.first?.objectValue?["name"]?.stringValue, "Tie")
+    }
+
+    func testStandaloneChildRejectedWithoutParentLink() throws {
+        let identity = makeE2EIdentity()
+        let orphan = SyncEnvelope(
+            id: "c9", updatedAt: base, deviceId: "d",
+            entity: .ingredient, payload: ["name": .string("NoParent")]
+        )
+        XCTAssertThrowsError(try e2eEncryptBatch([orphan], identity: identity)) { error in
+            guard case E2EError.standaloneChildRejected(let entity, let id) = error else {
+                return XCTFail("expected standaloneChildRejected, got \(error)")
+            }
+            XCTAssertEqual(entity, .ingredient)
+            XCTAssertEqual(id, "c9")
+        }
+    }
+}
+
+// MARK: - 5. E2E header binding (AES-GCM associated data)
+
+final class E2EHeaderBindingTests: XCTestCase {
+    func testRoundTripWithHeaderBinding() throws {
+        let identity = makeE2EIdentity()
+        let env = makeEnv(id: "e2e-roundtrip", at: base, device: "device-a")
+        let sealed = try e2eEncrypt(env, identity: identity)
+        let opened = try e2eDecrypt(sealed, identity: identity)
+        XCTAssertEqual(opened.id, env.id)
+        XCTAssertEqual(opened.payload, env.payload)
+    }
+
+    func testTamperedHeaderFailsOpen() throws {
+        let identity = makeE2EIdentity()
+        var sealed = try e2eEncrypt(makeEnv(id: "e2e-tamper", at: base, device: "device-a"), identity: identity)
+        sealed.deleted = true // header swap under the same box
+        XCTAssertThrowsError(try e2eDecrypt(sealed, identity: identity)) { error in
+            guard case E2EError.decryptFailed(let id) = error else {
+                return XCTFail("expected decryptFailed, got \(error)")
+            }
+            XCTAssertEqual(id, "e2e-tamper")
+        }
+    }
+
+    func testPreADBoxIsRejected() throws {
+        // Boxes sealed WITHOUT the header binding (pre-AD v2 envelopes) must
+        // not open once the binding is required — rejection, no downgrade.
+        let identity = makeE2EIdentity()
+        let payload: [String: JSONValue] = ["title": "Old"]
+        let (nonceB64, ciphertextB64) = try seal(
+            JSONEncoder().encode(payload), using: identity.symmetricKey
+        )
+        let oldBox = EncryptedEnvelope(
+            v: 2, alg: "AES-GCM-256",
+            kid: identity.kid, householdHash: identity.hash,
+            id: "e2e-oldbox", updatedAt: base, deviceId: "device-a",
+            deleted: false, entity: .recipe,
+            nonce: nonceB64, ciphertext: ciphertextB64
+        )
+        XCTAssertThrowsError(try e2eDecrypt(oldBox, identity: identity))
+    }
+
+    func testDecryptPrunesLegacyDeletedChildMarkers() throws {
+        // Older clients folded tombstones as `deleted: true` markers; those
+        // must not restore as live children on apply.
+        let identity = makeE2EIdentity()
+        let id = "e2e-legacy-markers"
+        let updatedAt = Date(timeIntervalSince1970: 1_790_000_000)
+        let payload: [String: JSONValue] = [
+            "title": .string("Soup"),
+            "ingredients": .array([
+                .object(["id": .string("keep"), "name": .string("Salt")]),
+                .object(["id": .string("drop"), "name": .string("Pepper"), "deleted": .bool(true)]),
+            ]),
+        ]
+        let ad = e2eHeaderAD(
+            v: 2, alg: "AES-GCM-256", kid: identity.kid,
+            householdHash: identity.hash, id: id, updatedAt: updatedAt,
+            deviceId: "device-a", deleted: false, entity: .recipe
+        )
+        let (nonceB64, ciphertextB64) = try seal(
+            JSONEncoder().encode(payload), using: identity.symmetricKey,
+            authenticating: ad
+        )
+        let legacy = EncryptedEnvelope(
+            v: 2, alg: "AES-GCM-256", kid: identity.kid,
+            householdHash: identity.hash, id: id, updatedAt: updatedAt,
+            deviceId: "device-a", deleted: false, entity: .recipe,
+            nonce: nonceB64, ciphertext: ciphertextB64
+        )
+        let opened = try e2eDecrypt(legacy, identity: identity)
+        let ids = opened.payload["ingredients"]?.arrayValue?.compactMap { $0.objectValue?["id"]?.stringValue }
+        XCTAssertEqual(ids, ["keep"])
+    }
+
+    func testPushResponseDecodesStoredShape() throws {
+        // Pins the PUT /v2/sync/:hash contract: `{ "stored": [...] }`, not an
+        // envelope array.
+        let data = Data(#"{"stored":["a","b"]}"#.utf8)
+        let decoded = try JSONDecoder().decode(E2EPushResponse.self, from: data)
+        XCTAssertEqual(decoded.stored, ["a", "b"])
+    }
+}
+
+// MARK: - 6. E2E sync (push/pull over the fake /v2 transport)
+
+final class E2ESyncTests: XCTestCase {
+    func testTwoEnginesConvergeOverE2E() async throws {
+        let server = FakeE2EServer()
+        let identity = makeE2EIdentity()
+        let engineA = SyncEngine(deviceId: "device-a", transport: FakeTransport(server: FakeServer()))
+        let engineB = SyncEngine(deviceId: "device-b", transport: FakeTransport(server: FakeServer()))
+        let tA = FakeE2ETransport(server: server, hash: identity.hash)
+        let tB = FakeE2ETransport(server: server, hash: identity.hash)
+
+        await engineA.enqueue(makeEnv(id: "r1", at: base, device: "device-a"))
+        let resA = try await engineA.syncE2E(identity: identity, transport: tA)
+        XCTAssertEqual(resA.pushed, 1)
+        XCTAssertEqual(resA.conflicts, 0)
+
+        let box = EnvelopeBox()
+        let resB = try await engineB.syncE2E(identity: identity, transport: tB, applyRemote: { box.append($0) })
+        XCTAssertEqual(resB.pulled, 1)
+        XCTAssertEqual(box.all.first?.id, "r1")
+    }
+
+    func testPushCountsServerKeptAsConflict() async throws {
+        let server = FakeE2EServer()
+        let identity = makeE2EIdentity()
+        let t = FakeE2ETransport(server: server, hash: identity.hash)
+        let engine = SyncEngine(deviceId: "device-a", transport: FakeTransport(server: FakeServer()))
+
+        // Another device's rX@T+300 seeds the pull cursor at T+300.
+        let seed = try e2eEncrypt(makeEnv(id: "rX", at: base.addingTimeInterval(300), device: "device-b"), identity: identity)
+        _ = await server.pushEncrypted(hash: identity.hash, [seed])
+        _ = try await engine.syncE2E(identity: identity, transport: t)
+
+        // The server holds r2@T+200 that this client never pulled (below the
+        // cursor, so the strict `>` filter will not replay it — e.g. a
+        // backdated restore landing after the cursor moved on).
+        let serverNewer = try e2eEncrypt(makeEnv(id: "r2", at: base.addingTimeInterval(200), device: "device-b"), identity: identity)
+        _ = await server.pushEncrypted(hash: identity.hash, [serverNewer])
+
+        // Local r2@T+150 loses the blind push (server keeps T+200): not
+        // stored, counted as a conflict, outbox drained.
+        await engine.enqueue(makeEnv(id: "r2", at: base.addingTimeInterval(150), device: "device-a"))
+        let pushRes = try await engine.syncE2E(identity: identity, transport: t)
+        XCTAssertEqual(pushRes.pushed, 0)
+        XCTAssertEqual(pushRes.conflicts, 1)
+        XCTAssertEqual(await engine.pendingCount, 0)
+
+        // Forward convergence still works: a newer local write stores.
+        await engine.enqueue(makeEnv(id: "r2", at: base.addingTimeInterval(400), device: "device-a"))
+        let res2 = try await engine.syncE2E(identity: identity, transport: t)
+        XCTAssertEqual(res2.pushed, 1)
+        XCTAssertEqual(res2.conflicts, 0)
+    }
+
+    func testPullReplaysEqualTimestamps() async throws {
+        let server = FakeE2EServer()
+        let identity = makeE2EIdentity()
+        let t = FakeE2ETransport(server: server, hash: identity.hash)
+        let engine = SyncEngine(deviceId: "device-a", transport: FakeTransport(server: FakeServer()))
+
+        _ = await server.pushEncrypted(
+            hash: identity.hash,
+            [try e2eEncrypt(makeEnv(id: "r3", at: base, device: "seed"), identity: identity)]
+        )
+        _ = try await engine.syncE2E(identity: identity, transport: t)
+        // A same-second write lands AFTER the cursor advanced to `base`.
+        _ = await server.pushEncrypted(
+            hash: identity.hash,
+            [try e2eEncrypt(makeEnv(id: "r4", at: base, device: "seed"), identity: identity)]
+        )
+        let box = EnvelopeBox()
+        let res = try await engine.syncE2E(identity: identity, transport: t, applyRemote: { box.append($0) })
+        XCTAssertEqual(res.pulled, 1)
+        XCTAssertEqual(box.all.first?.id, "r4")
+        // The second pull rewound one tick so the strict `>` filter replayed
+        // the boundary timestamp instead of skipping it.
+        let bounds = await server.pullSinceBounds
+        XCTAssertEqual(bounds.count, 2)
+        XCTAssertEqual(bounds[1], base.addingTimeInterval(-1))
+    }
+
+    func testResolveSyncRouteDefaultsToLegacyV1() {
+        // No E2E credential in a fresh defaults suite → legacy v1 path.
+        let defaults = UserDefaults(suiteName: "smidgen.e2e.route-test")!
+        defaults.removePersistentDomain(forName: "smidgen.e2e.route-test")
+        defer { defaults.removePersistentDomain(forName: "smidgen.e2e.route-test") }
+        guard case .legacyV1 = resolveSyncRoute(defaults: defaults) else {
+            return XCTFail("expected legacyV1 without an active credential")
+        }
+    }
+}
 
 // MARK: - 1. Two-device convergence
 

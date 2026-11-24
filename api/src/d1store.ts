@@ -4,6 +4,7 @@ import {
   MemoryStore,
   nowIso,
   newId,
+  e2eIsNewer,
   type Store,
   type Recipe,
   type ShoppingList,
@@ -45,6 +46,13 @@ export class D1Store extends MemoryStore implements Store {
   private db: D1;
   private drizzleDb: ReturnType<typeof drizzle>;
   private hydrated = false;
+  /**
+   * E2E writes accepted into memory but not yet confirmed in D1 (persist
+   * threw). Keyed hash -> id -> envelope. loadE2EHash() keeps these across
+   * D1 reconciles so a wipe on another isolate can't drop a local write
+   * that D1 never saw; everything else absent from D1 is dropped.
+   */
+  private e2eUnsaved = new Map<string, Map<string, EncryptedEnvelope>>();
 
   constructor(d1: D1) {
     super();
@@ -191,33 +199,9 @@ export class D1Store extends MemoryStore implements Store {
       console.error('[d1store-hydrate]', e instanceof Error ? e.message : e);
       this.hydrated = true;
     }
-    // E2E blobs load separately so a pre-migration DB (no sync_blobs_v2
-    // table) can't disturb the legacy merge above. LWW: D1 rows win ties or
-    // newer; strictly-newer memory writes survive.
-    try {
-      const rows = await q('SELECT household_hash, id, header, ciphertext, updated_at FROM sync_blobs_v2');
-      for (const r of rows) {
-        const hash = String(r['household_hash'] ?? '');
-        if (!hash) continue;
-        let header: Record<string, unknown>;
-        try {
-          header = JSON.parse(String(r['header'] ?? '{}')) as Record<string, unknown>;
-        } catch {
-          continue;
-        }
-        const env = { ...header, ciphertext: String(r['ciphertext'] ?? '') } as EncryptedEnvelope;
-        if (!env.id || !env.updatedAt) continue;
-        let bucket = this.e2eBlobs.get(hash);
-        if (!bucket) {
-          bucket = new Map();
-          this.e2eBlobs.set(hash, bucket);
-        }
-        const cur = bucket.get(env.id);
-        if (!cur || env.updatedAt >= cur.updatedAt) bucket.set(env.id, env);
-      }
-    } catch {
-      // Table missing (0002 not applied yet): memory fallback still works.
-    }
+    // E2E blobs are NOT hydrated here: they load lazily per household hash
+    // in loadE2EHash() (called by e2ePut/e2eList/e2eWipe), so one request
+    // never pulls every household's ciphertext into memory.
   }
 
   private async persist(sql: string, ...params: unknown[]): Promise<void> {
@@ -335,21 +319,123 @@ export class D1Store extends MemoryStore implements Store {
   }
 
   // ---------- E2E V1 blind blobs (D1 sync_blobs_v2; memory fallback) ----------
+  // Ciphertext loads lazily per household hash — hydrate() never pulls the
+  // whole table. Every E2E op first reconciles the in-memory bucket against
+  // the D1 snapshot for that hash, so a DELETE wipe on another isolate is
+  // observed here instead of resurrecting stale cache entries.
+
+  /**
+   * Merge the D1 snapshot for one hash into the memory bucket. D1 wins ties
+   * and newer (parsed-timestamp LWW); strictly-newer memory wins survive.
+   * Cached entries absent from D1 are dropped — unless they are unconfirmed
+   * local writes (persist failed) that D1 never saw. Returns false when D1
+   * is unreachable for blobs (pre-migration DB): callers keep the memory
+   * fallback untouched.
+   */
+  private async loadE2EHash(hash: string): Promise<boolean> {
+    let rows: Record<string, unknown>[];
+    try {
+      rows = (
+        await this.db
+          .prepare('SELECT id, header, ciphertext, updated_at FROM sync_blobs_v2 WHERE household_hash = ?')
+          .bind(hash)
+          .all()
+      ).results;
+    } catch {
+      return false;
+    }
+    let bucket = this.e2eBlobs.get(hash);
+    if (!bucket) {
+      bucket = new Map();
+      this.e2eBlobs.set(hash, bucket);
+    }
+    const unsaved = this.e2eUnsaved.get(hash);
+    const seen = new Set<string>();
+    for (const r of rows) {
+      let header: Record<string, unknown>;
+      try {
+        header = JSON.parse(String(r['header'] ?? '{}')) as Record<string, unknown>;
+      } catch {
+        continue;
+      }
+      const env = { ...header, ciphertext: String(r['ciphertext'] ?? '') } as EncryptedEnvelope;
+      if (!env.id || !env.updatedAt) continue;
+      seen.add(env.id);
+      const cur = bucket.get(env.id);
+      if (!cur || e2eIsNewer(env.updatedAt, cur.updatedAt)) {
+        bucket.set(env.id, env);
+        // D1 caught up with a queued local write: confirmed.
+        const u = unsaved?.get(env.id);
+        if (u && !e2eIsNewer(u.updatedAt, env.updatedAt)) unsaved!.delete(env.id);
+      }
+    }
+    for (const [id] of bucket) {
+      if (seen.has(id)) continue;
+      if (unsaved?.has(id)) continue; // unconfirmed local write survives
+      bucket.delete(id); // wiped elsewhere: must not resurrect
+    }
+    return true;
+  }
+
+  /** E2E upsert that throws on D1 failure — no silent memory-only ack.
+   * The ON CONFLICT predicate keeps a stale write from overwriting a newer
+   * D1 winner lost to an interleaving isolate. A missing table
+   * (pre-migration DB) still falls back to memory-only. */
+  private async persistE2EOrThrow(hash: string, env: EncryptedEnvelope): Promise<void> {
+    try {
+      await this.db
+        .prepare(
+          'INSERT INTO sync_blobs_v2 (household_hash, id, header, ciphertext, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(household_hash, id) DO UPDATE SET header = excluded.header, ciphertext = excluded.ciphertext, updated_at = excluded.updated_at WHERE excluded.updated_at > sync_blobs_v2.updated_at',
+        )
+        .bind(hash, env.id, JSON.stringify(envelopeHeader(env)), env.ciphertext, env.updatedAt)
+        .run();
+    } catch (e) {
+      if (e instanceof Error && /no such table/i.test(e.message)) return;
+      throw e;
+    }
+  }
 
   override async e2ePut(hash: string, env: EncryptedEnvelope): Promise<boolean> {
+    await this.loadE2EHash(hash); // merge latest D1 winners before LWW
+    const pending = this.e2eUnsaved.get(hash)?.get(env.id);
     const stored = await super.e2ePut(hash, env);
-    if (stored) {
-      await this.persist(
-        'INSERT INTO sync_blobs_v2 (household_hash, id, header, ciphertext, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(household_hash, id) DO UPDATE SET header = excluded.header, ciphertext = excluded.ciphertext, updated_at = excluded.updated_at',
-        hash, env.id, JSON.stringify(envelopeHeader(env)), env.ciphertext, env.updatedAt,
-      );
+    // Identical retry of an unconfirmed write: super reports a tie (no
+    // winner change), but D1 still needs the row — persist anyway.
+    const retry = !stored && pending !== undefined && JSON.stringify(pending) === JSON.stringify(env);
+    if (!stored && !retry) return false;
+    try {
+      await this.persistE2EOrThrow(hash, env);
+    } catch (e) {
+      // Keep the memory copy so the write isn't silently lost, but surface
+      // the failure to the caller (HTTP 500) instead of acking it.
+      let m = this.e2eUnsaved.get(hash);
+      if (!m) {
+        m = new Map();
+        this.e2eUnsaved.set(hash, m);
+      }
+      m.set(env.id, env);
+      throw e;
     }
+    this.e2eUnsaved.get(hash)?.delete(env.id);
     return stored;
   }
 
+  override async e2eList(hash: string, since: string): Promise<EncryptedEnvelope[]> {
+    await this.loadE2EHash(hash);
+    return super.e2eList(hash, since);
+  }
+
   override async e2eWipe(hash: string): Promise<number> {
-    const n = await super.e2eWipe(hash);
-    await this.persist('DELETE FROM sync_blobs_v2 WHERE household_hash = ?', hash);
+    await this.loadE2EHash(hash); // reconcile so the count matches D1
+    const n = this.e2eBlobs.get(hash)?.size ?? 0;
+    try {
+      await this.db.prepare('DELETE FROM sync_blobs_v2 WHERE household_hash = ?').bind(hash).run();
+    } catch (e) {
+      if (!(e instanceof Error) || !/no such table/i.test(e.message)) throw e;
+      // Pre-migration DB: memory fallback.
+    }
+    this.e2eBlobs.delete(hash);
+    this.e2eUnsaved.delete(hash);
     return n;
   }
 }

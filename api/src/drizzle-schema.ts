@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, primaryKey } from 'drizzle-orm/sqlite-core';
 
 // Drizzle schema — 1:1 with packages/contracts/schema.sql (D1).
 // Migrations live in drizzle/0001_init.sql (verbatim schema.sql).
@@ -125,4 +125,6 @@ export const syncBlobsV2 = sqliteTable('sync_blobs_v2', {
   header: text('header').notNull(),
   ciphertext: text('ciphertext').notNull(),
   updatedAt: text('updated_at').notNull(),
-});
+}, (t) => ({
+  pk: primaryKey({ columns: [t.householdHash, t.id] }),
+}));
