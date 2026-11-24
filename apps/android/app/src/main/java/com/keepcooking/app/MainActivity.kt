@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -19,13 +20,15 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
- * Single-activity shell. Parity with iOS AdaptiveShell/PhoneTabView:
- * bottom NavigationBar with the 5 tabs (Library / Ingest / Cook / Plan / Shop).
- * Also owns ACTION_SEND clip intake (parity with ShareExtension) and app-
- * shortcut dispatch (parity with KeepCookingIntents).
+ * Single-activity shell. Parity with iOS PhoneTabView: bottom NavigationBar
+ * with the 5 tabs (Recipes / Plan / Lists / Library / More); Cook is a
+ * recipe-launched flow, Ingest a launched destination. Also owns ACTION_SEND
+ * clip intake (parity with ShareExtension) and app-shortcut dispatch
+ * (parity with KeepCookingIntents).
  */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val container = (application as KeepCookingApp).container
         container.seedIfNeeded()
