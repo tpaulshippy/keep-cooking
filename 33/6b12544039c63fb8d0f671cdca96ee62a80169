@@ -1,0 +1,26 @@
+apps/android/app/src/main/java/com/keepcooking/app/navigation/NavGraph.kt
+  h_6bbd00fe0a456a 40,43-44,331,334-344,347,389-399,427-436,443,446
+apps/android/app/src/main/java/com/keepcooking/app/navigation/Routes.kt
+  h_6bbd00fe0a456a 6-7,11,17,19-21,27-31
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/CookScreen.kt
+  h_6bbd00fe0a456a 63,95-116,119-121,126-127,132,146,293-305
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/LibraryScreen.kt
+  h_6bbd00fe0a456a 34,43-44,477-478,481-504,506-523
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/MoreScreen.kt
+  h_6bbd00fe0a456a 1-55
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/RecipesScreen.kt
+  h_6bbd00fe0a456a 1-130
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/ShopScreen.kt
+  h_6bbd00fe0a456a 92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "336b12544039c63fb8d0f671cdca96ee62a80169",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
