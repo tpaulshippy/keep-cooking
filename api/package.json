@@ -10,8 +10,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "seed": "bun run seed.ts --generate-sql",
-    "db:apply:local": "npx wrangler d1 execute smidgen --local --file=./drizzle/0001_init.sql",
-    "db:apply:remote": "npx wrangler d1 execute smidgen --remote --file=./drizzle/0001_init.sql",
+    "db:apply:local": "npx wrangler d1 execute smidgen --local --file=./drizzle/0001_init.sql && npx wrangler d1 execute smidgen --local --file=./drizzle/0002_e2e_blobs.sql",
+    "db:apply:remote": "npx wrangler d1 execute smidgen --remote --file=./drizzle/0001_init.sql && npx wrangler d1 execute smidgen --remote --file=./drizzle/0002_e2e_blobs.sql",
     "db:seed:local": "npx wrangler d1 execute smidgen --local --file=./drizzle/seed.sql"
   },
   "dependencies": {

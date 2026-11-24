@@ -27,14 +27,6 @@ on:
       - "apps/ios/ci_scripts/**"
       - "apps/ios/scripts/**"
       - ".github/workflows/ios-testflight.yml"
-  pull_request:
-    branches: [main]
-    paths:
-      - "apps/ios/**"
-      - "apps/ios/Smidgen.xcodeproj/**"
-      - "apps/ios/ci_scripts/**"
-      - "apps/ios/scripts/**"
-      - ".github/workflows/ios-testflight.yml"
 
 jobs:
   dispatch:
