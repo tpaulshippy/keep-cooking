@@ -77,6 +77,8 @@ struct PhoneTabView: View {
                 .tabItem { Label("Plan", systemImage: "calendar") }
             ListsTabView()
                 .tabItem { Label("Lists", systemImage: "cart") }
+            LibraryHomeView()
+                .tabItem { Label("Library", systemImage: "square.stack.3d.up") }
             MoreTabView()
                 .tabItem { Label("More", systemImage: "ellipsis.circle") }
         }
@@ -247,7 +249,26 @@ struct MorePlaceholder: View {
     var body: some View {
         List {
             Section("Library") {
-                Text("Pantry, menus and settings land here (Lane 3+).")
+                NavigationLink {
+                    LibraryHomeView()
+                } label: {
+                    Label("Search, categories & cookbooks", systemImage: "square.stack.3d.up")
+                }
+                NavigationLink {
+                    PantryTabView()
+                } label: {
+                    Label("Pantry", systemImage: "refrigerator")
+                }
+                NavigationLink {
+                    MenusTabView()
+                } label: {
+                    Label("Menus", systemImage: "list.bullet.rectangle")
+                }
+                NavigationLink {
+                    SettingsView()
+                } label: {
+                    Label("Settings", systemImage: "gear")
+                }
             }
             Section("Sync") {
                 SyncStatusRow()
@@ -272,15 +293,21 @@ struct SyncStatusRow: View {
 }
 
 /// @MainActor bridge between SwiftUI views and the SyncEngine actor.
-/// Owns deviceId, transport base URL, and one-shot seeding.
+/// Owns deviceId, transport base URL + beta token, and one-shot seeding.
+/// `sync()` is real: collects local SwiftData rows as envelopes, pulls
+/// remote changes (LWW in SyncEngine), applies winners to SwiftData.
+/// Beta scale note: pushes the full local set each run (idempotent LWW);
+/// fine for households, revisited if volumes ever demand deltas.
 @MainActor
 @Observable
 final class SyncCoordinator {
     static let shared = SyncCoordinator()
     private(set) var lastResult: String = "never synced"
     private var seeded = false
+    private var modelContext: ModelContext?
 
     func seedIfNeeded(context: ModelContext) async {
+        modelContext = context
         guard !seeded else { return }
         seeded = true
         let count = (try? context.fetchCount(FetchDescriptor<Recipe>())) ?? 0
@@ -294,10 +321,50 @@ final class SyncCoordinator {
     }
 
     func sync() async {
-        // TODO(lane2-followup): wire APISyncTransport(baseURL:) + SwiftData
-        // applyRemote once Lane 1 base URL is published. Until then this is
-        // a no-op that keeps views network-free by construction.
-        lastResult = "offline — no transport configured yet"
+        guard let ctx = modelContext else {
+            lastResult = "sync not ready — reopen the app"
+            return
+        }
+        guard let base = SyncConfig.baseURL else {
+            lastResult = "bad API base URL — check Settings"
+            return
+        }
+        let token = SyncConfig.betaToken
+        if SyncConfig.isProd && token.isEmpty {
+            lastResult = "enter the beta token in Settings → sync paused"
+            return
+        }
+        let did = currentDeviceId()
+        let transport = APISyncTransport(
+            baseURL: base,
+            auth: SyncAuth(betaToken: token.isEmpty ? nil : token,
+                           userId: SyncConfig.userId, deviceId: did))
+        let engine = SyncEngine(deviceId: did, transport: transport)
+        do {
+            for env in try collectEnvelopes(ctx: ctx) {
+                await engine.enqueue(env)
+            }
+            let box = SyncEnvelopeBox()
+            let res = try await engine.sync(applyRemote: { box.append($0) })
+            for env in box.all { applyEnvelope(env, ctx: ctx) }
+            try? ctx.save()
+            if res.conflicts > 0 {
+                lastResult = "synced \(box.all.count) down · \(res.pushed) up · \(res.conflicts) server-won"
+            } else {
+                lastResult = "synced \(box.all.count) down · \(res.pushed) up"
+            }
+        } catch let e as SyncTransportError {
+            switch e {
+            case .httpStatus(401):
+                lastResult = "unauthorized — check the beta token in Settings"
+            case .httpStatus(let code):
+                lastResult = "sync failed (HTTP \(code))"
+            default:
+                lastResult = "sync failed (transport)"
+            }
+        } catch {
+            lastResult = "sync failed (\(error.localizedDescription))"
+        }
     }
 
     func describe() async -> String { lastResult }
@@ -308,5 +375,414 @@ final class SyncCoordinator {
         #else
         return UUID().uuidString
         #endif
+    }
+}
+
+// MARK: - Sync endpoint + credentials (Settings-editable, UserDefaults-backed)
+
+enum SyncConfig {
+    static let prodBaseURL = "https://smidgen-api.pshippy-245.workers.dev"
+
+    static var baseURL: URL? {
+        if let o = UserDefaults.standard.string(forKey: "smidgen.apiBaseURL"),
+           !o.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return URL(string: o.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        if let s = Bundle.main.object(forInfoDictionaryKey: "SMIDGEN_API_BASE_URL") as? String,
+           !s.isEmpty {
+            return URL(string: s)
+        }
+        return URL(string: prodBaseURL)
+    }
+
+    static var baseURLString: String { baseURL?.absoluteString ?? prodBaseURL }
+
+    static var betaToken: String {
+        UserDefaults.standard.string(forKey: "smidgen.betaToken") ?? ""
+    }
+
+    /// Shared household identity for the internal beta (pass 2 = Apple id).
+    static var userId: String {
+        let s = UserDefaults.standard.string(forKey: "smidgen.userId") ?? ""
+        return s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "beta-user" : s
+    }
+
+    static var isProd: Bool {
+        guard let h = baseURL?.host?.lowercased() else { return false }
+        return !(h.contains("localhost") || h.contains("127.0.0.1") || h.hasSuffix(".local"))
+    }
+}
+
+extension String {
+    /// Empty/blank strings become nil (so "no token" never sends `Bearer `).
+    var nilIfEmpty: String? {
+        let t = trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? nil : t
+    }
+}
+
+/// Day-precision formatter for plan dates / pantry expiry (server TEXT 'YYYY-MM-DD', UTC).
+private let syncDayFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX")
+    f.timeZone = TimeZone(secondsFromGMT: 0)
+    f.dateFormat = "yyyy-MM-dd"
+    return f
+}()
+
+/// Sendable collector so the @Sendable applyRemote closure can hand winning
+/// remote envelopes back to the @MainActor coordinator for SwiftData apply.
+final class SyncEnvelopeBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [SyncEnvelope] = []
+    func append(_ envelope: SyncEnvelope) {
+        lock.withLock { values.append(envelope) }
+    }
+    var all: [SyncEnvelope] {
+        lock.withLock { values }
+    }
+}
+
+// MARK: - SwiftData <-> SyncEnvelope mapping (MainActor: touches models)
+
+extension SyncCoordinator {
+    func collectEnvelopes(ctx: ModelContext) throws -> [SyncEnvelope] {
+        var out: [SyncEnvelope] = []
+        out += try ctx.fetch(FetchDescriptor<Recipe>()).map(recipeEnvelope)
+        out += try ctx.fetch(FetchDescriptor<ShoppingList>()).map(listEnvelope)
+        out += try ctx.fetch(FetchDescriptor<PantryItem>()).map(pantryEnvelope)
+        out += try ctx.fetch(FetchDescriptor<Plan>()).map(planEnvelope)
+        out += try ctx.fetch(FetchDescriptor<Menu>()).map(menuEnvelope)
+        return out
+    }
+
+    func recipeEnvelope(_ r: Recipe) -> SyncEnvelope {
+        var payload: [String: JSONValue] = [
+            "householdId": .string(r.householdId),
+            "title": .string(r.title),
+            "description": .string(r.recipeDescription),
+            "servings": .double(r.servings),
+            "source": .string(r.source),
+            "sourceUrl": .string(r.sourceUrl),
+            "categories": .from(r.categories),
+            "photoKeys": .object([
+                "original": .string(r.photoOriginal ?? ""),
+                "large1024": .string(r.photoLarge1024 ?? ""),
+                "thumb": .string(r.photoThumb ?? ""),
+            ]),
+        ]
+        if let v = r.prepMinutes { payload["prepMinutes"] = .int(v) }
+        if let v = r.cookMinutes { payload["cookMinutes"] = .int(v) }
+        if let v = r.rating { payload["rating"] = .double(v) }
+        payload["ingredients"] = .array(r.ingredients.map { ing in
+            .object([
+                "id": .string(ing.id),
+                "name": .string(ing.name),
+                "quantity": ing.quantity.map { JSONValue.double($0) } ?? .null,
+                "unit": .string(ing.unit),
+                "display": .string(ing.display),
+                "position": .int(ing.position),
+                "recipeId": .string(r.id),
+            ])
+        })
+        payload["steps"] = .array(r.steps.map { st in
+            .object([
+                "id": .string(st.id),
+                "position": .int(st.position),
+                "text": .string(st.text),
+                "timers": .array(st.timers.map { t in
+                    .object(["seconds": .int(t.seconds), "label": .string(t.label)])
+                }),
+                "recipeId": .string(r.id),
+            ])
+        })
+        return SyncEnvelope(id: r.id, updatedAt: r.updatedAt, deviceId: r.deviceId,
+                            deleted: r.deleted, entity: .recipe, payload: payload)
+    }
+
+    func listEnvelope(_ l: ShoppingList) -> SyncEnvelope {
+        let payload: [String: JSONValue] = [
+            "householdId": .string(l.householdId),
+            "name": .string(l.name),
+            "items": .array(l.items.map { it in
+                .object([
+                    "id": .string(it.id),
+                    "name": .string(it.name),
+                    "quantity": .string(it.quantity),
+                    "aisle": .string(it.aisle),
+                    "checked": .bool(it.checked),
+                    "recipeId": it.recipeId.map { JSONValue.string($0) } ?? .null,
+                ])
+            }),
+        ]
+        return SyncEnvelope(id: l.id, updatedAt: l.updatedAt, deviceId: l.deviceId,
+                            deleted: l.deleted, entity: .list, payload: payload)
+    }
+
+    func pantryEnvelope(_ p: PantryItem) -> SyncEnvelope {
+        let payload: [String: JSONValue] = [
+            "householdId": .string(p.householdId),
+            "name": .string(p.name),
+            "quantity": .string(p.quantity),
+            "location": .string(p.location),
+            "expiresAt": p.expiresAt.map { JSONValue.string(syncDayFormatter.string(from: $0)) } ?? .null,
+            "lowThreshold": .string(p.lowThreshold),
+            "barcode": .string(p.barcode),
+        ]
+        return SyncEnvelope(id: p.id, updatedAt: p.updatedAt, deviceId: p.deviceId,
+                            deleted: p.deleted, entity: .pantryItem, payload: payload)
+    }
+
+    func planEnvelope(_ p: Plan) -> SyncEnvelope {
+        let payload: [String: JSONValue] = [
+            "householdId": .string(p.householdId),
+            "date": .string(syncDayFormatter.string(from: p.date)),
+            "meal": .string(p.mealRaw),
+            "recipeId": p.recipeId.map { JSONValue.string($0) } ?? .null,
+            "note": .string(p.note),
+            "servings": p.servings.map { JSONValue.double($0) } ?? .null,
+        ]
+        return SyncEnvelope(id: p.id, updatedAt: p.updatedAt, deviceId: p.deviceId,
+                            deleted: p.deleted, entity: .plan, payload: payload)
+    }
+
+    func menuEnvelope(_ m: Menu) -> SyncEnvelope {
+        let payload: [String: JSONValue] = [
+            "householdId": .string(m.householdId),
+            "name": .string(m.name),
+            "entries": .array(m.entries.map { e in
+                .object([
+                    "dayOffset": .int(e.dayOffset),
+                    "meal": .string(e.meal),
+                    "recipeId": .string(e.recipeId),
+                    "servings": .double(e.servings),
+                ])
+            }),
+        ]
+        return SyncEnvelope(id: m.id, updatedAt: m.updatedAt, deviceId: m.deviceId,
+                            deleted: m.deleted, entity: .menu, payload: payload)
+    }
+
+    // MARK: Apply (remote-won envelopes land in SwiftData; upsert by id)
+
+    func applyEnvelope(_ env: SyncEnvelope, ctx: ModelContext) {
+        switch env.entity {
+        case .recipe: applyRecipe(env, ctx: ctx)
+        case .list: applyList(env, ctx: ctx)
+        case .pantryItem: applyPantry(env, ctx: ctx)
+        case .plan: applyPlan(env, ctx: ctx)
+        case .menu: applyMenu(env, ctx: ctx)
+        case .ingredient, .step:
+            break // children ride inside recipe envelopes (see applyRecipe)
+        }
+    }
+
+    func applyRecipe(_ env: SyncEnvelope, ctx: ModelContext) {
+        let p = env.payload
+        let str = { (k: String) in p[k]?.stringValue }
+        if let r = (try? ctx.fetch(FetchDescriptor<Recipe>()))?.first(where: { $0.id == env.id }) {
+            if let v = str("title"), !v.isEmpty { r.title = v }
+            if let v = p["description"]?.stringValue { r.recipeDescription = v }
+            if let v = p["servings"]?.doubleValue { r.servings = v }
+            if let v = p["prepMinutes"]?.intValue { r.prepMinutes = v }
+            if let v = p["cookMinutes"]?.intValue { r.cookMinutes = v }
+            if let v = p["rating"]?.doubleValue { r.rating = v }
+            if let v = str("source") { r.source = v }
+            if let v = str("sourceUrl") { r.sourceUrl = v }
+            if let v = p["categories"]?.arrayValue { r.categories = v.compactMap { $0.stringValue } }
+            if let keys = p["photoKeys"]?.objectValue {
+                r.photoOriginal = keys["original"]?.stringValue
+                r.photoLarge1024 = keys["large1024"]?.stringValue
+                r.photoThumb = keys["thumb"]?.stringValue
+            }
+            if let ings = p["ingredients"]?.arrayValue {
+                for old in r.ingredients { ctx.delete(old) }
+                r.ingredients.removeAll()
+                for (i, j) in ings.enumerated() {
+                    guard let o = j.objectValue else { continue }
+                    let ing = Ingredient(recipeId: r.id,
+                        name: o["name"]?.stringValue ?? "",
+                        quantity: o["quantity"]?.doubleValue,
+                        unit: o["unit"]?.stringValue ?? "",
+                        display: o["display"]?.stringValue ?? "",
+                        position: o["position"]?.intValue ?? i,
+                        updatedAt: env.updatedAt, deviceId: env.deviceId)
+                    ing.recipe = r
+                    ctx.insert(ing)
+                }
+            }
+            if let steps = p["steps"]?.arrayValue {
+                for old in r.steps { ctx.delete(old) }
+                r.steps.removeAll()
+                for (i, j) in steps.enumerated() {
+                    guard let o = j.objectValue else { continue }
+                    let timers = o["timers"]?.arrayValue?.compactMap { t -> StepTimer? in
+                        guard let to = t.objectValue, let s = to["seconds"]?.intValue else { return nil }
+                        return StepTimer(seconds: s, label: to["label"]?.stringValue ?? "")
+                    } ?? []
+                    let st = Step(recipeId: r.id, position: o["position"]?.intValue ?? i,
+                        text: o["text"]?.stringValue ?? "", timers: timers,
+                        updatedAt: env.updatedAt, deviceId: env.deviceId)
+                    st.recipe = r
+                    ctx.insert(st)
+                }
+            }
+            r.updatedAt = env.updatedAt
+            r.deviceId = env.deviceId
+            r.deleted = env.deleted
+        } else {
+            let r = Recipe(id: env.id, householdId: str("householdId") ?? "hh-demo",
+                title: str("title") ?? "Untitled",
+                recipeDescription: p["description"]?.stringValue ?? "",
+                servings: p["servings"]?.doubleValue ?? 4,
+                prepMinutes: p["prepMinutes"]?.intValue,
+                cookMinutes: p["cookMinutes"]?.intValue,
+                rating: p["rating"]?.doubleValue,
+                source: str("source") ?? "", sourceUrl: str("sourceUrl") ?? "",
+                categories: p["categories"]?.arrayValue?.compactMap { $0.stringValue } ?? [],
+                photoOriginal: p["photoKeys"]?.objectValue?["original"]?.stringValue,
+                photoLarge1024: p["photoKeys"]?.objectValue?["large1024"]?.stringValue,
+                photoThumb: p["photoKeys"]?.objectValue?["thumb"]?.stringValue,
+                updatedAt: env.updatedAt, deviceId: env.deviceId, deleted: env.deleted)
+            ctx.insert(r)
+            for (i, j) in (p["ingredients"]?.arrayValue ?? []).enumerated() {
+                guard let o = j.objectValue else { continue }
+                let ing = Ingredient(id: o["id"]?.stringValue ?? UUID().uuidString,
+                    recipeId: r.id, name: o["name"]?.stringValue ?? "",
+                    quantity: o["quantity"]?.doubleValue,
+                    unit: o["unit"]?.stringValue ?? "",
+                    display: o["display"]?.stringValue ?? "",
+                    position: o["position"]?.intValue ?? i,
+                    updatedAt: env.updatedAt, deviceId: env.deviceId)
+                ing.recipe = r
+                ctx.insert(ing)
+            }
+            for (i, j) in (p["steps"]?.arrayValue ?? []).enumerated() {
+                guard let o = j.objectValue else { continue }
+                let st = Step(id: o["id"]?.stringValue ?? UUID().uuidString,
+                    recipeId: r.id, position: o["position"]?.intValue ?? i,
+                    text: o["text"]?.stringValue ?? "", updatedAt: env.updatedAt,
+                    deviceId: env.deviceId)
+                st.recipe = r
+                ctx.insert(st)
+            }
+        }
+    }
+
+    func applyList(_ env: SyncEnvelope, ctx: ModelContext) {
+        let p = env.payload
+        if let l = (try? ctx.fetch(FetchDescriptor<ShoppingList>()))?.first(where: { $0.id == env.id }) {
+            if let v = p["name"]?.stringValue, !v.isEmpty { l.name = v }
+            if let items = p["items"]?.arrayValue {
+                for old in l.items { ctx.delete(old) }
+                l.items.removeAll()
+                for j in items {
+                    guard let o = j.objectValue else { continue }
+                    let it = ListItem(id: o["id"]?.stringValue ?? UUID().uuidString,
+                        listId: l.id, name: o["name"]?.stringValue ?? "",
+                        quantity: o["quantity"]?.stringValue ?? "",
+                        aisle: o["aisle"]?.stringValue ?? "",
+                        checked: o["checked"]?.boolValue ?? false,
+                        recipeId: o["recipeId"]?.stringValue,
+                        updatedAt: env.updatedAt, deviceId: env.deviceId)
+                    it.shoppingList = l
+                    ctx.insert(it)
+                }
+            }
+            l.updatedAt = env.updatedAt
+            l.deviceId = env.deviceId
+            l.deleted = env.deleted
+        } else {
+            let l = ShoppingList(id: env.id,
+                householdId: p["householdId"]?.stringValue ?? "hh-demo",
+                name: p["name"]?.stringValue ?? "List",
+                updatedAt: env.updatedAt, deviceId: env.deviceId, deleted: env.deleted)
+            ctx.insert(l)
+            for j in p["items"]?.arrayValue ?? [] {
+                guard let o = j.objectValue else { continue }
+                let it = ListItem(id: o["id"]?.stringValue ?? UUID().uuidString,
+                    listId: l.id, name: o["name"]?.stringValue ?? "",
+                    quantity: o["quantity"]?.stringValue ?? "",
+                    aisle: o["aisle"]?.stringValue ?? "",
+                    checked: o["checked"]?.boolValue ?? false,
+                    recipeId: o["recipeId"]?.stringValue,
+                    updatedAt: env.updatedAt, deviceId: env.deviceId)
+                it.shoppingList = l
+                ctx.insert(it)
+            }
+        }
+    }
+
+    func applyPantry(_ env: SyncEnvelope, ctx: ModelContext) {
+        let p = env.payload
+        let day: Date? = p["expiresAt"]?.stringValue.flatMap { syncDayFormatter.date(from: $0) }
+        if let item = (try? ctx.fetch(FetchDescriptor<PantryItem>()))?.first(where: { $0.id == env.id }) {
+            if let v = p["name"]?.stringValue, !v.isEmpty { item.name = v }
+            if let v = p["quantity"]?.stringValue { item.quantity = v }
+            if let v = p["location"]?.stringValue { item.location = v }
+            if p["expiresAt"] != nil { item.expiresAt = day }
+            if let v = p["lowThreshold"]?.stringValue { item.lowThreshold = v }
+            if let v = p["barcode"]?.stringValue { item.barcode = v }
+            item.updatedAt = env.updatedAt
+            item.deviceId = env.deviceId
+            item.deleted = env.deleted
+        } else {
+            ctx.insert(PantryItem(id: env.id,
+                householdId: p["householdId"]?.stringValue ?? "hh-demo",
+                name: p["name"]?.stringValue ?? "",
+                quantity: p["quantity"]?.stringValue ?? "",
+                location: p["location"]?.stringValue ?? "",
+                expiresAt: day,
+                lowThreshold: p["lowThreshold"]?.stringValue ?? "",
+                barcode: p["barcode"]?.stringValue ?? "",
+                updatedAt: env.updatedAt, deviceId: env.deviceId, deleted: env.deleted))
+        }
+    }
+
+    func applyPlan(_ env: SyncEnvelope, ctx: ModelContext) {
+        let p = env.payload
+        let date = p["date"]?.stringValue.flatMap { syncDayFormatter.date(from: $0) } ?? Date()
+        let meal = MealSlot(rawValue: p["meal"]?.stringValue ?? "") ?? .dinner
+        if let plan = (try? ctx.fetch(FetchDescriptor<Plan>()))?.first(where: { $0.id == env.id }) {
+            plan.date = date
+            plan.meal = meal
+            if p["recipeId"] != nil { plan.recipeId = p["recipeId"]?.stringValue }
+            if let v = p["note"]?.stringValue { plan.note = v }
+            if p["servings"] != nil { plan.servings = p["servings"]?.doubleValue }
+            plan.updatedAt = env.updatedAt
+            plan.deviceId = env.deviceId
+            plan.deleted = env.deleted
+        } else {
+            ctx.insert(Plan(id: env.id,
+                householdId: p["householdId"]?.stringValue ?? "hh-demo",
+                date: date, meal: meal,
+                recipeId: p["recipeId"]?.stringValue,
+                note: p["note"]?.stringValue ?? "",
+                servings: p["servings"]?.doubleValue,
+                updatedAt: env.updatedAt, deviceId: env.deviceId, deleted: env.deleted))
+        }
+    }
+
+    func applyMenu(_ env: SyncEnvelope, ctx: ModelContext) {
+        let p = env.payload
+        let entries: [MenuEntry] = (p["entries"]?.arrayValue ?? []).compactMap { j in
+            guard let o = j.objectValue else { return nil }
+            return MenuEntry(dayOffset: o["dayOffset"]?.intValue ?? 0,
+                meal: o["meal"]?.stringValue ?? "dinner",
+                recipeId: o["recipeId"]?.stringValue ?? "",
+                servings: o["servings"]?.doubleValue ?? 4)
+        }
+        if let m = (try? ctx.fetch(FetchDescriptor<Menu>()))?.first(where: { $0.id == env.id }) {
+            if let v = p["name"]?.stringValue, !v.isEmpty { m.name = v }
+            if p["entries"] != nil { m.entries = entries }
+            m.updatedAt = env.updatedAt
+            m.deviceId = env.deviceId
+            m.deleted = env.deleted
+        } else {
+            ctx.insert(Menu(id: env.id,
+                householdId: p["householdId"]?.stringValue ?? "hh-demo",
+                name: p["name"]?.stringValue ?? "Menu", entries: entries,
+                updatedAt: env.updatedAt, deviceId: env.deviceId, deleted: env.deleted))
+        }
     }
 }

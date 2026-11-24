@@ -133,7 +133,15 @@ public struct CookbookShareView: View {
            !s.isEmpty {
             return s
         }
-        return "http://localhost:8787"
+        return SyncConfig.prodBaseURL
+    }
+
+    private var currentDeviceId: String {
+        #if os(iOS)
+        return UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
+        #else
+        return UUID().uuidString
+        #endif
     }
 
     private func createShare() async {
@@ -145,7 +153,9 @@ public struct CookbookShareView: View {
         isSharing = true
         defer { isSharing = false }
         do {
-            let client = ShareAPIClient(baseURL: base)
+            let client = ShareAPIClient(baseURL: base,
+                betaToken: SyncConfig.betaToken.nilIfEmpty,
+                userId: SyncConfig.userId, deviceId: currentDeviceId)
             link = try await client.createCookbookShare(
                 householdId: cookbook.householdId, recipeIds: cookbook.recipeIds)
             error = nil

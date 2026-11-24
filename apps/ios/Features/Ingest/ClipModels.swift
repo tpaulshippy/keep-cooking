@@ -145,9 +145,14 @@ public enum ClipClientError: Error, Sendable {
 public struct ClipClient: Sendable {
     public var baseURL: URL
     public var session: URLSession
+    public var betaToken: String?
+    public var userId: String
+    public var deviceId: String
 
-    public init(baseURL: URL, session: URLSession = .shared) {
+    public init(baseURL: URL, session: URLSession = .shared,
+                betaToken: String? = nil, userId: String = "beta-user", deviceId: String = "app") {
         self.baseURL = baseURL; self.session = session
+        self.betaToken = betaToken; self.userId = userId; self.deviceId = deviceId
     }
 
     /// POST /clip with ClipRequest{url, caption, source}.
@@ -157,6 +162,11 @@ public struct ClipClient: Sendable {
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = betaToken, !token.isEmpty {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        req.setValue(userId, forHTTPHeaderField: "x-user-id")
+        req.setValue(deviceId, forHTTPHeaderField: "x-device-id")
         let enc = JSONEncoder()
         req.httpBody = try enc.encode(request)
         let (data, resp) = try await session.data(for: req)

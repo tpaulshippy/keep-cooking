@@ -151,12 +151,24 @@ public struct CookbookShareLink: Sendable, Codable, Identifiable {
 /// wiring Better Auth tokens is a Not-Yet item, not a silent omission.
 public struct ShareAPIClient: Sendable {
     public var baseURL: URL
-    public init(baseURL: URL) { self.baseURL = baseURL }
+    public var betaToken: String?
+    public var userId: String
+    public var deviceId: String
+    public init(baseURL: URL, betaToken: String? = nil,
+                userId: String = "beta-user", deviceId: String = "app") {
+        self.baseURL = baseURL
+        self.betaToken = betaToken; self.userId = userId; self.deviceId = deviceId
+    }
 
     public func createCookbookShare(householdId: String, recipeIds: [String], expiresInDays: Int = 30) async throws -> CookbookShareLink {
         var req = URLRequest(url: baseURL.appendingPathComponent("/share/cookbook"))
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = betaToken, !token.isEmpty {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        req.setValue(userId, forHTTPHeaderField: "x-user-id")
+        req.setValue(deviceId, forHTTPHeaderField: "x-device-id")
         req.httpBody = try JSONEncoder().encode([
             "householdId": AnyCodable(householdId),
             "recipeIds": AnyCodable(recipeIds),

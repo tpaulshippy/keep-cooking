@@ -66,11 +66,17 @@ Stay-free rules: signed photo URLs (<15 min TTL) instead of proxied bytes,
   `owner` everything + `POST /share/cookbook` + membership management.
 - Stored `memberships` rows win over the header fallback role (tested).
 
-### Beta-gate env (do before TestFlight deploy)
+### Beta-gate env (set once, applied on every prod deploy)
 
 ```bash
-# REQUIRED in prod — all non-/health routes 401 without it:
-npx wrangler secret put INTERNAL_BETA_TOKEN   # paste a long random token
+# Generate + store the token as a repo secret (never commit the value):
+openssl rand -hex 32 | gh secret set INTERNAL_BETA_TOKEN --repo tpaulshippy/smidgen
+```
+
+`.github/workflows/deploy.yml` pushes that secret to the Worker
+(`wrangler secret put`) and ensures the `hh-demo` / `beta-user` owner
+membership exists, so the iOS app's sync (x-user-id `beta-user`) can write.
+Manual alternative: `npx wrangler secret put INTERNAL_BETA_TOKEN`.
 
 # Reserved for pass 2, unused by the beta gate:
 # npx wrangler secret put BETTER_AUTH_SECRET

@@ -51,7 +51,7 @@ public struct CaptionsImportView: View {
            !s.isEmpty, let url = URL(string: s) {
             return url
         }
-        return URL(string: "https://api.smidgen.local")!
+        return URL(string: SyncConfig.prodBaseURL)!
     }
 
     public init(baseURL: URL? = nil) {
@@ -232,7 +232,14 @@ public struct CaptionsImportView: View {
             source: platform.clipSource
         )
         do {
-            let client = ClipClient(baseURL: baseURL)
+            #if os(iOS)
+            let clipDeviceId = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
+            #else
+            let clipDeviceId = UUID().uuidString
+            #endif
+            let client = ClipClient(baseURL: baseURL,
+                betaToken: SyncConfig.betaToken.nilIfEmpty,
+                userId: SyncConfig.userId, deviceId: clipDeviceId)
             let rep = try await client.clip(req)
             print(client.logEvent(for: rep, requestURL: req.url).description)
             report = rep

@@ -36,11 +36,17 @@ public struct ClipView: View {
            !s.isEmpty, let url = URL(string: s) {
             return url
         }
-        return URL(string: "https://api.smidgen.local")!
+        return URL(string: SyncConfig.prodBaseURL)!
     }
 
     public init(baseURL: URL? = nil) {
         self.baseURL = baseURL ?? Self.defaultBaseURL()
+    }
+
+    private func authedClient() -> ClipClient {
+        ClipClient(baseURL: baseURL,
+            betaToken: SyncConfig.betaToken.nilIfEmpty,
+            userId: SyncConfig.userId, deviceId: currentDeviceId())
     }
 
     private var stepIndex: Int {
@@ -205,7 +211,7 @@ public struct ClipView: View {
         focused = nil
         let req = ClipRequest(url: urlText.trimmingCharacters(in: .whitespaces), source: .url)
         do {
-            let client = ClipClient(baseURL: baseURL)
+            let client = authedClient()
             let rep = try await client.clip(req)
             // PII-safe log: strategy + host + confidence only.
             print(client.logEvent(for: rep, requestURL: req.url).description)

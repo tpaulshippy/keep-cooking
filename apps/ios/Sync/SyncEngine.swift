@@ -103,6 +103,44 @@ public enum JSONValue: Sendable, Codable, Hashable, ExpressibleByStringLiteral,
     }
 }
 
+/// Convenience accessors for envelope payload mapping (see SyncCoordinator).
+public extension JSONValue {
+    var stringValue: String? {
+        if case .string(let s) = self { return s }
+        return nil
+    }
+    var doubleValue: Double? {
+        switch self {
+        case .double(let d): return d
+        case .int(let i): return Double(i)
+        case .string(let s): return Double(s)
+        default: return nil
+        }
+    }
+    var intValue: Int? {
+        switch self {
+        case .int(let i): return i
+        case .double(let d): return Int(d)
+        default: return nil
+        }
+    }
+    var boolValue: Bool? {
+        if case .bool(let b) = self { return b }
+        return nil
+    }
+    var arrayValue: [JSONValue]? {
+        if case .array(let a) = self { return a }
+        return nil
+    }
+    var objectValue: [String: JSONValue]? {
+        if case .object(let o) = self { return o }
+        return nil
+    }
+    static func from(_ strings: [String]) -> JSONValue {
+        .array(strings.map { .string($0) })
+    }
+}
+
 // MARK: - Pure merge (LWW + tombstones) — the unit under test
 
 /// Outcome of merging one remote envelope against the local copy.
@@ -142,6 +180,18 @@ public enum SyncTransportError: Error, Sendable {
     case decode(Error)
 }
 
+/// Auth headers for the production beta gate + identity.
+/// - `betaToken`: `INTERNAL_BETA_TOKEN` (required on prod hosts).
+/// - `userId`: shared household identity (beta: "beta-user"; pass 2 = Apple id).
+public struct SyncAuth: Sendable {
+    public var betaToken: String?
+    public var userId: String
+    public var deviceId: String
+    public init(betaToken: String? = nil, userId: String = "beta-user", deviceId: String) {
+        self.betaToken = betaToken; self.userId = userId; self.deviceId = deviceId
+    }
+}
+
 public protocol SyncTransport: Sendable {
     func pull(since: Date?) async throws -> [SyncEnvelope]
     /// Returns server-won conflict envelopes (empty = all accepted).
@@ -150,15 +200,19 @@ public protocol SyncTransport: Sendable {
 
 /// URLSession transport against Lane 1 (/sync/pull, /sync/push).
 /// Strictly off-main: async/await, JSON with ISO8601 dates.
+/// Sends the beta-gate bearer + identity headers when `auth` is set
+/// (required on prod `*.workers.dev`; harmless on local dev).
 public struct APISyncTransport: SyncTransport {
     private let baseURL: URL
     private let session: URLSession
+    private let auth: SyncAuth?
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
 
-    public init(baseURL: URL, session: URLSession = .shared) {
+    public init(baseURL: URL, session: URLSession = .shared, auth: SyncAuth? = nil) {
         self.baseURL = baseURL
         self.session = session
+        self.auth = auth
         let d = JSONDecoder()
         d.dateDecodingStrategy = .iso8601
         self.decoder = d
@@ -167,13 +221,24 @@ public struct APISyncTransport: SyncTransport {
         self.encoder = e
     }
 
+    private func authorized(_ req: URLRequest) -> URLRequest {
+        var r = req
+        guard let auth else { return r }
+        if let token = auth.betaToken, !token.isEmpty {
+            r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        r.setValue(auth.userId, forHTTPHeaderField: "x-user-id")
+        r.setValue(auth.deviceId, forHTTPHeaderField: "x-device-id")
+        return r
+    }
+
     public func pull(since: Date?) async throws -> [SyncEnvelope] {
         var comps = URLComponents(url: baseURL.appendingPathComponent("/sync/pull"), resolvingAgainstBaseURL: false)
         if let since {
             comps?.queryItems = [URLQueryItem(name: "since", value: ISO8601DateFormatter().string(from: since))]
         }
         guard let url = comps?.url else { throw SyncTransportError.badURL }
-        let (data, resp) = try await session.data(from: url)
+        let (data, resp) = try await session.data(for: authorized(URLRequest(url: url)))
         guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
             throw SyncTransportError.httpStatus((resp as? HTTPURLResponse)?.statusCode ?? -1)
         }
@@ -187,7 +252,7 @@ public struct APISyncTransport: SyncTransport {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try encoder.encode(envelopes)
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await session.data(for: authorized(req))
         guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
             throw SyncTransportError.httpStatus((resp as? HTTPURLResponse)?.statusCode ?? -1)
         }

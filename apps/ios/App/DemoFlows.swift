@@ -281,29 +281,47 @@ struct RecipeDetailView: View {
                 heroHeader
             }
             .listRowInsets(EdgeInsets())
-            // Meta row
+            // Meta row — Serves label never compresses: fixedSize + layoutPriority
+            // keep "Serves 4" on one line; time/rating hug trailing edge.
             Section {
-                HStack(spacing: 12) {
-                    Stepper("Serves \(servingsDisplay)", value: $servings, in: 1...24, step: 1)
-                        .font(.subheadline)
-                    Spacer()
-                    if let total = totalMinutes {
-                        Label("\(total) min", systemImage: "clock")
-                            .font(.subheadline).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
+                        Text("Serves \(servingsDisplay)")
+                            .font(.subheadline)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .layoutPriority(2)
+                            .accessibilityLabel("Serves \(servingsDisplay)")
+                        Stepper("", value: $servings, in: 1...24, step: 1)
+                            .labelsHidden()
+                            .fixedSize()
+                            .layoutPriority(1)
+                            .accessibilityLabel("Servings")
+                        Spacer(minLength: 8)
+                        if let total = totalMinutes {
+                            Label("\(total) min", systemImage: "clock")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .layoutPriority(1)
+                        }
+                        if let rating = recipe.rating {
+                            Label(String(format: "%.1f", rating), systemImage: "star.fill")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .layoutPriority(1)
+                        }
                     }
-                    if let rating = recipe.rating {
-                        Label(String(format: "%.1f", rating), systemImage: "star.fill")
-                            .font(.subheadline).foregroundStyle(.secondary)
-                    }
-                }
-                if !recipe.categories.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack {
-                            ForEach(recipe.categories, id: \.self) { cat in
-                                Text(cat).font(.caption)
-                                    .padding(.horizontal, 8).padding(.vertical, 4)
-                                    .background(Color(.secondarySystemBackground))
-                                    .clipShape(Capsule())
+                    if !recipe.categories.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack {
+                                ForEach(recipe.categories, id: \.self) { cat in
+                                    Text(cat).font(.caption)
+                                        .padding(.horizontal, 8).padding(.vertical, 4)
+                                        .background(Color(.secondarySystemBackground))
+                                        .clipShape(Capsule())
+                                }
                             }
                         }
                     }
@@ -591,7 +609,7 @@ struct ListsTabView: View {
     }
 }
 
-// MARK: - More tab (ingest entry points + sync status)
+// MARK: - More tab (ingest entry points + library + sync)
 
 struct MoreTabView: View {
     var body: some View {
@@ -606,7 +624,24 @@ struct MoreTabView: View {
                         .accessibilityIdentifier("more-ocr")
                 }
                 Section("Library") {
-                    Text("Pantry, menus and settings land here (Lane 3+).")
+                    NavigationLink {
+                        PantryTabView()
+                    } label: {
+                        Label("Pantry", systemImage: "refrigerator")
+                    }
+                    .accessibilityIdentifier("more-pantry")
+                    NavigationLink {
+                        MenusTabView()
+                    } label: {
+                        Label("Menus", systemImage: "list.bullet.rectangle")
+                    }
+                    .accessibilityIdentifier("more-menus")
+                    NavigationLink {
+                        SettingsView()
+                    } label: {
+                        Label("Settings", systemImage: "gear")
+                    }
+                    .accessibilityIdentifier("more-settings")
                 }
                 Section("Sync") {
                     SyncStatusRow()
@@ -614,6 +649,234 @@ struct MoreTabView: View {
             }
             .navigationTitle("More")
         }
+    }
+}
+
+// MARK: - Pantry tab (live SwiftData → PantryView snapshots)
+
+struct PantryTabView: View {
+    @Environment(\.modelContext) private var context
+    @Query(sort: [SortDescriptor(\PantryItem.name)]) private var items: [PantryItem]
+    @State private var name = ""
+    @State private var location = ""
+    @State private var quantity = ""
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                TextField("Add pantry item", text: $name)
+                    .textInputAutocapitalization(.words)
+                    .submitLabel(.done)
+                    .onSubmit(addItem)
+                Button("Add", action: addItem)
+                    .buttonStyle(.bordered)
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+            Divider()
+            PantryView(items: snapshots, onBarcode: insertBarcode)
+        }
+    }
+
+    private var snapshots: [PantrySnapshot] {
+        items.filter { !$0.deleted }.map {
+            PantrySnapshot(id: $0.id, name: $0.name, quantity: $0.quantity,
+                location: $0.location, expiresAt: $0.expiresAt,
+                lowThreshold: $0.lowThreshold, barcode: $0.barcode)
+        }
+    }
+
+    private func addItem() {
+        let text = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        context.insert(PantryItem(householdId: "hh-demo", name: text,
+            quantity: quantity, location: location,
+            deviceId: currentDeviceId()))
+        try? context.save()
+        name = ""; location = ""; quantity = ""
+    }
+
+    private func insertBarcode(_ code: String) {
+        let text = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        if let existing = items.first(where: { $0.barcode == text && !$0.deleted }) {
+            existing.updatedAt = Date()
+        } else {
+            context.insert(PantryItem(householdId: "hh-demo", name: text,
+                barcode: text, deviceId: currentDeviceId()))
+        }
+        try? context.save()
+    }
+}
+
+// MARK: - Menus tab (live SwiftData menus + apply to current week)
+
+struct MenusTabView: View {
+    @Environment(\.modelContext) private var context
+    @Query(sort: [SortDescriptor(\Menu.name)]) private var menus: [Menu]
+    @State private var name = ""
+    @State private var confirm: String?
+
+    var body: some View {
+        List {
+            if let confirm {
+                Section {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                        Text(confirm)
+                    }
+                }
+            }
+            Section("New menu") {
+                HStack {
+                    TextField("Menu name", text: $name)
+                        .submitLabel(.done)
+                        .onSubmit(createMenu)
+                    Button("Create", action: createMenu)
+                        .buttonStyle(.bordered)
+                        .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            Section("Menus (\(liveMenus.count))") {
+                if liveMenus.isEmpty {
+                    Text("No menus yet — name one above. Apply copies its entries into this week's plan.")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(liveMenus, id: \.id) { menu in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(menu.name).font(.headline)
+                            Spacer()
+                            Text("\(menu.entries.count) entries")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        HStack {
+                            Button("Apply to this week") { apply(menu) }
+                                .buttonStyle(.bordered)
+                            Spacer()
+                            Button(role: .destructive) { tombstone(menu) } label: {
+                                Image(systemName: "trash")
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+        }
+        .navigationTitle("Menus")
+    }
+
+    private var liveMenus: [Menu] { menus.filter { !$0.deleted } }
+
+    private func createMenu() {
+        let text = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        context.insert(Menu(householdId: "hh-demo", name: text, deviceId: currentDeviceId()))
+        try? context.save()
+        name = ""
+    }
+
+    private func tombstone(_ menu: Menu) {
+        menu.deleted = true
+        menu.updatedAt = Date()
+        try? context.save()
+    }
+
+    private func apply(_ menu: Menu) {
+        let start = DemoSeeds.weekStart(containing: Date())
+        let cal = Calendar.current
+        var count = 0
+        for entry in menu.entries {
+            guard let day = cal.date(byAdding: .day, value: entry.dayOffset, to: start) else { continue }
+            let meal = MealSlot(rawValue: entry.meal) ?? .dinner
+            context.insert(Plan(householdId: "hh-demo", date: day, meal: meal,
+                recipeId: entry.recipeId.isEmpty ? nil : entry.recipeId,
+                servings: entry.servings, deviceId: currentDeviceId()))
+            count += 1
+        }
+        try? context.save()
+        confirm = count > 0 ? "Applied \(menu.name): \(count) meals planned" : "\(menu.name) has no entries to apply"
+    }
+}
+
+// MARK: - Settings (device, counts, sync)
+
+struct SettingsView: View {
+    @Query private var recipes: [Recipe]
+    @Query private var lists: [ShoppingList]
+    @Query private var plans: [Plan]
+    @State private var baseURLString: String = UserDefaults.standard.string(forKey: "smidgen.apiBaseURL") ?? ""
+    @State private var token: String = UserDefaults.standard.string(forKey: "smidgen.betaToken") ?? ""
+    @State private var syncing = false
+    @State private var status: String = ""
+
+    var body: some View {
+        List {
+            Section("Server") {
+                TextField("API base URL (blank = default)", text: $baseURLString)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    #if os(iOS)
+                    .keyboardType(.URL)
+                    #endif
+                SecureField("Beta token", text: $token)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button(syncing ? "Syncing…" : "Save & sync now") {
+                    Task { await saveAndSync() }
+                }
+                .disabled(syncing)
+                if !status.isEmpty {
+                    Text(status).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Section("Sync") {
+                SyncStatusRow()
+            }
+            Section("Library") {
+                HStack { Text("Recipes"); Spacer(); Text("\(recipes.filter { !$0.deleted }.count)").foregroundStyle(.secondary) }
+                HStack { Text("Shopping lists"); Spacer(); Text("\(lists.filter { !$0.deleted }.count)").foregroundStyle(.secondary) }
+                HStack { Text("Planned meals"); Spacer(); Text("\(plans.filter { !$0.deleted }.count)").foregroundStyle(.secondary) }
+                HStack {
+                    Text("Endpoint")
+                    Spacer()
+                    Text(SyncConfig.baseURLString).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                }
+            }
+            Section("Device") {
+                HStack {
+                    Text("Device ID")
+                    Spacer()
+                    Text(ShortDevice.id).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                }
+            }
+            Section("About") {
+                Text("Smidgen \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0") — offline-first, MIT.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle("Settings")
+    }
+
+    private func saveAndSync() async {
+        syncing = true
+        defer { syncing = false }
+        UserDefaults.standard.set(baseURLString.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "smidgen.apiBaseURL")
+        UserDefaults.standard.set(token.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "smidgen.betaToken")
+        await SyncCoordinator.shared.sync()
+        status = await SyncCoordinator.shared.describe()
+    }
+}
+
+private enum ShortDevice {
+    static var id: String {
+        #if os(iOS)
+        UIDevice.current.identifierForVendor?.uuidString ?? "simulator"
+        #else
+        "mac"
+        #endif
     }
 }
 

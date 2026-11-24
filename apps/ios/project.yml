@@ -64,10 +64,9 @@ settings:
   CODE_SIGN_STYLE: Automatic
   DEVELOPMENT_TEAM: YOUR_TEAM_ID
   # Prod API URL seam (lane 1 ios-packaging): Info-App.plist exposes this as
-  # SMIDGEN_API_BASE_URL. Default preserves the current dev backend; override
-  # per-config (or via `xcodebuild SMIDGEN_API_BASE_URL=...`) for prod.
-  # TODO — flip the default to the prod URL once the backend ships.
-  SMIDGEN_API_BASE_URL: https://api.smidgen.local
+  # SMIDGEN_API_BASE_URL. Default is the production Worker; override
+  # per-config (or via `xcodebuild SMIDGEN_API_BASE_URL=...`) for local dev.
+  SMIDGEN_API_BASE_URL: https://smidgen-api.pshippy-245.workers.dev
 
 targets:
   Smidgen:
