@@ -7,8 +7,11 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -21,6 +24,7 @@ import androidx.navigation.navArgument
 import com.keepcooking.app.ui.screens.CookScreen
 import com.keepcooking.app.ui.screens.ExportScreen
 import com.keepcooking.app.ui.screens.IngestScreen
+import com.keepcooking.app.ui.screens.LibraryRecipeRow
 import com.keepcooking.app.ui.screens.LibraryScreen
 import com.keepcooking.app.ui.screens.PlanScreen
 import com.keepcooking.app.ui.screens.RecipeDetailScreen
@@ -66,7 +70,33 @@ fun KeepCookingNav() {
             modifier = Modifier.padding(padding),
         ) {
             composable(TopDestination.Library.route) {
-                LibraryScreen(onRecipeClick = { id ->
+                var rows by remember { mutableStateOf(listOf<LibraryRecipeRow>()) }
+                LaunchedEffect(Unit) {
+                    val live = container.db.recipes().liveRecipes()
+                    rows = live.map { r ->
+                        val ings = container.db.ingredients().forRecipe(r.id)
+                        val steps = container.db.steps().forRecipe(r.id)
+                        val cats = runCatching {
+                            kotlinx.serialization.json.Json.decodeFromString<List<String>>(r.categoriesJson)
+                        }.getOrDefault(emptyList())
+                        LibraryRecipeRow(
+                            recipeId = r.id,
+                            title = r.title,
+                            recipeDescription = r.recipeDescription,
+                            servings = r.servings,
+                            prepMinutes = r.prepMinutes,
+                            cookMinutes = r.cookMinutes,
+                            rating = r.rating,
+                            source = r.source,
+                            categories = cats,
+                            ingredientNames = ings.map { it.name },
+                            stepTexts = steps.map { it.text },
+                            photoOriginal = r.photoOriginal,
+                            photoThumb = r.photoThumb,
+                        )
+                    }
+                }
+                LibraryScreen(recipes = rows, onRecipeClick = { id ->
                     navController.navigate(Routes.recipeDetail(id))
                 })
             }
