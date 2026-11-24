@@ -1,0 +1,674 @@
+apps/android/.gradle/buildOutputCleanup/cache.properties
+  h_6bbd00fe0a456a 1-2
+apps/android/README.md
+  h_6bbd00fe0a456a 50-68
+apps/android/app/build/generated/ksp/debug/java/com/keepcooking/app/data/AppDatabase_Impl.java
+  h_6bbd00fe0a456a 1-490
+apps/android/app/build/generated/ksp/debug/java/com/keepcooking/app/data/IngredientDao_Impl.java
+  h_6bbd00fe0a456a 1-191
+apps/android/app/build/generated/ksp/debug/java/com/keepcooking/app/data/ListItemDao_Impl.java
+  h_6bbd00fe0a456a 1-192
+apps/android/app/build/generated/ksp/debug/java/com/keepcooking/app/data/MenuDao_Impl.java
+  h_6bbd00fe0a456a 1-183
+apps/android/app/build/generated/ksp/debug/java/com/keepcooking/app/data/OutboxDao_Impl.java
+  h_6bbd00fe0a456a 1-183
+apps/android/app/build/generated/ksp/debug/java/com/keepcooking/app/data/PantryDao_Impl.java
+  h_6bbd00fe0a456a 1-224
+apps/android/app/build/generated/ksp/debug/java/com/keepcooking/app/data/PlanDao_Impl.java
+  h_6bbd00fe0a456a 1-229
+apps/android/app/build/generated/ksp/debug/java/com/keepcooking/app/data/RecipeDao_Impl.java
+  h_6bbd00fe0a456a 1-372
+apps/android/app/build/generated/ksp/debug/java/com/keepcooking/app/data/ShoppingListDao_Impl.java
+  h_6bbd00fe0a456a 1-176
+apps/android/app/build/generated/ksp/debug/java/com/keepcooking/app/data/StepDao_Impl.java
+  h_6bbd00fe0a456a 1-174
+apps/android/app/build/intermediates/annotation_processor_list/debug/javaPreCompileDebug/annotationProcessors.json
+  h_6bbd00fe0a456a 1
+apps/android/app/build/intermediates/annotation_processor_list/debugUnitTest/javaPreCompileDebugUnitTest/annotationProcessors.json
+  h_6bbd00fe0a456a 1
+apps/android/app/build/intermediates/apk_ide_redirect_file/debug/createDebugApkListingFileRedirect/redirect.txt
+  h_6bbd00fe0a456a 1-2
+apps/android/app/build/intermediates/app_metadata/debug/writeDebugAppMetadata/app-metadata.properties
+  h_6bbd00fe0a456a 1-2
+apps/android/app/build/intermediates/assets/debug/mergeDebugAssets/seed/recipe-01.json
+  h_6bbd00fe0a456a 1-45
+apps/android/app/build/intermediates/assets/debug/mergeDebugAssets/seed/recipe-02.json
+  h_6bbd00fe0a456a 1-45
+apps/android/app/build/intermediates/assets/debug/mergeDebugAssets/seed/recipe-03.json
+  h_6bbd00fe0a456a 1-45
+apps/android/app/build/intermediates/assets/debug/mergeDebugAssets/seed/recipe-04.json
+  h_6bbd00fe0a456a 1-45
+apps/android/app/build/intermediates/assets/debug/mergeDebugAssets/seed/recipe-05.json
+  h_6bbd00fe0a456a 1-45
+apps/android/app/build/intermediates/assets/debug/mergeDebugAssets/seed/recipe-06.json
+  h_6bbd00fe0a456a 1-45
+apps/android/app/build/intermediates/assets/debug/mergeDebugAssets/seed/recipe-07.json
+  h_6bbd00fe0a456a 1-45
+apps/android/app/build/intermediates/assets/debug/mergeDebugAssets/seed/recipe-08.json
+  h_6bbd00fe0a456a 1-45
+apps/android/app/build/intermediates/assets/debug/mergeDebugAssets/seed/recipe-09.json
+  h_6bbd00fe0a456a 1-45
+apps/android/app/build/intermediates/assets/debug/mergeDebugAssets/seed/recipe-10.json
+  h_6bbd00fe0a456a 1-45
+apps/android/app/build/intermediates/assets/debug/mergeDebugAssets/seed/recipe-11.json
+  h_6bbd00fe0a456a 1-45
+apps/android/app/build/intermediates/assets/debug/mergeDebugAssets/seed/recipe-12.json
+  h_6bbd00fe0a456a 1-45
+apps/android/app/build/intermediates/assets/debug/mergeDebugAssets/seed/recipe-13-dupe.json
+  h_6bbd00fe0a456a 1-44
+apps/android/app/build/intermediates/assets/debug/mergeDebugAssets/seed/recipe-14-dupe.json
+  h_6bbd00fe0a456a 1-44
+apps/android/app/build/intermediates/assets/debug/mergeDebugAssets/seed/recipe-15-dupe.json
+  h_6bbd00fe0a456a 1-44
+apps/android/app/build/intermediates/compatible_screen_manifest/debug/createDebugCompatibleScreenManifests/output-metadata.json
+  h_6bbd00fe0a456a 1-10
+apps/android/app/build/intermediates/dex_number_of_buckets_file/debug/dexBuilderDebug/out
+  h_6bbd00fe0a456a 1
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/compile-file-map.properties
+  h_6bbd00fe0a456a 1-10
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-af/values-af.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-am/values-am.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-ar/values-ar.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-as/values-as.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-az/values-az.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-b+sr+Latn/values-b+sr+Latn.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-be/values-be.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-bg/values-bg.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-bn/values-bn.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-bs/values-bs.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-ca/values-ca.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-cs/values-cs.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-da/values-da.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-de/values-de.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-el/values-el.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-en-rAU/values-en-rAU.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-en-rCA/values-en-rCA.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-en-rGB/values-en-rGB.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-en-rIN/values-en-rIN.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-en-rXC/values-en-rXC.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-es-rUS/values-es-rUS.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-es/values-es.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-et/values-et.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-eu/values-eu.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-fa/values-fa.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-fi/values-fi.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-fr-rCA/values-fr-rCA.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-fr/values-fr.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-gl/values-gl.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-gu/values-gu.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-hi/values-hi.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-hr/values-hr.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-hu/values-hu.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-hy/values-hy.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-in/values-in.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-is/values-is.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-it/values-it.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-iw/values-iw.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-ja/values-ja.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-ka/values-ka.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-kk/values-kk.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-km/values-km.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-kn/values-kn.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-ko/values-ko.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-ky/values-ky.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-lo/values-lo.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-lt/values-lt.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-lv/values-lv.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-mk/values-mk.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-ml/values-ml.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-mn/values-mn.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-mr/values-mr.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-ms/values-ms.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-my/values-my.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-nb/values-nb.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-ne/values-ne.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-nl/values-nl.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-or/values-or.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-pa/values-pa.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-pl/values-pl.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-pt-rBR/values-pt-rBR.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-pt-rPT/values-pt-rPT.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-pt/values-pt.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-ro/values-ro.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-ru/values-ru.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-si/values-si.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-sk/values-sk.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-sl/values-sl.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-sq/values-sq.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-sr/values-sr.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-sv/values-sv.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-sw/values-sw.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-ta/values-ta.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-te/values-te.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-th/values-th.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-tl/values-tl.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-tr/values-tr.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-uk/values-uk.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-ur/values-ur.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-uz/values-uz.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-v21/values-v21.xml
+  h_6bbd00fe0a456a 1-19
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-vi/values-vi.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-zh-rCN/values-zh-rCN.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-zh-rHK/values-zh-rHK.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-zh-rTW/values-zh-rTW.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values-zu/values-zu.xml
+  h_6bbd00fe0a456a 1-86
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir/values/values.xml
+  h_6bbd00fe0a456a 1-431
+apps/android/app/build/intermediates/incremental/debug/mergeDebugResources/merger.xml
+  h_6bbd00fe0a456a 1-385
+apps/android/app/build/intermediates/incremental/debug/packageDebugResources/compile-file-map.properties
+  h_6bbd00fe0a456a 1-10
+apps/android/app/build/intermediates/incremental/debug/packageDebugResources/merged.dir/values/values.xml
+  h_6bbd00fe0a456a 1-15
+apps/android/app/build/intermediates/incremental/debug/packageDebugResources/merger.xml
+  h_6bbd00fe0a456a 1-4
+apps/android/app/build/intermediates/incremental/mergeDebugAssets/merger.xml
+  h_6bbd00fe0a456a 1-2
+apps/android/app/build/intermediates/incremental/mergeDebugJniLibFolders/merger.xml
+  h_6bbd00fe0a456a 1-2
+apps/android/app/build/intermediates/incremental/mergeDebugShaders/merger.xml
+  h_6bbd00fe0a456a 1-2
+apps/android/app/build/intermediates/incremental/packageDebug/tmp/debug/dex-renamer-state.txt
+  h_6bbd00fe0a456a 1-46
+apps/android/app/build/intermediates/incremental/processDebugResources/resources-list-for-resources-debug.ap_.txt
+  h_6bbd00fe0a456a 1
+apps/android/app/build/intermediates/local_only_symbol_list/debug/parseDebugLocalResources/R-def.txt
+  h_6bbd00fe0a456a 1-23
+apps/android/app/build/intermediates/manifest_merge_blame_file/debug/processDebugMainManifest/manifest-merger-blame-debug-report.txt
+  h_6bbd00fe0a456a 1-295
+apps/android/app/build/intermediates/merged_manifest/debug/processDebugMainManifest/AndroidManifest.xml
+  h_6bbd00fe0a456a 1-163
+apps/android/app/build/intermediates/merged_manifests/debug/processDebugManifest/AndroidManifest.xml
+  h_6bbd00fe0a456a 1-163
+apps/android/app/build/intermediates/merged_manifests/debug/processDebugManifest/output-metadata.json
+  h_6bbd00fe0a456a 1-20
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/mergeDebugResources.json
+  h_6bbd00fe0a456a 1-6533
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-af.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-am.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-ar.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-as.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-az.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-b+sr+Latn.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-be.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-bg.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-bn.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-bs.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-ca.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-cs.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-da.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-de.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-el.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-en-rAU.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-en-rCA.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-en-rGB.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-en-rIN.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-en-rXC.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-es-rUS.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-es.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-et.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-eu.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-fa.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-fi.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-fr-rCA.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-fr.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-gl.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-gu.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-hi.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-hr.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-hu.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-hy.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-in.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-is.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-it.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-iw.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-ja.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-ka.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-kk.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-km.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-kn.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-ko.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-ky.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-lo.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-lt.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-lv.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-mk.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-ml.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-mn.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-mr.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-ms.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-my.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-nb.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-ne.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-nl.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-or.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-pa.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-pl.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-pt-rBR.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-pt-rPT.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-pt.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-ro.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-ru.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-si.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-sk.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-sl.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-sq.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-sr.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-sv.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-sw.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-ta.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-te.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-th.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-tl.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-tr.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-uk.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-ur.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-uz.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-v21.json
+  h_6bbd00fe0a456a 1-20
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-vi.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-zh-rCN.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-zh-rHK.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-zh-rTW.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values-zu.json
+  h_6bbd00fe0a456a 1-77
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/multi-v2/values.json
+  h_6bbd00fe0a456a 1-312
+apps/android/app/build/intermediates/merged_res_blame_folder/debug/mergeDebugResources/out/single/mergeDebugResources.json
+  h_6bbd00fe0a456a 1-38
+apps/android/app/build/intermediates/navigation_json/debug/extractDeepLinksDebug/navigation.json
+  h_6bbd00fe0a456a 1
+apps/android/app/build/intermediates/nested_resources_validation_report/debug/generateDebugResources/nestedResourcesValidationReport.txt
+  h_6bbd00fe0a456a 1
+apps/android/app/build/intermediates/packaged_manifests/debug/processDebugManifestForPackage/AndroidManifest.xml
+  h_6bbd00fe0a456a 1-163
+apps/android/app/build/intermediates/packaged_manifests/debug/processDebugManifestForPackage/output-metadata.json
+  h_6bbd00fe0a456a 1-20
+apps/android/app/build/intermediates/packaged_res/debug/packageDebugResources/drawable/ic_launcher_foreground.xml
+  h_6bbd00fe0a456a 1-13
+apps/android/app/build/intermediates/packaged_res/debug/packageDebugResources/layout/widget_list_progress.xml
+  h_6bbd00fe0a456a 1-25
+apps/android/app/build/intermediates/packaged_res/debug/packageDebugResources/layout/widget_today_plan.xml
+  h_6bbd00fe0a456a 1-18
+apps/android/app/build/intermediates/packaged_res/debug/packageDebugResources/mipmap-anydpi-v26/ic_launcher.xml
+  h_6bbd00fe0a456a 1-5
+apps/android/app/build/intermediates/packaged_res/debug/packageDebugResources/mipmap-anydpi-v26/ic_launcher_round.xml
+  h_6bbd00fe0a456a 1-5
+apps/android/app/build/intermediates/packaged_res/debug/packageDebugResources/values/values.xml
+  h_6bbd00fe0a456a 1-15
+apps/android/app/build/intermediates/packaged_res/debug/packageDebugResources/xml/filepaths.xml
+  h_6bbd00fe0a456a 1-4
+apps/android/app/build/intermediates/packaged_res/debug/packageDebugResources/xml/shortcuts.xml
+  h_6bbd00fe0a456a 1-59
+apps/android/app/build/intermediates/packaged_res/debug/packageDebugResources/xml/widget_list_progress.xml
+  h_6bbd00fe0a456a 1-10
+apps/android/app/build/intermediates/packaged_res/debug/packageDebugResources/xml/widget_today_plan.xml
+  h_6bbd00fe0a456a 1-10
+apps/android/app/build/intermediates/processed_res/debug/processDebugResources/out/output-metadata.json
+  h_6bbd00fe0a456a 1-20
+apps/android/app/build/intermediates/runtime_symbol_list/debug/processDebugResources/R.txt
+  h_6bbd00fe0a456a 1-409
+apps/android/app/build/intermediates/signing_config_versions/debug/writeDebugSigningConfigVersions/signing-config-versions.json
+  h_6bbd00fe0a456a 1
+apps/android/app/build/intermediates/source_set_path_map/debug/mapDebugSourceSetPaths/file-map.txt
+  h_6bbd00fe0a456a 1-62
+apps/android/app/build/intermediates/stable_resource_ids_file/debug/processDebugResources/stableIds.txt
+  h_6bbd00fe0a456a 1-322
+apps/android/app/build/intermediates/symbol_list_with_package_name/debug/processDebugResources/package-aware-r.txt
+  h_6bbd00fe0a456a 1-323
+apps/android/app/build/kotlin/compileDebugKotlin/cacheable/caches-jvm/inputs/source-to-output.tab.values.s
+  h_6bbd00fe0a456a 1
+apps/android/app/build/kotlin/compileDebugKotlin/cacheable/caches-jvm/jvm/kotlin/class-attributes.tab.keystream
+  h_6bbd00fe0a456a 1
+apps/android/app/build/kotlin/compileDebugKotlin/cacheable/caches-jvm/jvm/kotlin/class-fq-name-to-source.tab.keystream
+  h_6bbd00fe0a456a 1
+apps/android/app/build/kotlin/compileDebugKotlin/cacheable/caches-jvm/jvm/kotlin/internal-name-to-source.tab.keystream
+  h_6bbd00fe0a456a 1
+apps/android/app/build/kotlin/compileDebugKotlin/cacheable/caches-jvm/jvm/kotlin/internal-name-to-source.tab.values.s
+  h_6bbd00fe0a456a 1
+apps/android/app/build/kotlin/compileDebugKotlin/cacheable/caches-jvm/jvm/kotlin/proto.tab.keystream
+  h_6bbd00fe0a456a 1
+apps/android/app/build/kotlin/compileDebugKotlin/cacheable/caches-jvm/jvm/kotlin/proto.tab.values.s
+  h_6bbd00fe0a456a 1
+apps/android/app/build/kotlin/compileDebugKotlin/cacheable/caches-jvm/jvm/kotlin/source-to-classes.tab.values.s
+  h_6bbd00fe0a456a 1
+apps/android/app/build/kotlin/compileDebugKotlin/cacheable/caches-jvm/lookups/counters.tab
+  h_6bbd00fe0a456a 1-2
+apps/android/app/build/kotlin/compileDebugKotlin/cacheable/caches-jvm/lookups/lookups.tab.values.s
+  h_6bbd00fe0a456a 1
+apps/android/app/build/kotlin/compileDebugUnitTestKotlin/cacheable/caches-jvm/lookups/counters.tab
+  h_6bbd00fe0a456a 1-2
+apps/android/app/build/kspCaches/debug/backups/java/byRounds/1/com/keepcooking/app/data/AppDatabase_Impl.java
+  h_6bbd00fe0a456a 1-490
+apps/android/app/build/kspCaches/debug/backups/java/byRounds/1/com/keepcooking/app/data/IngredientDao_Impl.java
+  h_6bbd00fe0a456a 1-191
+apps/android/app/build/kspCaches/debug/backups/java/byRounds/1/com/keepcooking/app/data/ListItemDao_Impl.java
+  h_6bbd00fe0a456a 1-192
+apps/android/app/build/kspCaches/debug/backups/java/byRounds/1/com/keepcooking/app/data/MenuDao_Impl.java
+  h_6bbd00fe0a456a 1-183
+apps/android/app/build/kspCaches/debug/backups/java/byRounds/1/com/keepcooking/app/data/OutboxDao_Impl.java
+  h_6bbd00fe0a456a 1-183
+apps/android/app/build/kspCaches/debug/backups/java/byRounds/1/com/keepcooking/app/data/PantryDao_Impl.java
+  h_6bbd00fe0a456a 1-224
+apps/android/app/build/kspCaches/debug/backups/java/byRounds/1/com/keepcooking/app/data/PlanDao_Impl.java
+  h_6bbd00fe0a456a 1-229
+apps/android/app/build/kspCaches/debug/backups/java/byRounds/1/com/keepcooking/app/data/RecipeDao_Impl.java
+  h_6bbd00fe0a456a 1-372
+apps/android/app/build/kspCaches/debug/backups/java/byRounds/1/com/keepcooking/app/data/ShoppingListDao_Impl.java
+  h_6bbd00fe0a456a 1-176
+apps/android/app/build/kspCaches/debug/backups/java/byRounds/1/com/keepcooking/app/data/StepDao_Impl.java
+  h_6bbd00fe0a456a 1-174
+apps/android/app/build/kspCaches/debug/classLookups/counters.tab
+  h_6bbd00fe0a456a 1-2
+apps/android/app/build/kspCaches/debug/symbolLookups/counters.tab
+  h_6bbd00fe0a456a 1-2
+apps/android/app/build/kspCaches/debug/symbols.values.s
+  h_6bbd00fe0a456a 1
+apps/android/app/build/kspCaches/debugUnitTest/classLookups/counters.tab
+  h_6bbd00fe0a456a 1-2
+apps/android/app/build/kspCaches/debugUnitTest/symbolLookups/counters.tab
+  h_6bbd00fe0a456a 1-2
+apps/android/app/build/kspCaches/debugUnitTest/symbols.values.s
+  h_6bbd00fe0a456a 1
+apps/android/app/build/outputs/apk/debug/output-metadata.json
+  h_6bbd00fe0a456a 1-21
+apps/android/app/build/outputs/logs/manifest-merger-debug-report.txt
+  h_6bbd00fe0a456a 1-515
+apps/android/app/build/reports/tests/testDebugUnitTest/classes/com.keepcooking.app.CookLogicTest.html
+  h_6bbd00fe0a456a 1-431
+apps/android/app/build/reports/tests/testDebugUnitTest/classes/com.keepcooking.app.PlanAggregationTest.html
+  h_6bbd00fe0a456a 1-151
+apps/android/app/build/reports/tests/testDebugUnitTest/classes/com.keepcooking.app.SyncMergeTest.html
+  h_6bbd00fe0a456a 1-111
+apps/android/app/build/reports/tests/testDebugUnitTest/classes/com.keepcooking.app.SyncParityFixesTest.html
+  h_6bbd00fe0a456a 1-236
+apps/android/app/build/reports/tests/testDebugUnitTest/classes/com.keepcooking.app.ingest.ClipModelsTest.html
+  h_6bbd00fe0a456a 1-111
+apps/android/app/build/reports/tests/testDebugUnitTest/classes/com.keepcooking.app.ingest.IngredientParserTest.html
+  h_6bbd00fe0a456a 1-166
+apps/android/app/build/reports/tests/testDebugUnitTest/classes/com.keepcooking.app.library.DuplicateFinderTest.html
+  h_6bbd00fe0a456a 1-141
+apps/android/app/build/reports/tests/testDebugUnitTest/classes/com.keepcooking.app.library.LibrarySearchTest.html
+  h_6bbd00fe0a456a 1-131
+apps/android/app/build/reports/tests/testDebugUnitTest/css/base-style.css
+  h_6bbd00fe0a456a 1-179
+apps/android/app/build/reports/tests/testDebugUnitTest/css/style.css
+  h_6bbd00fe0a456a 1-84
+apps/android/app/build/reports/tests/testDebugUnitTest/index.html
+  h_6bbd00fe0a456a 1-223
+apps/android/app/build/reports/tests/testDebugUnitTest/js/report.js
+  h_6bbd00fe0a456a 1-194
+apps/android/app/build/reports/tests/testDebugUnitTest/packages/com.keepcooking.app.html
+  h_6bbd00fe0a456a 1-133
+apps/android/app/build/reports/tests/testDebugUnitTest/packages/com.keepcooking.app.ingest.html
+  h_6bbd00fe0a456a 1-113
+apps/android/app/build/reports/tests/testDebugUnitTest/packages/com.keepcooking.app.library.html
+  h_6bbd00fe0a456a 1-113
+apps/android/app/build/test-results/testDebugUnitTest/TEST-com.keepcooking.app.CookLogicTest.xml
+  h_6bbd00fe0a456a 1-74
+apps/android/app/build/test-results/testDebugUnitTest/TEST-com.keepcooking.app.PlanAggregationTest.xml
+  h_6bbd00fe0a456a 1-18
+apps/android/app/build/test-results/testDebugUnitTest/TEST-com.keepcooking.app.SyncMergeTest.xml
+  h_6bbd00fe0a456a 1-10
+apps/android/app/build/test-results/testDebugUnitTest/TEST-com.keepcooking.app.SyncParityFixesTest.xml
+  h_6bbd00fe0a456a 1-35
+apps/android/app/build/test-results/testDebugUnitTest/TEST-com.keepcooking.app.ingest.ClipModelsTest.xml
+  h_6bbd00fe0a456a 1-10
+apps/android/app/build/test-results/testDebugUnitTest/TEST-com.keepcooking.app.ingest.IngredientParserTest.xml
+  h_6bbd00fe0a456a 1-21
+apps/android/app/build/test-results/testDebugUnitTest/TEST-com.keepcooking.app.library.DuplicateFinderTest.xml
+  h_6bbd00fe0a456a 1-16
+apps/android/app/build/test-results/testDebugUnitTest/TEST-com.keepcooking.app.library.LibrarySearchTest.xml
+  h_6bbd00fe0a456a 1-14
+apps/android/app/src/main/AndroidManifest.xml
+  h_6bbd00fe0a456a 7-8,56-64
+apps/android/app/src/main/java/com/keepcooking/app/MainActivity.kt
+  h_6bbd00fe0a456a 17,29-37
+apps/android/app/src/main/java/com/keepcooking/app/cook/CookSession.kt
+  h_6bbd00fe0a456a 3-11,17-18,120-130,133-139,148,155-167,172-200,206-275
+apps/android/app/src/main/java/com/keepcooking/app/cook/RecipeScaler.kt
+  h_6bbd00fe0a456a 3-4,28-37
+apps/android/app/src/main/java/com/keepcooking/app/cook/StepTimerParser.kt
+  h_6bbd00fe0a456a 10-12,15-18,26-29,31-42,45,51,59-66,69-74,79-82
+apps/android/app/src/main/java/com/keepcooking/app/cook/VoiceCommandParser.kt
+  h_6bbd00fe0a456a 220,222-223,228-229,233,235-247,251,253-259,261-263,266-278
+apps/android/app/src/main/java/com/keepcooking/app/data/Daos.kt
+  h_6bbd00fe0a456a 55-58,80-83,93-96,106-109
+apps/android/app/src/main/java/com/keepcooking/app/data/SeedLoader.kt
+  h_6bbd00fe0a456a 36-38
+apps/android/app/src/main/java/com/keepcooking/app/ingest/ClipModels.kt
+  h_6bbd00fe0a456a 3,14-19,31-34
+apps/android/app/src/main/java/com/keepcooking/app/library/DuplicateFinder.kt
+  h_6bbd00fe0a456a 102-110,144-149,155
+apps/android/app/src/main/java/com/keepcooking/app/navigation/NavGraph.kt
+  h_6bbd00fe0a456a 3-4,16,27-33,36,45-207,217,255,274-309,311-312
+apps/android/app/src/main/java/com/keepcooking/app/network/ApiService.kt
+  h_6bbd00fe0a456a 22-24,30-31,38
+apps/android/app/src/main/java/com/keepcooking/app/plan/PlanAggregation.kt
+  h_6bbd00fe0a456a 6-7,48-49,61-67,76-80,112-115
+apps/android/app/src/main/java/com/keepcooking/app/share/ShareHandler.kt
+  h_6bbd00fe0a456a 56-59
+apps/android/app/src/main/java/com/keepcooking/app/shortcuts/AppShortcuts.kt
+  h_6bbd00fe0a456a 4-6,10,14-16,18-22,31-44,77-102,130-131,139-144,163-164,185,200-202,205-303
+apps/android/app/src/main/java/com/keepcooking/app/sync/SyncCrypto.kt
+  h_6bbd00fe0a456a 20-21,30,38,103,141-145,152-163,193,206-207,209,262-270,301-310,319-320
+apps/android/app/src/main/java/com/keepcooking/app/sync/SyncEngine.kt
+  h_6bbd00fe0a456a 38,93-100,104-117,121,123-125,127-131,133,136-143,145-149,151-153,156,158-183,190-207,221,265-321,440,530-603,753-756,759-769
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/CookScreen.kt
+  h_6bbd00fe0a456a 46,55,73-76,89,111-126,241-244
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/LibraryScreen.kt
+  h_6bbd00fe0a456a 47,84,212-214,420,442
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/PlanScreen.kt
+  h_6bbd00fe0a456a 3-4,26,30,34,36,38-45,49,51,53-55,58-63,78-90,94-97,101,105-286,297,307-312,331-337,342-348,354-355,368-369,377,403,407,412,414-417,423-437,447-452
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/ShareScreen.kt
+  h_6bbd00fe0a456a 21,32-33,38-39,44-46,132-137,164,166
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/ShopScreen.kt
+  h_6bbd00fe0a456a 33,38,42,44-48,54-60,80-83,87,103-104,203-399,486-590
+apps/android/app/src/main/java/com/keepcooking/app/wear/NowCookingScreens.kt
+  h_6bbd00fe0a456a 10,21,23,30,37-38,50-53,59-66,76-81,92-93,106-107,111,126-131,135-137,148-151,159-161,163-168,170,172-173,176,196
+apps/android/app/src/main/java/com/keepcooking/app/wear/WatchStore.kt
+  h_6bbd00fe0a456a 56-74
+apps/android/app/src/main/java/com/keepcooking/app/widgets/SnapshotWriter.kt
+  h_6bbd00fe0a456a 6,42,47-54
+apps/android/app/src/test/java/com/keepcooking/app/CookLogicTest.kt
+  h_6bbd00fe0a456a 16,94-136,201-207
+apps/android/app/src/test/java/com/keepcooking/app/DuplicateFinderTest.kt
+  h_6bbd00fe0a456a 94-113
+apps/android/app/src/test/java/com/keepcooking/app/PlanAggregationTest.kt
+  h_6bbd00fe0a456a 66-96
+apps/android/app/src/test/java/com/keepcooking/app/SyncParityFixesTest.kt
+  h_6bbd00fe0a456a 1-382
+apps/android/app/src/test/java/com/keepcooking/app/ingest/ClipModelsTest.kt
+  h_6bbd00fe0a456a 1-55
+apps/ios/Features/Cook/CookModeView.swift
+  h_6bbd00fe0a456a 117-121,140-143,153-158,648-651
+apps/ios/Features/Cook/CookTests.swift
+  h_6bbd00fe0a456a 520-569
+apps/ios/Features/Cook/VoiceCommandParser.swift
+  h_6bbd00fe0a456a 170-212,290-295,298-302,305-306,308-323,327-329,333,345,348-351,354-358,360-361
+apps/ios/Features/Cook/VoiceCookManager.swift
+  h_6bbd00fe0a456a 25-33,219-224,339-342,355,357-362,373-378,380-383,428,512,521,530,575-576
+apps/ios/Intents/KeepCookingIntents.swift
+  h_6bbd00fe0a456a 25-31,35-39,41-49,207-210,213-215,227,241,256,280,312-316,357-390
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ede2de878aa48338b28f2a8803b9eb188081aac1",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
