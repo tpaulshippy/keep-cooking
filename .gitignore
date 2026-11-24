@@ -2,3 +2,6 @@ node_modules/
 .DS_Store
 .slim/deepwork/
 **/xcuserdata/
+
+# Preview renders are PR attachments only, never committed
+apps/android/screenshots/
