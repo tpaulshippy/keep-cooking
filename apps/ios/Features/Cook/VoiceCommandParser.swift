@@ -6,7 +6,7 @@
 // Conventions:
 //   - Input is a raw transcript; normalization (lowercase, trim, trailing
 //     period strip) happens inside `parseVoiceCommand`.
-//   - A leading "smidgen" / "hey smidgen" wake-word prefix is stripped before
+//   - A leading "keep cooking" / "hey keep cooking" wake-word prefix is stripped before
 //     matching. Ambiguous utterances ("i'm done", "goodbye", "what was that?",
 //     "come again", "cancel", "halve it", "double it") are ONLY honored when
 //     that prefix was present; bare they parse as `.unknown`.
@@ -62,10 +62,10 @@ public func voiceNormalizedName(_ raw: String) -> String {
     return s
 }
 
-/// Strips a leading "smidgen" / "hey smidgen" wake-word prefix.
+/// Strips a leading "keep cooking" / "hey keep cooking" wake-word prefix.
 /// Returns the remainder plus whether the prefix was present.
 func stripVoiceWakeWord(_ text: String) -> (utterance: String, hadPrefix: Bool) {
-    for prefix in ["hey smidgen", "smidgen"] {
+    for prefix in ["hey keep cooking", "keep cooking"] {
         if text == prefix { return ("", true) }
         if text.hasPrefix(prefix + " ") {
             return (String(text.dropFirst(prefix.count + 1)), true)
@@ -367,7 +367,7 @@ private func voiceTimerSeconds(in text: String) -> Int? {
 /// Mid-sentence input ("please tell me the next step") stays `.unknown` —
 /// the caller gates on standalone utterances.
 public func parseVoiceCommand(_ transcript: String) -> VoiceCommand {
-    let (text, hadSmidgen) = stripVoiceWakeWord(normalizeVoiceText(transcript))
+    let (text, hadWakeWord) = stripVoiceWakeWord(normalizeVoiceText(transcript))
     if text.isEmpty { return .unknown }
 
     switch text {
@@ -422,8 +422,8 @@ public func parseVoiceCommand(_ transcript: String) -> VoiceCommand {
     // "add (the) ingredients to my [name] list".
     if let add = parseVoiceAddToList(text) { return add }
 
-    // Ambiguous utterances: ONLY with the "smidgen" prefix.
-    if hadSmidgen {
+    // Ambiguous utterances: ONLY with the wake-word prefix.
+    if hadWakeWord {
         switch text {
         case "im done":
             return .next

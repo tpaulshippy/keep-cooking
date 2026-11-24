@@ -526,7 +526,7 @@ fun CookScreen(recipeId: String, container: AppContainer, onExit: () -> Unit = {
                     }, enabled = voiceInput.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
                         Text("Send voice command")
                     }
-                    Text("Try: “smidgen next”, “go to step two”, “start a timer for 10 minutes”.",
+                    Text("Try: “keep cooking next”, “go to step two”, “start a timer for 10 minutes”.",
                         style = MaterialTheme.typography.labelSmall)
                 } else {
                     Text("Tap the mic to type a voice command.", style = MaterialTheme.typography.labelSmall)

@@ -8,7 +8,7 @@ package com.keepcooking.app.cook
  * Conventions:
  *   - Input is a raw transcript; normalization (lowercase, trim, trailing
  *     period strip) happens inside [parseVoiceCommand].
- *   - A leading "smidgen" / "hey smidgen" wake-word prefix is stripped before
+ *   - A leading "keep cooking" / "hey keep cooking" wake-word prefix is stripped before
  *     matching. Ambiguous utterances ("i'm done", "goodbye", "what was that?",
  *     "come again", "cancel", "halve it", "double it") are ONLY honored when
  *     that prefix was present; bare they parse as [VoiceCommand.Unknown].
@@ -61,9 +61,9 @@ fun voiceNormalizedName(raw: String): String {
     return s
 }
 
-/** Strips a leading "smidgen" / "hey smidgen" wake-word prefix. Returns remainder + whether prefix was present. */
+/** Strips a leading "keep cooking" / "hey keep cooking" wake-word prefix. Returns remainder + whether prefix was present. */
 internal fun stripVoiceWakeWord(text: String): Pair<String, Boolean> {
-    for (prefix in listOf("hey smidgen", "smidgen")) {
+    for (prefix in listOf("hey keep cooking", "keep cooking")) {
         if (text == prefix) return "" to true
         if (text.startsWith("$prefix ")) return text.drop(prefix.length + 1) to true
         if (text.startsWith("$prefix,")) {
@@ -286,7 +286,7 @@ private fun voiceSecondsRaw(num: Double, unit: String): Long? {
  * Mid-sentence input ("please tell me the next step") stays [VoiceCommand.Unknown].
  */
 fun parseVoiceCommand(transcript: String): VoiceCommand {
-    val (text, hadSmidgen) = stripVoiceWakeWord(normalizeVoiceText(transcript))
+    val (text, hadWakeWord) = stripVoiceWakeWord(normalizeVoiceText(transcript))
     if (text.isEmpty()) return VoiceCommand.Unknown
 
     when (text) {
@@ -317,8 +317,8 @@ fun parseVoiceCommand(transcript: String): VoiceCommand {
     parseVoiceUncross(text)?.let { return it }
     parseVoiceAddToList(text)?.let { return it }
 
-    // Ambiguous utterances: ONLY with the "smidgen" prefix.
-    if (hadSmidgen) {
+    // Ambiguous utterances: ONLY with the wake-word prefix.
+    if (hadWakeWord) {
         when (text) {
             "im done" -> return VoiceCommand.Next
             "goodbye", "cancel" -> return VoiceCommand.StopCooking
