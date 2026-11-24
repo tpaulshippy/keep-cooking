@@ -274,6 +274,446 @@ public actor CloudKitMirrorStub {
     }
 }
 
+// MARK: - E2E V1 encrypted sync (Lane B)
+
+/// Identity for one E2E sync session: bucket hash + key material.
+/// The raw 32-byte key is held as `Data` (Sendable-safe); the live
+/// `SymmetricKey` is materialized per use via `symmetricKey`.
+public struct E2ESyncIdentity: Sendable {
+    public var householdId: String
+    public var kid: String
+    public var hash: String
+    public var keyData: Data
+
+    public init(householdId: String, kid: String, hash: String, keyData: Data) {
+        self.householdId = householdId
+        self.kid = kid
+        self.hash = hash
+        self.keyData = keyData
+    }
+
+    public init(householdId: String, kid: String, hash: String, key: SymmetricKey) {
+        self.init(
+            householdId: householdId,
+            kid: kid,
+            hash: hash,
+            keyData: key.withUnsafeBytes { Data($0) }
+        )
+    }
+
+    public init(credential: E2ECredential) {
+        self.init(
+            householdId: credential.metadata.householdId,
+            kid: credential.metadata.kid,
+            hash: credential.metadata.hash,
+            key: credential.symmetricKey
+        )
+    }
+
+    /// Derives bucket hash + data key from the invite syncCode (locked
+    /// householdHash + HKDF parameters — see SyncCrypto.swift header).
+    public init(syncCode: String, householdId: String, kid: String) {
+        self.init(
+            householdId: householdId,
+            kid: kid,
+            hash: householdHash(syncCode: syncCode, householdId: householdId),
+            key: key(fromCode: syncCode, householdId: householdId, kid: kid)
+        )
+    }
+
+    public var symmetricKey: SymmetricKey {
+        SymmetricKey(data: keyData)
+    }
+}
+
+public enum E2EError: Error, Sendable {
+    /// A standalone ingredient/step envelope reached encryption without a
+    /// parent recipe to fold into. The E2E server rejects these (422), so
+    /// the client must never emit them.
+    case standaloneChildRejected(entity: SyncEntityName, id: String)
+    case unsupportedVersion(Int)
+    case unsupportedAlg(String)
+    case decryptFailed(id: String)
+    case payloadDecode(String)
+    case payloadEncode(String)
+}
+
+/// Wire shape for PUT/GET/DELETE /v2/sync/:hash, 1:1 with the server's
+/// `encryptedEnvelopeSchema` (api/src/e2e.ts). `v` is always 2 and `alg` is
+/// always "AES-GCM-256" (no interop with the v1 plaintext envelope).
+/// Every field EXCEPT the sealed payload travels in plaintext so the blind
+/// server can LWW-merge on the header; tombstones (`deleted: true`) pass
+/// through with an (encrypted) empty/minimal payload.
+public struct EncryptedEnvelope: Sendable, Codable, Hashable {
+    public var v: Int
+    public var alg: String
+    public var kid: String
+    public var householdHash: String
+    public var id: String
+    public var updatedAt: Date
+    public var deviceId: String
+    public var deleted: Bool
+    public var entity: SyncEntityName
+    public var nonce: String
+    public var ciphertext: String
+
+    public init(
+        v: Int = 2,
+        alg: String = "AES-GCM-256",
+        kid: String,
+        householdHash: String,
+        id: String,
+        updatedAt: Date,
+        deviceId: String,
+        deleted: Bool,
+        entity: SyncEntityName,
+        nonce: String,
+        ciphertext: String
+    ) {
+        self.v = v
+        self.alg = alg
+        self.kid = kid
+        self.householdHash = householdHash
+        self.id = id
+        self.updatedAt = updatedAt
+        self.deviceId = deviceId
+        self.deleted = deleted
+        self.entity = entity
+        self.nonce = nonce
+        self.ciphertext = ciphertext
+    }
+}
+
+// MARK: Pre-encrypt folding (ingredient/step -> parent recipe)
+
+// Payload keys recognized as the parent link on child envelopes.
+private let e2eRecipeIdKeys = ["recipeId", "recipe_id"]
+
+/// Folds ingredient/step envelopes into their parent recipe envelope
+/// BEFORE encryption. Children are embedded as entries in the parent's
+/// `ingredients` / `steps` payload arrays (each entry carries the child's
+/// own id + deleted flag so tombstones survive the fold); the parent's
+/// updatedAt is bumped to the newest folded child.
+///
+/// - Children whose parent recipe envelope is in the same batch merge into it.
+/// - Children whose parent is NOT in the batch get a synthesized parent
+///   shell (entity `.recipe`, id = recipeId) carrying just the folded
+///   children, so no standalone child is ever emitted. A later real recipe
+///   envelope for the same id converges via normal header LWW.
+/// - Non-child entities (recipe, list, pantryItem, plan, menu) pass through.
+/// - Tombstone (`deleted: true`) children fold as deleted entries; a
+///   tombstoned recipe passes through untouched (its payload is irrelevant).
+public func foldEnvelopesForE2E(_ envelopes: [SyncEnvelope]) -> [SyncEnvelope] {
+    var recipes: [String: SyncEnvelope] = [:]
+    var recipeOrder: [String] = []
+    var passthrough: [SyncEnvelope] = []
+    var children: [SyncEnvelope] = []
+
+    for env in envelopes {
+        switch env.entity {
+        case .recipe:
+            if recipes[env.id] == nil { recipeOrder.append(env.id) }
+            if let current = recipes[env.id] {
+                if env.updatedAt >= current.updatedAt { recipes[env.id] = env }
+            } else {
+                recipes[env.id] = env
+            }
+        case .ingredient, .step:
+            children.append(env)
+        default:
+            passthrough.append(env)
+        }
+    }
+
+    var shellOrder: [String] = []
+    var shells: [String: SyncEnvelope] = [:]
+
+    for child in children {
+        let parentId = e2eRecipeIdKeys.compactMap { child.payload[$0]?.stringValue }.first
+        guard let parentId, !parentId.isEmpty else { continue } // dropped below via encrypt-time guard
+        if recipes[parentId] != nil {
+            recipes[parentId] = foldChild(child, into: recipes[parentId]!)
+        } else if shells[parentId] != nil {
+            shells[parentId] = foldChild(child, into: shells[parentId]!)
+        } else {
+            shellOrder.append(parentId)
+            shells[parentId] = foldChild(
+                child,
+                into: SyncEnvelope(
+                    id: parentId,
+                    updatedAt: child.updatedAt,
+                    deviceId: child.deviceId,
+                    entity: .recipe,
+                    payload: ["id": .string(parentId), "_foldedShell": .bool(true)]
+                )
+            )
+        }
+    }
+
+    // Children with NO recipeId link cannot be folded to a parent; re-emit
+    // them unchanged so the encrypt step rejects them loudly (E2EError)
+    // instead of silently dropping user data.
+    let orphans = children.filter { child in
+        e2eRecipeIdKeys.compactMap { child.payload[$0]?.stringValue }.first?.isEmpty ?? true
+    }
+
+    return recipeOrder.compactMap { recipes[$0] }
+        + shellOrder.compactMap { shells[$0] }
+        + passthrough
+        + orphans
+}
+
+private func foldChild(_ child: SyncEnvelope, into parent: SyncEnvelope) -> SyncEnvelope {
+    var parent = parent
+    var entry = child.payload
+    entry["id"] = .string(child.id)
+    entry["deleted"] = .bool(child.deleted)
+    let listKey = child.entity == .ingredient ? "ingredients" : "steps"
+    var list = parent.payload[listKey]?.arrayValue ?? []
+    // Replace any existing entry for the same child id (idempotent fold),
+    // otherwise append.
+    if let index = list.firstIndex(where: { $0.objectValue?["id"]?.stringValue == child.id }) {
+        list[index] = .object(entry)
+    } else {
+        list.append(.object(entry))
+    }
+    parent.payload[listKey] = .array(list)
+    if child.updatedAt > parent.updatedAt {
+        parent.updatedAt = child.updatedAt
+    }
+    return parent
+}
+
+// MARK: Envelope encrypt / decrypt
+
+/// Seals a plaintext envelope's payload; the header stays plaintext.
+public func e2eEncrypt(_ envelope: SyncEnvelope, identity: E2ESyncIdentity) throws -> EncryptedEnvelope {
+    let payloadData: Data
+    do {
+        payloadData = try JSONEncoder().encode(envelope.payload)
+    } catch {
+        throw E2EError.payloadEncode(String(describing: error))
+    }
+    let (nonceB64, ciphertextB64): (String, String)
+    do {
+        (nonceB64, ciphertextB64) = try seal(payloadData, using: identity.symmetricKey)
+    } catch {
+        throw E2EError.payloadEncode(String(describing: error))
+    }
+    return EncryptedEnvelope(
+        v: 2,
+        alg: "AES-GCM-256",
+        kid: identity.kid,
+        householdHash: identity.hash,
+        id: envelope.id,
+        updatedAt: envelope.updatedAt,
+        deviceId: envelope.deviceId,
+        deleted: envelope.deleted,
+        entity: envelope.entity,
+        nonce: nonceB64,
+        ciphertext: ciphertextB64
+    )
+}
+
+/// Opens an encrypted envelope back into a plaintext `SyncEnvelope`.
+/// LWW merge runs on the resulting header (`updatedAt`); tombstones pass
+/// through like any other write.
+public func e2eDecrypt(_ encrypted: EncryptedEnvelope, identity: E2ESyncIdentity) throws -> SyncEnvelope {
+    guard encrypted.v == 2 else {
+        throw E2EError.unsupportedVersion(encrypted.v)
+    }
+    guard encrypted.alg == "AES-GCM-256" else {
+        throw E2EError.unsupportedAlg(encrypted.alg)
+    }
+    let payload: [String: JSONValue]
+    do {
+        payload = try openJSON(nonceB64: encrypted.nonce, ciphertextB64: encrypted.ciphertext, using: identity.symmetricKey)
+    } catch let error as SyncCryptoError {
+        switch error {
+        case .payloadDecode(let detail):
+            throw E2EError.payloadDecode(detail)
+        default:
+            throw E2EError.decryptFailed(id: encrypted.id)
+        }
+    } catch {
+        throw E2EError.decryptFailed(id: encrypted.id)
+    }
+    return SyncEnvelope(
+        id: encrypted.id,
+        updatedAt: encrypted.updatedAt,
+        deviceId: encrypted.deviceId,
+        deleted: encrypted.deleted,
+        entity: encrypted.entity,
+        payload: payload
+    )
+}
+
+/// Folds (ingredient/step into parent recipe) then encrypts a batch.
+/// Throws `E2EError.standaloneChildRejected` if any ingredient/step has no
+/// parent link — the E2E server rejects those with 422, so fail loudly.
+public func e2eEncryptBatch(_ envelopes: [SyncEnvelope], identity: E2ESyncIdentity) throws -> [EncryptedEnvelope] {
+    let folded = foldEnvelopesForE2E(envelopes)
+    for env in folded where env.entity == .ingredient || env.entity == .step {
+        throw E2EError.standaloneChildRejected(entity: env.entity, id: env.id)
+    }
+    return try folded.map { try e2eEncrypt($0, identity: identity) }
+}
+
+// MARK: E2E transport (PUT/GET /v2/sync/:hash)
+
+public protocol E2EEncryptedTransport: Sendable {
+    func pullEncrypted(hash: String, since: Date?) async throws -> [EncryptedEnvelope]
+    /// Pushes a batch; returns server-won conflict envelopes (empty = accepted).
+    func pushEncrypted(hash: String, _ envelopes: [EncryptedEnvelope]) async throws -> [EncryptedEnvelope]
+}
+
+/// URLSession transport for /v2/sync/:hash, sharing the `baseURL` + auth
+/// header convention of `APISyncTransport` (beta bearer + identity headers).
+public struct APIE2ETransport: E2EEncryptedTransport {
+    private let baseURL: URL
+    private let session: URLSession
+    private let auth: SyncAuth?
+    private let decoder: JSONDecoder
+    private let encoder: JSONEncoder
+
+    public init(baseURL: URL, session: URLSession = .shared, auth: SyncAuth? = nil) {
+        self.baseURL = baseURL
+        self.session = session
+        self.auth = auth
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        self.decoder = d
+        let e = JSONEncoder()
+        e.dateEncodingStrategy = .iso8601
+        self.encoder = e
+    }
+
+    private func authorized(_ req: URLRequest) -> URLRequest {
+        var r = req
+        guard let auth else { return r }
+        if let token = auth.betaToken, !token.isEmpty {
+            r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        r.setValue(auth.userId, forHTTPHeaderField: "x-user-id")
+        r.setValue(auth.deviceId, forHTTPHeaderField: "x-device-id")
+        return r
+    }
+
+    private func bucketURL(hash: String) throws -> URL {
+        let comps = URLComponents(
+            url: baseURL.appendingPathComponent("/v2/sync/\(hash)"),
+            resolvingAgainstBaseURL: false
+        )
+        guard let url = comps?.url else { throw SyncTransportError.badURL }
+        return url
+    }
+
+    public func pullEncrypted(hash: String, since: Date?) async throws -> [EncryptedEnvelope] {
+        var comps = URLComponents(url: try bucketURL(hash: hash), resolvingAgainstBaseURL: false)
+        if let since {
+            comps?.queryItems = [URLQueryItem(name: "since", value: ISO8601DateFormatter().string(from: since))]
+        }
+        guard let url = comps?.url else { throw SyncTransportError.badURL }
+        let (data, resp) = try await session.data(for: authorized(URLRequest(url: url)))
+        guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
+            throw SyncTransportError.httpStatus((resp as? HTTPURLResponse)?.statusCode ?? -1)
+        }
+        do { return try decoder.decode([EncryptedEnvelope].self, from: data) }
+        catch { throw SyncTransportError.decode(error) }
+    }
+
+    public func pushEncrypted(hash: String, _ envelopes: [EncryptedEnvelope]) async throws -> [EncryptedEnvelope] {
+        var req = URLRequest(url: try bucketURL(hash: hash))
+        req.httpMethod = "PUT"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try encoder.encode(envelopes)
+        let (data, resp) = try await session.data(for: authorized(req))
+        guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
+            throw SyncTransportError.httpStatus((resp as? HTTPURLResponse)?.statusCode ?? -1)
+        }
+        do { return try decoder.decode([EncryptedEnvelope].self, from: data) }
+        catch { throw SyncTransportError.decode(error) }
+    }
+}
+
+// MARK: - SyncEngine E2E sync
+
+public extension SyncEngine {
+    /// E2E sync against /v2/sync/:hash.
+    ///
+    /// - Outbox envelopes are folded (ingredient/step into parent recipe —
+    ///   standalone children are never emitted) and sealed at push time, so
+    ///   the outbox stays plaintext and `enqueue(_:)` is unchanged.
+    /// - Pull decrypts each envelope, then runs the SAME header-LWW merge
+    ///   as v1 (`mergeOutcome` on id/updatedAt/deviceId/deleted).
+    /// - Tombstones pass through with their (encrypted) minimal payload.
+    /// - Photos stay inline: photo bytes/refs ride inside the sealed payload;
+    ///   this path performs no separate upload and ignores `knownPhotoHashes`.
+    ///
+    /// One engine instance serves ONE mode (v1 or E2E): `outbox`,
+    /// `baseline`, and the pull cursor are shared with `sync()`.
+    func syncE2E(
+        identity: E2ESyncIdentity,
+        transport: any E2EEncryptedTransport,
+        applyRemote: (@Sendable (SyncEnvelope) async -> Void)? = nil
+    ) async throws -> SyncResult {
+        let remoteEncrypted = try await transport.pullEncrypted(hash: identity.hash, since: lastPulledAt)
+        var remote: [SyncEnvelope] = []
+        remote.reserveCapacity(remoteEncrypted.count)
+        for enc in remoteEncrypted {
+            remote.append(try e2eDecrypt(enc, identity: identity))
+        }
+        var pulled = 0
+        for env in remote {
+            if let local = outbox[env.id] ?? baseline[env.id] {
+                switch mergeOutcome(local: local, remote: env) {
+                case .takeRemote:
+                    baseline[env.id] = env
+                    outbox.removeValue(forKey: env.id)
+                    await applyRemote?(env)
+                    await mirror.mirror([env])
+                    pulled += 1
+                case .keepLocal:
+                    break
+                case .identical:
+                    outbox.removeValue(forKey: env.id)
+                }
+            } else {
+                baseline[env.id] = env
+                await applyRemote?(env)
+                await mirror.mirror([env])
+                pulled += 1
+            }
+        }
+        if let maxRemote = remote.map(\.updatedAt).max() {
+            lastPulledAt = max(lastPulledAt ?? .distantPast, maxRemote)
+        }
+
+        let pending = Array(outbox.values)
+        var conflicts = 0
+        var pushed = 0
+        if !pending.isEmpty {
+            let encrypted = try e2eEncryptBatch(pending, identity: identity)
+            let serverWonEncrypted = try await transport.pushEncrypted(hash: identity.hash, encrypted)
+            let serverWon = try serverWonEncrypted.map { try e2eDecrypt($0, identity: identity) }
+            let wonIds = Set(serverWon.map { $0.id })
+            conflicts = serverWon.count
+            for env in serverWon {
+                baseline[env.id] = env
+                outbox.removeValue(forKey: env.id)
+                await applyRemote?(env)
+            }
+            for env in pending where !wonIds.contains(env.id) {
+                baseline[env.id] = env
+                outbox.removeValue(forKey: env.id)
+                pushed += 1
+            }
+        }
+        return SyncResult(pulled: pulled, pushed: pushed, conflicts: conflicts)
+    }
+}
+
+
 // MARK: - SyncEngine (actor: outbox + pull/push orchestration)
 
 public struct SyncResult: Sendable {

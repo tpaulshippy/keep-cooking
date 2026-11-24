@@ -19,6 +19,7 @@ import {
   syncEnvelopeSchema,
   entitySchema,
 } from './zod';
+import { E2E_HASH_RE, HASH_LOG_PREFIX_LEN, encryptedEnvelopeSchema, type EncryptedEnvelope } from './e2e';
 import openApiJson from '../../packages/contracts/openapi.json';
 
 export interface Env {
@@ -31,6 +32,15 @@ export interface Env {
 }
 
 const VERSION = '0.1.0';
+
+// E2E blindness: the access log must never carry a full household hash
+// (prefix only) and envelope bodies (ciphertext/nonce) are never logged
+// anywhere — handlers below log nothing per-envelope.
+export function redactE2EPath(path: string): string {
+  const m = path.match(/^(\/v2\/sync\/)([0-9a-fA-F]{16,})(.*)$/);
+  if (m) return `${m[1]}${m[2]!.slice(0, HASH_LOG_PREFIX_LEN)}…`;
+  return path;
+}
 
 // Singleton memory store for `wrangler dev` without a D1 binding.
 let devMemory: MemoryStore | null = null;
@@ -66,10 +76,11 @@ export function createApp(
 
   // PII-safe access log: method + pathname + status + ms only.
   // Never log headers (Authorization, x-user-*, cookies) or bodies.
+  // E2E rule: household hashes are prefix-redacted (see redactE2EPath).
   app.use('*', async (c, next) => {
     const t0 = Date.now();
     await next();
-    const path = new URL(c.req.url).pathname;
+    const path = redactE2EPath(new URL(c.req.url).pathname);
     console.log(JSON.stringify({ m: c.req.method, p: path, s: c.res.status, ms: Date.now() - t0 }));
   });
   // Prod beta gate runs BEFORE authAttach: /health stays open, everything
@@ -394,6 +405,53 @@ export function createApp(
       // equal timestamps: idempotent, no conflict
     }
     return c.json(conflicts);
+  });
+
+  // ---------- e2e v1 blind sync (opaque blobs; server never decrypts) ----------
+  // PUT/GET /v2/sync/:hash — :hash is the hex householdHash deriving bucket
+  // identity. Plaintext v1 envelopes fail schema validation (400). Photos
+  // stay inline in ciphertext for pass 1 — no dedicated photo route.
+  app.get('/v2/sync/:hash', async (c) => {
+    const hash = c.req.param('hash') ?? '';
+    if (!E2E_HASH_RE.test(hash)) return c.json({ error: 'invalid household hash' }, 400);
+    const since = c.req.query('since') ?? '1970-01-01T00:00:00Z';
+    if (Number.isNaN(Date.parse(since))) return c.json({ error: 'invalid since' }, 400);
+    return c.json(await getStore().e2eList(hash, since));
+  });
+  app.put('/v2/sync/:hash', async (c) => {
+    const hash = c.req.param('hash') ?? '';
+    if (!E2E_HASH_RE.test(hash)) return c.json({ error: 'invalid household hash' }, 400);
+    const raw = await c.req.json().catch(() => null);
+    if (!Array.isArray(raw)) return c.json({ error: 'expected an array of encrypted envelopes' }, 400);
+    const stored: string[] = [];
+    for (const item of raw) {
+      const entity = (item as { entity?: unknown } | null | undefined)?.entity;
+      if (entity === 'ingredient' || entity === 'step') {
+        return c.json(
+          {
+            error: 'standalone ingredient/step envelopes are not accepted; fold children into the parent recipe envelope before encrypting',
+            entity,
+          },
+          422,
+        );
+      }
+      const parsed = parseOrThrow(encryptedEnvelopeSchema, item);
+      const env: EncryptedEnvelope = { ...parsed, deleted: parsed.deleted ?? false };
+      if (env.householdHash !== hash) return c.json({ error: 'householdHash mismatch' }, 400);
+      if (await getStore().e2ePut(hash, env)) stored.push(env.id);
+    }
+    return c.json({ stored });
+  });
+  app.delete('/v2/sync/:hash', async (c) => {
+    const hash = c.req.param('hash') ?? '';
+    if (!E2E_HASH_RE.test(hash)) return c.json({ error: 'invalid household hash' }, 400);
+    // Whole-bucket wipe. Beta-gated via the global prod beta gate (Bearer
+    // INTERNAL_BETA_TOKEN fronts every non-health route in prod); no
+    // household membership lookup is possible from an opaque hash, so no
+    // additional role check applies in either env. Per-id delete travels as
+    // a deleted=true tombstone envelope via PUT.
+    const wiped = await getStore().e2eWipe(hash);
+    return c.json({ wiped });
   });
 
   return app;

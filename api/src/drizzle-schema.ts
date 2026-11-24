@@ -116,3 +116,13 @@ export const shareLinks = sqliteTable('share_links', {
   url: text('url').notNull(),
   expiresAt: text('expires_at').notNull(),
 });
+
+// E2E V1 blind blobs: PK (household_hash, id); header JSON carries the
+// plaintext routing header only, ciphertext stays opaque to the server.
+export const syncBlobsV2 = sqliteTable('sync_blobs_v2', {
+  householdHash: text('household_hash').notNull(),
+  id: text('id').notNull(),
+  header: text('header').notNull(),
+  ciphertext: text('ciphertext').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});

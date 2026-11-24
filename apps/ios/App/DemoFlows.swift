@@ -801,7 +801,7 @@ struct MenusTabView: View {
     }
 }
 
-// MARK: - Settings (device, counts, sync)
+// MARK: - Settings (device, counts, sync, BYO backend, E2E)
 
 struct SettingsView: View {
     @Query private var recipes: [Recipe]
@@ -811,10 +811,27 @@ struct SettingsView: View {
     @State private var token: String = UserDefaults.standard.string(forKey: "smidgen.betaToken") ?? ""
     @State private var syncing = false
     @State private var status: String = ""
+    // BYO backend test state
+    @State private var healthResult: String = ""
+    @State private var testing = false
+    // E2E state (thin: identifiers from the Sync layer; the syncCode itself
+    // lives only in the Keychain and never surfaces here)
+    @State private var householdName: String = E2EKeyStore.loadMetadata()?.householdId ?? "hh-demo"
+    @State private var kid: String = E2EKeyStore.loadMetadata()?.kid ?? ""
+    @State private var hashPrefix: String = E2EKeyStore.loadMetadata().map { String($0.hash.prefix(8)) } ?? ""
+    @State private var inviteBundle: String = ""
+    @State private var pasteInput: String = ""
+    @State private var joinResult: String = ""
+    @State private var showQR = false
+
+    /// Effective base URL with the locked fallback chain:
+    /// UserDefaults smidgen.apiBaseURL (blank = skip) -> Bundle
+    /// SMIDGEN_API_BASE_URL -> prod Worker.
+    private var effectiveBaseURL: String { SyncConfig.baseURLString }
 
     var body: some View {
         List {
-            Section("Server") {
+            Section {
                 TextField("API base URL (blank = default)", text: $baseURLString)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -828,9 +845,82 @@ struct SettingsView: View {
                     Task { await saveAndSync() }
                 }
                 .disabled(syncing)
+                HStack {
+                    Button(testing ? "Testing…" : "Test") {
+                        Task { await testHealth() }
+                    }
+                    .disabled(testing)
+                    Spacer()
+                    Button("Reset to default") { resetBackend() }
+                }
+                Text("Using: \(effectiveBaseURL)")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .lineLimit(1).truncationMode(.middle)
+                if !healthResult.isEmpty {
+                    Text(healthResult).font(.caption).foregroundStyle(.secondary)
+                }
                 if !status.isEmpty {
                     Text(status).font(.caption).foregroundStyle(.secondary)
                 }
+            } header: {
+                Text("Server (BYO backend)")
+            } footer: {
+                Text("Blank URL = Bundle SMIDGEN_API_BASE_URL, else prod \(SyncConfig.prodBaseURL). Paste the Worker URL printed by scripts/deploy-backend.sh.")
+            }
+            Section {
+                HStack { Text("Household"); Spacer(); Text(householdName).font(.caption.monospaced()).foregroundStyle(.secondary) }
+                HStack { Text("Key ID"); Spacer(); Text(kid.isEmpty ? "—" : kid).font(.caption.monospaced()).foregroundStyle(.secondary) }
+                HStack { Text("Code hash"); Spacer(); Text(hashPrefix.isEmpty ? "—" : hashPrefix).font(.caption.monospaced()).foregroundStyle(.secondary) }
+                Button("Show invite bundle (QR / copy)") {
+                    if let json = e2eInviteBundleJSON(householdId: householdName, endpointHint: effectiveBaseURL) {
+                        inviteBundle = json
+                        refreshE2EState()
+                        showQR = true
+                    } else {
+                        joinResult = "Could not access the Keychain — invite unavailable."
+                    }
+                }
+                .sheet(isPresented: $showQR) {
+                    NavigationStack {
+                        List {
+                            InviteQRImage(payload: inviteBundle)
+                                .frame(maxWidth: .infinity, minHeight: 220)
+                            Section("Manual copy") {
+                                Text(inviteBundle)
+                                    .font(.caption.monospaced())
+                                    .textSelection(.enabled)
+                                Button("Copy bundle") {
+                                    #if os(iOS)
+                                    UIPasteboard.general.string = inviteBundle
+                                    #endif
+                                }
+                            }
+                            Section {
+                                Text("Send this to your second device out-of-band (Messages, Mail, AirDrop). It holds householdId, syncCode, kid, hash, and endpointHint.")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        .navigationTitle("Invite bundle")
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Done") { showQR = false }
+                            }
+                        }
+                    }
+                }
+                TextField("Paste invite bundle to join", text: $pasteInput, axis: .vertical)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.caption.monospaced())
+                Button("Join with bundle") { joinWithBundle() }
+                    .disabled(pasteInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if !joinResult.isEmpty {
+                    Text(joinResult).font(.caption).foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("End-to-end encryption")
+            } footer: {
+                Text("Smidgen can't see or recover your recipes. Lose code+devices = permanent loss. Got a new phone or iPad? Add it now while you still have this one — open Settings here on both devices.")
             }
             Section("Sync") {
                 SyncStatusRow()
@@ -867,6 +957,62 @@ struct SettingsView: View {
         UserDefaults.standard.set(token.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "smidgen.betaToken")
         await SyncCoordinator.shared.sync()
         status = await SyncCoordinator.shared.describe()
+    }
+
+    /// GET <base>/health against the typed URL (blank = effective default).
+    private func testHealth() async {
+        testing = true
+        defer { testing = false }
+        let typed = baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = typed.isEmpty ? effectiveBaseURL : typed
+        guard let url = URL(string: base + "/health") else {
+            healthResult = "Bad URL — check the backend field."
+            return
+        }
+        do {
+            let (data, resp) = try await URLSession.shared.data(from: url)
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
+            let body = String(data: data, encoding: .utf8) ?? ""
+            healthResult = code == 200 ? "Healthy (\(code)): \(body.prefix(120))"
+                : "Unhealthy (HTTP \(code)): \(body.prefix(120))"
+        } catch {
+            healthResult = "Unreachable: \(error.localizedDescription)"
+        }
+    }
+
+    private func resetBackend() {
+        UserDefaults.standard.removeObject(forKey: "smidgen.apiBaseURL")
+        baseURLString = ""
+        healthResult = "Reset — using \(effectiveBaseURL)."
+    }
+
+    private func joinWithBundle() {
+        do {
+            let res = try e2eJoin(pasted: pasteInput)
+            kid = res.kid
+            hashPrefix = res.hashPrefix8
+            householdName = res.householdId
+            if let hint = res.endpointHint, !hint.isEmpty {
+                baseURLString = hint
+            }
+            pasteInput = ""
+            joinResult = "Joined household \(res.householdId) — kid \(res.kid) · hash \(res.hashPrefix8). Verify the hash matches the other device."
+        } catch {
+            joinResult = error.localizedDescription
+        }
+    }
+
+    /// Re-reads Keychain/UserDefaults identifiers into the displayed state.
+    private func refreshE2EState() {
+        if let meta = E2EKeyStore.loadMetadata() {
+            kid = meta.kid
+            hashPrefix = String(meta.hash.prefix(8))
+            householdName = meta.householdId
+        } else {
+            kid = ""
+            hashPrefix = ""
+            householdName = "hh-demo"
+        }
     }
 }
 

@@ -1,4 +1,5 @@
 import type { Role } from './auth';
+import type { EncryptedEnvelope } from './e2e';
 
 // Row + assembled API types. Recipe/List/etc. mirror the openapi.yaml
 // SyncEnvelope allOf (id/updatedAt/deviceId/deleted/entity + fields).
@@ -191,6 +192,10 @@ export interface Store {
   pullSince(since: string): Promise<SyncEnvelopeWire[]>;
   getEnvelopeEntity(entity: string, id: string): Promise<SyncEnvelopeWire | null>;
   applyEnvelopeFull(env: SyncEnvelopeWire): Promise<void>;
+  // e2e v1 blind blobs (opaque ciphertext; header-only routing server-side)
+  e2ePut(hash: string, env: EncryptedEnvelope): Promise<boolean>;
+  e2eList(hash: string, since: string): Promise<EncryptedEnvelope[]>;
+  e2eWipe(hash: string): Promise<number>;
 }
 
 // ---------- shared assemblers (used by both stores) ----------
@@ -537,6 +542,40 @@ export class MemoryStore implements Store {
     const s: ShareLink = { ...h };
     this.shares.set(h.id, s);
     return s;
+  }
+
+  // ---------- E2E V1 blind blobs (MemoryStore fallback when no D1) ----------
+  // Buckets keyed by householdHash; LWW per id on header.updatedAt (string
+  // compare of ISO-8601 timestamps). Server never inspects ciphertext.
+
+  e2eBlobs = new Map<string, Map<string, EncryptedEnvelope>>();
+
+  async e2ePut(hash: string, env: EncryptedEnvelope): Promise<boolean> {
+    let bucket = this.e2eBlobs.get(hash);
+    if (!bucket) {
+      bucket = new Map();
+      this.e2eBlobs.set(hash, bucket);
+    }
+    const cur = bucket.get(env.id);
+    if (cur && cur.updatedAt >= env.updatedAt) return false; // stored wins ties: idempotent
+    bucket.set(env.id, env);
+    return true;
+  }
+
+  async e2eList(hash: string, since: string): Promise<EncryptedEnvelope[]> {
+    const bucket = this.e2eBlobs.get(hash);
+    if (!bucket) return [];
+    return [...bucket.values()]
+      .filter((e) => e.updatedAt > since)
+      .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt) || a.id.localeCompare(b.id));
+  }
+
+  async e2eWipe(hash: string): Promise<number> {
+    const bucket = this.e2eBlobs.get(hash);
+    if (!bucket) return 0;
+    const n = bucket.size;
+    this.e2eBlobs.delete(hash);
+    return n;
   }
 
   async pullSince(since: string): Promise<SyncEnvelopeWire[]> {

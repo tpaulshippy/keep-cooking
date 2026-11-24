@@ -13,6 +13,7 @@ import {
   type Membership,
   type Household,
 } from './store';
+import { envelopeHeader, type EncryptedEnvelope } from './e2e';
 
 // D1-backed store. Uses drizzle() for the connection (D1 via Drizzle) and
 // parameterized raw SQL for queries — table/column names match
@@ -190,6 +191,33 @@ export class D1Store extends MemoryStore implements Store {
       console.error('[d1store-hydrate]', e instanceof Error ? e.message : e);
       this.hydrated = true;
     }
+    // E2E blobs load separately so a pre-migration DB (no sync_blobs_v2
+    // table) can't disturb the legacy merge above. LWW: D1 rows win ties or
+    // newer; strictly-newer memory writes survive.
+    try {
+      const rows = await q('SELECT household_hash, id, header, ciphertext, updated_at FROM sync_blobs_v2');
+      for (const r of rows) {
+        const hash = String(r['household_hash'] ?? '');
+        if (!hash) continue;
+        let header: Record<string, unknown>;
+        try {
+          header = JSON.parse(String(r['header'] ?? '{}')) as Record<string, unknown>;
+        } catch {
+          continue;
+        }
+        const env = { ...header, ciphertext: String(r['ciphertext'] ?? '') } as EncryptedEnvelope;
+        if (!env.id || !env.updatedAt) continue;
+        let bucket = this.e2eBlobs.get(hash);
+        if (!bucket) {
+          bucket = new Map();
+          this.e2eBlobs.set(hash, bucket);
+        }
+        const cur = bucket.get(env.id);
+        if (!cur || env.updatedAt >= cur.updatedAt) bucket.set(env.id, env);
+      }
+    } catch {
+      // Table missing (0002 not applied yet): memory fallback still works.
+    }
   }
 
   private async persist(sql: string, ...params: unknown[]): Promise<void> {
@@ -304,6 +332,25 @@ export class D1Store extends MemoryStore implements Store {
     const ok = await super.deleteMenu(id, deviceId);
     if (ok) await this.persist('UPDATE menus SET deleted = 1, updated_at = ?, device_id = ? WHERE id = ?', nowIso(), deviceId, id);
     return ok;
+  }
+
+  // ---------- E2E V1 blind blobs (D1 sync_blobs_v2; memory fallback) ----------
+
+  override async e2ePut(hash: string, env: EncryptedEnvelope): Promise<boolean> {
+    const stored = await super.e2ePut(hash, env);
+    if (stored) {
+      await this.persist(
+        'INSERT INTO sync_blobs_v2 (household_hash, id, header, ciphertext, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(household_hash, id) DO UPDATE SET header = excluded.header, ciphertext = excluded.ciphertext, updated_at = excluded.updated_at',
+        hash, env.id, JSON.stringify(envelopeHeader(env)), env.ciphertext, env.updatedAt,
+      );
+    }
+    return stored;
+  }
+
+  override async e2eWipe(hash: string): Promise<number> {
+    const n = await super.e2eWipe(hash);
+    await this.persist('DELETE FROM sync_blobs_v2 WHERE household_hash = ?', hash);
+    return n;
   }
 }
 

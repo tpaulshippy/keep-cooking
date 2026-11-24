@@ -841,6 +841,110 @@
           }
         }
       }
+    },
+    "/v2/sync/{hash}": {
+      "parameters": [
+        {
+          "name": "hash",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "description": "hex householdHash (see docs/e2e-v1.md)"
+        }
+      ],
+      "get": {
+        "operationId": "e2ePull",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "encrypted envelopes changed since timestamp",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EncryptedEnvelope"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "e2ePush",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/EncryptedEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "stored ids (stale writes are idempotent no-ops)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "stored"
+                  ],
+                  "properties": {
+                    "stored": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "e2eWipe",
+        "responses": {
+          "200": {
+            "description": "wiped row count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "wiped"
+                  ],
+                  "properties": {
+                    "wiped": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -900,6 +1004,77 @@
           "payload": {
             "type": "object",
             "description": "entity JSON"
+          }
+        }
+      },
+      "EncryptedEnvelope": {
+        "type": "object",
+        "description": "E2E v2 wrapper around a SyncEnvelope. Server stores bytes only; see docs/e2e-v1.md. v1 SyncEnvelope is unchanged.",
+        "required": [
+          "v",
+          "alg",
+          "kid",
+          "householdHash",
+          "id",
+          "entity",
+          "updatedAt",
+          "deviceId",
+          "nonce",
+          "ciphertext"
+        ],
+        "properties": {
+          "v": {
+            "type": "integer",
+            "const": 2,
+            "description": "envelope version"
+          },
+          "alg": {
+            "type": "string",
+            "const": "AES-GCM-256",
+            "description": "cipher (locked)"
+          },
+          "kid": {
+            "type": "string",
+            "description": "opaque per-household key id; feeds the HKDF info string"
+          },
+          "householdHash": {
+            "type": "string",
+            "description": "hex(SHA256(\"smidgen-hh-v1\" || syncCode || householdId)); must equal the :hash path param",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "entity": {
+            "type": "string",
+            "enum": [
+              "recipe",
+              "list",
+              "pantryItem",
+              "plan",
+              "menu"
+            ],
+            "description": "standalone ingredient/step envelopes are rejected (fold into the parent recipe pre-encrypt)"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deviceId": {
+            "type": "string"
+          },
+          "deleted": {
+            "type": "boolean",
+            "default": false
+          },
+          "nonce": {
+            "type": "string",
+            "description": "base64, 12 random bytes, fresh per envelope (AES-GCM)"
+          },
+          "ciphertext": {
+            "type": "string",
+            "description": "base64, AES-GCM-256(raw-ciphertext + 16-byte tag) over canonical JSON of the v1 envelope payload"
           }
         }
       },

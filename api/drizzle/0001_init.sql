@@ -80,3 +80,14 @@ CREATE INDEX IF NOT EXISTS idx_recipes_household ON recipes(household_id);
 CREATE INDEX IF NOT EXISTS idx_ingredients_recipe ON ingredients(recipe_id);
 CREATE INDEX IF NOT EXISTS idx_steps_recipe ON steps(recipe_id);
 CREATE INDEX IF NOT EXISTS idx_plans_date ON plans(household_id, date);
+-- E2E V1 blind blobs (also shipped as drizzle/0002_e2e_blobs.sql for
+-- existing DBs; duplicated here so fresh `db:apply:local` includes it).
+CREATE TABLE IF NOT EXISTS sync_blobs_v2 (
+  household_hash TEXT NOT NULL,
+  id TEXT NOT NULL,
+  header TEXT NOT NULL,
+  ciphertext TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (household_hash, id)
+);
+CREATE INDEX IF NOT EXISTS idx_sync_blobs_v2_hash_updated ON sync_blobs_v2(household_hash, updated_at);

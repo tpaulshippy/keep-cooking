@@ -38,6 +38,10 @@
 		6ED184ED02D444C21775EF2E /* DuplicateFinder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33E81FAB33D10D4F00FABAF2 /* DuplicateFinder.swift */; };
 		6F3FAE4AB0811C1A26F9172D /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = C29A1009A84B444254CD7415 /* Models.swift */; };
 		6FE57C1CFCD71EEE8F3F5588 /* SyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DFAC576FA69697C63244F82 /* SyncEngine.swift */; };
+		5710023B40A0AA1C46BDE9F1 /* SyncCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3A8CBC7B0252EEA4661CB9D /* SyncCrypto.swift */; };
+		614CBF813B016FD69E868D9E /* SyncCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3A8CBC7B0252EEA4661CB9D /* SyncCrypto.swift */; };
+		B0E2E515CA1E4B1FA2E20002 /* BYOE2E.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0E2E515CA1E4B1FA2E20001 /* BYOE2E.swift */; };
+		B0E2E515CA1E4B1FA2E20003 /* BYOE2E.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0E2E515CA1E4B1FA2E20001 /* BYOE2E.swift */; };
 		723BC5F8FED26ECCD3C508AA /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = C29A1009A84B444254CD7415 /* Models.swift */; };
 		72CA7C1D0663A5B300E5267B /* IngestStepsHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8153F56D9470B193FABE198B /* IngestStepsHeader.swift */; };
 		74B07327301878C41EADB0D7 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 081C173788EB54C1887C759B /* PrivacyInfo.xcprivacy */; };
@@ -155,6 +159,8 @@
 		54B839B01456D8C3342CC1EF /* recipe-10.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "recipe-10.json"; sourceTree = "<group>"; };
 		58C98BED44DCA47F717AD78C /* ShareStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareStore.swift; sourceTree = "<group>"; };
 		5DFAC576FA69697C63244F82 /* SyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncEngine.swift; sourceTree = "<group>"; };
+		B0E2E515CA1E4B1FA2E20001 /* BYOE2E.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BYOE2E.swift; sourceTree = "<group>"; };
+		B3A8CBC7B0252EEA4661CB9D /* SyncCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncCrypto.swift; sourceTree = "<group>"; };
 		64208EF15E7B5BC7A25C6337 /* LibraryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryModels.swift; sourceTree = "<group>"; };
 		65D092DB92EA97B27D1195A9 /* Smidgen.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Smidgen.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6DDFF21CAE4746CC07BEBBA0 /* LibrarySearchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySearchTests.swift; sourceTree = "<group>"; };
@@ -287,6 +293,7 @@
 		6838D55237B323809A3C6089 /* Sync */ = {
 			isa = PBXGroup;
 			children = (
+				B3A8CBC7B0252EEA4661CB9D /* SyncCrypto.swift */,
 				5DFAC576FA69697C63244F82 /* SyncEngine.swift */,
 				A9C3A3E566A0A70144AE964C /* SyncEngineTests.swift */,
 			);
@@ -322,6 +329,7 @@
 			isa = PBXGroup;
 			children = (
 				AB13E4BF125192FE69877AD1 /* Assets.xcassets */,
+				B0E2E515CA1E4B1FA2E20001 /* BYOE2E.swift */,
 				131B72E0EC3EB6EC5CC0F146 /* DemoFlows.swift */,
 				78CF752BEB5799714C262738 /* SmidgenApp.swift */,
 			);
@@ -647,6 +655,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B0E2E515CA1E4B1FA2E20003 /* BYOE2E.swift in Sources */,
 				FB245E8234405CC7638D4FA4 /* ClipModels.swift in Sources */,
 				2B20935642F9BED4293DF27A /* ClipboardBanner.swift in Sources */,
 				AF6EAE9A96B3786B457342CD /* CookTests.swift in Sources */,
@@ -665,6 +674,7 @@
 				146B4607ACF94CD235B22A99 /* ShopHelpers.swift in Sources */,
 				A4D5D3B0FEAA90EA5AB9E853 /* StepTimerParser.swift in Sources */,
 				F0ADD184F26E0FC03B726023 /* SyncEngine.swift in Sources */,
+				5710023B40A0AA1C46BDE9F1 /* SyncCrypto.swift in Sources */,
 				AAB93A2259B2B0A1ED976986 /* SyncEngineTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -684,6 +694,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A8BEC4E8A4C9CF994EAEBDF5 /* BarcodeScannerStub.swift in Sources */,
+				B0E2E515CA1E4B1FA2E20002 /* BYOE2E.swift in Sources */,
 				E22F6B1A7E63A2926DFA1F6E /* CaptionsImportView.swift in Sources */,
 				934D962D9B2A3B30E32D0DE9 /* ClipModels.swift in Sources */,
 				A7C35EFE2191605FB3A42A60 /* ClipView.swift in Sources */,
@@ -713,6 +724,7 @@
 				E1FE845FA17465C0B4A9D4E1 /* SmidgenIntents.swift in Sources */,
 				E3C48E8CF0791DCCD3666AF9 /* StepTimerParser.swift in Sources */,
 				6FE57C1CFCD71EEE8F3F5588 /* SyncEngine.swift in Sources */,
+				614CBF813B016FD69E868D9E /* SyncCrypto.swift in Sources */,
 				800694335C558E4E1D5C0F3E /* WidgetSnapshot.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
