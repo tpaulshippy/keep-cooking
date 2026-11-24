@@ -205,6 +205,9 @@ final class CookTests: XCTestCase {
         // Wake-word prefix is stripped generally.
         XCTAssertEqual(parseVoiceCommand("keep cooking next"), .next)
         XCTAssertEqual(parseVoiceCommand("hey keep cooking, previous step"), .previous)
+        // Retired wake word is rejected.
+        XCTAssertEqual(parseVoiceCommand("smidgen next"), .unknown)
+        XCTAssertEqual(parseVoiceCommand("hey smidgen, previous step"), .unknown)
     }
 
     func testVoiceGoToStep() {

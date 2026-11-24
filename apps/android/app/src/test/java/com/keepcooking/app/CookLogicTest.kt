@@ -176,6 +176,9 @@ class CookLogicTest {
         assertEquals(VoiceCommand.RepeatStep, parseVoiceCommand("repeat that"))
         assertEquals(VoiceCommand.Next, parseVoiceCommand("keep cooking next"))
         assertEquals(VoiceCommand.Previous, parseVoiceCommand("hey keep cooking, previous step"))
+        // Retired wake word is rejected.
+        assertEquals(VoiceCommand.Unknown, parseVoiceCommand("smidgen next"))
+        assertEquals(VoiceCommand.Unknown, parseVoiceCommand("hey smidgen, previous step"))
     }
 
     @Test
