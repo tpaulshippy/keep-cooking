@@ -74,8 +74,10 @@ else
     fi
     echo "    wrote database_id $NEW_DB_ID into $API_DIR/wrangler.toml"
   else
-    echo "    WARNING: could not parse database_id from create output." >&2
-    echo "    Copy it by hand into $API_DIR/wrangler.toml before deploying." >&2
+    echo "    ERROR: could not parse database_id from create output — aborting" >&2
+    echo "    rather than deploying against the placeholder/wrong D1." >&2
+    echo "    Copy it by hand into $API_DIR/wrangler.toml, then re-run." >&2
+    exit 1
   fi
 fi
 
