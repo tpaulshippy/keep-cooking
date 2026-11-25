@@ -1,0 +1,16 @@
+apps/ios/Features/Cook/CookModeView.swift
+  h_6bbd00fe0a456a 559-561,579-591
+apps/ios/Features/Cook/VoiceCookManager.swift
+  h_6bbd00fe0a456a 296-299,476-482,510
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "064c03f1adef35013d43bc7510ae5b52450e383b",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
