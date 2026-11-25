@@ -288,14 +288,14 @@ object AppShortcuts {
         payload = buildJsonObject {
             put("householdId", JsonPrimitive(list.householdId))
             put("name", JsonPrimitive(list.name))
-            put("items", JsonArray(items.map { item ->
+            put("items", JsonArray(items.filterNot { it.deleted }.map { item ->
                 buildJsonObject {
                     put("id", JsonPrimitive(item.id))
                     put("name", JsonPrimitive(item.name))
                     put("quantity", JsonPrimitive(item.quantity))
                     put("aisle", JsonPrimitive(item.aisle))
                     put("checked", JsonPrimitive(item.checked))
-                    if (item.recipeId != null) if (item.recipeId != null) put("recipeId", JsonPrimitive(item.recipeId))
+                    if (item.recipeId != null) put("recipeId", JsonPrimitive(item.recipeId))
                 }
             }))
         },
