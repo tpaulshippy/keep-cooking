@@ -113,6 +113,28 @@ final class DuplicateFinderTests: XCTestCase {
         XCTAssertNil(planMerge(group: [StubRecipe("..000001", "Solo")]))
     }
 
+    func testIngredientIdentityPrefersName() {
+        // Seeds carry BOTH a name ("white miso") and a quantity-only
+        // display ("3 tbsp"): identity must be the name, or merges union
+        // quantity strings and write them back as names (data loss).
+        XCTAssertEqual(ingredientIdentity(name: "white miso", display: "3 tbsp"), "white miso")
+        XCTAssertEqual(ingredientIdentity(name: "salt", display: ""), "salt")
+        // Legacy display-only rows (empty name) fall back to display.
+        XCTAssertEqual(ingredientIdentity(name: "", display: "3 tbsp"), "3 tbsp")
+    }
+
+    func testMergeUnionKeepsFullNames() {
+        // Union identity is the real name: quantity-only display strings
+        // must never become merged "names".
+        let a = StubRecipe("..000009", "Chocolate Chip Cookies",
+                           ings: ["all-purpose flour", "salt"])
+        let b = StubRecipe("..000015", "Choc Chip Cookies",
+                           ings: ["Salt", "chocolate chips"])
+        guard let plan = planMerge(group: [a, b]) else { return XCTFail("expected a merge plan") }
+        XCTAssertEqual(Set(plan.mergedIngredientNames.map { $0.lowercased() }),
+                       ["all-purpose flour", "salt", "chocolate chips"])
+    }
+
     func testAbbreviationNormalization() {
         XCTAssertEqual(titleTokens("Choc-Chip Cookies!"), ["chocolate", "chip", "cookies"])
         XCTAssertGreaterThanOrEqual(jaccard(titleTokens("Choc Chip Cookies"), titleTokens("Chocolate Chip Cookies")), 0.5)

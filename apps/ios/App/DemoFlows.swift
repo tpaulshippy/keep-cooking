@@ -1016,6 +1016,24 @@ struct RecipeDetailView: View {
         fractionDisplayString(for: servings)
     }
 
+    /// Scale applied to the pane rows (clamped 0.25x–4x, same as cook mode).
+    private var scale: Double {
+        scaleFactor(baseServings: recipe.servings, targetServings: servings)
+    }
+
+    /// One ingredient row: scaled "qty unit name" composed from the stored
+    /// fields (same composition CookModeView uses). Seeds carry BOTH a name
+    /// ("white miso") and a quantity-only display ("3 tbsp") — rendering
+    /// `display` alone drops every name, and the servings stepper then
+    /// changes nothing visible. Legacy display-only rows (empty name) fall
+    /// back to `display` so nothing renders blank.
+    private func ingredientLine(for ing: Ingredient) -> String {
+        let composed = scaledDisplay(name: ing.name, quantity: ing.quantity,
+            unit: ing.unit, factor: scale).trimmingCharacters(in: .whitespaces)
+        if !composed.isEmpty { return composed }
+        return ing.display.isEmpty ? ing.name : ing.display
+    }
+
     @ViewBuilder
     private var heroHeader: some View {
         if let url = photoURL(forKey: recipe.photoThumb) {
@@ -1175,7 +1193,7 @@ struct RecipeDetailView: View {
                         Image(systemName: checked.contains(ing.id)
                             ? "checkmark.circle.fill" : "circle")
                             .foregroundStyle(checked.contains(ing.id) ? .green : .secondary)
-                        Text(ing.display.isEmpty ? ing.name : ing.display)
+                        Text(ingredientLine(for: ing))
                             .strikethrough(checked.contains(ing.id))
                             .foregroundStyle(checked.contains(ing.id) ? .secondary : .primary)
                             .multilineTextAlignment(.leading)

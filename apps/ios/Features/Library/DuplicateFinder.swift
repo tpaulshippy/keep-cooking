@@ -240,15 +240,24 @@ public struct DuplicateMergePlan: Sendable {
     public var absorbedIds: [String]
     /// Union of categories across the group (sorted, deduped, lowercased).
     public var mergedCategories: [String]
-    /// Union of ingredient display strings (case-insensitive dedup, sorted).
+    /// Union of ingredient names (case-insensitive dedup, sorted).
     public var mergedIngredientNames: [String]
     /// Best (longest non-empty) photo key in the group, if any.
     public var bestPhotoOriginal: String?
     public var bestPhotoThumb: String?
     /// Highest rating in the group, if any.
     public var bestRating: Double?
+
     /// Title of the survivor (longest original title — most descriptive).
     public var survivorTitle: String
+}
+
+/// Canonical ingredient identity for merge/search: the real `name`.
+/// `display` is quantity-only by design ("3 tbsp") and must never stand in
+/// for the name — using it as identity unions quantity strings, and writing
+/// those back as names permanently loses ingredient names.
+public func ingredientIdentity(name: String, display: String) -> String {
+    name.isEmpty ? display : name
 }
 
 /// Picks the survivor (most ingredients, then best photo, then highest rating,

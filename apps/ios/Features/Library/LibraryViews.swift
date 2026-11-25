@@ -402,7 +402,8 @@ public struct DuplicateReviewView: View {
         if let rating = plan.bestRating { survivor.rating = rating }
         survivor.updatedAt = Date()
         // Union ingredients: append missing (case-insensitive) as new rows.
-        let have = Set(survivor.ingredients.map { ($0.display.isEmpty ? $0.name : $0.display).lowercased() })
+        // Identity is the real name (never quantity-only display strings).
+        let have = Set(survivor.ingredients.map { ingredientIdentity(name: $0.name, display: $0.display).lowercased() })
         var position = (survivor.ingredients.map { $0.position }.max() ?? -1) + 1
         for name in plan.mergedIngredientNames where !have.contains(name.lowercased()) {
             let ing = Ingredient(recipeId: survivor.id, name: name, display: name,
