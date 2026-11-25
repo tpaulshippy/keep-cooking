@@ -556,6 +556,9 @@ public struct CookModeView: View {
     // and mic-denied state observe it.
     private var voiceBottomBar: some View {
         VStack(spacing: 8) {
+            if !voiceManager.lastHeardTranscript.isEmpty {
+                voiceHeardView
+            }
             if !voiceManager.lastReply.isEmpty {
                 voiceReplyView
             }
@@ -571,6 +574,19 @@ public struct CookModeView: View {
         .padding(.top, 8)
         .padding(.bottom, 10)
         .background(.bar)
+    }
+
+    /// What the recognizer last delivered, so the cook can distinguish
+    /// "heard but not understood" from "not hearing". Shown above the reply.
+    private var voiceHeardView: some View {
+        Text("Heard: “\(voiceManager.lastHeardTranscript)”")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
+            .accessibilityLabel("Heard: \(voiceManager.lastHeardTranscript)")
     }
 
     /// Reply area directly above the pill: last spoken/heard reply.

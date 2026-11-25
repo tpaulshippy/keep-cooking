@@ -293,6 +293,10 @@ public final class VoiceCookManager {
     public private(set) var isReadingAloud = false
     public private(set) var isListening = false
     public var lastReply = ""
+    /// Last transcript the recognizer delivered (final results only). Shown
+    /// in the pill so the cook can tell "heard but not understood" apart
+    /// from "not hearing". Updated for both live and simulated input.
+    public var lastHeardTranscript = ""
     public private(set) var micDenied = false
 
     // MARK: View-wired callbacks (all optional; the view owns rendering)
@@ -469,7 +473,13 @@ public final class VoiceCookManager {
             audioInput = nil
             #endif
         }
-        audioInput?.start(onTranscript: onTranscript)
+        audioInput?.start(onTranscript: { [weak self] transcript in
+            guard let self else { return }
+            // Record what was heard BEFORE handling, so the pill can show
+            // the words even when the command itself is unknown.
+            self.lastHeardTranscript = transcript
+            onTranscript(transcript)
+        })
         let running = audioInput?.isRunning ?? false
         isListening = running
         if !running {
@@ -497,6 +507,7 @@ public final class VoiceCookManager {
         listeningEnabled = false
         audioInput?.stop()
         isListening = false
+        lastHeardTranscript = ""
     }
 
     /// Simulator/debug helper: delivers a transcript through the active
