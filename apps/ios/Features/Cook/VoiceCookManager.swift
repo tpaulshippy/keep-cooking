@@ -110,6 +110,10 @@ public final class LiveVoiceInput: VoiceAudioInput {
     var onPartial: ((String) -> Void)?
     /// Recognition failures for display (set by the manager).
     var onError: ((String) -> Void)?
+    /// Non-error task events for TEMPORARY TestFlight diagnostics (set by
+    /// the manager): recognition route at task start, stale-callback drops.
+    /// True errors stay on `onError` only.
+    var onEvent: ((String) -> Void)?
     private var lastForwarded = ""
     private var lastPartialForwarded = ""
     /// Recognition route for this session. Starts on-device when the
@@ -162,6 +166,7 @@ public final class LiveVoiceInput: VoiceAudioInput {
         onTranscript = nil
         onPartial = nil
         onError = nil
+        onEvent = nil
         stopEngineAndTask()
         #if os(iOS)
         deactivateAudioSession()
@@ -206,8 +211,19 @@ public final class LiveVoiceInput: VoiceAudioInput {
         // when the model isn't downloaded, so it must never be required.
         request.requiresOnDeviceRecognition = preferOnDevice
         self.request = request
+        // TEMPORARY TestFlight diagnostic: which route this task uses.
+        // Surfaced via onEvent so the manager can show it in lastDebugLine.
+        let routeLabel = preferOnDevice ? "on-device" : "server"
+        DispatchQueue.main.async { [weak self] in self?.onEvent?("route=\(routeLabel)") }
         task = recognizer.recognitionTask(with: request) { [weak self] result, error in
-            guard let self, myGeneration == self.generation else { return }
+            guard let self else { return }
+            guard myGeneration == self.generation else {
+                // Stale task/request from a previous generation: dropped.
+                // Previously invisible; surfaced so a restart loop is
+                // distinguishable from a dead task in TestFlight diagnostics.
+                DispatchQueue.main.async { [weak self] in self?.onEvent?("stale-drop gen=\(myGeneration)") }
+                return
+            }
             if let error {
                 guard self.shouldKeepListening else { return }
                 if self.preferOnDevice {
@@ -606,6 +622,9 @@ public final class VoiceCookManager {
                     self.stopSpeakingOutput()
                 }
                 self.lastHeardTranscript = text
+                // TEMPORARY TestFlight diagnostic: proves partials flow.
+                // A later final overwrites this line (see onTranscript above).
+                self.lastDebugLine = "DEBUG partial='\(String(text.prefix(24)))' awaiting final"
             }
             live.onError = { [weak self] message in
                 guard let self else { return }
@@ -613,6 +632,19 @@ public final class VoiceCookManager {
                 // publish changes so the pill doesn't churn.
                 if self.listeningError != message {
                     self.listeningError = message
+                }
+                // TEMPORARY TestFlight diagnostic: copy the surfaced error
+                // into the debug line so task death is visible on-device.
+                self.lastDebugLine = "DEBUG error='\(message)'"
+            }
+            live.onEvent = { [weak self] event in
+                guard let self else { return }
+                // TEMPORARY TestFlight diagnostic: append non-error task
+                // events (route, stale-drop) to the debug line.
+                if self.lastDebugLine.isEmpty {
+                    self.lastDebugLine = "DEBUG \(event)"
+                } else {
+                    self.lastDebugLine += " [\(event)]"
                 }
             }
         }
@@ -627,6 +659,9 @@ public final class VoiceCookManager {
             speak(lastReply)
         } else {
             micDenied = false
+            // Self-identifying build marker: no caption ever = old build;
+            // stuck on this line = new build with zero finals arriving.
+            lastDebugLine = "DEBUG listening — waiting for final…"
         }
     }
 
