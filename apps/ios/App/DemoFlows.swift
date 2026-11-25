@@ -343,6 +343,14 @@ struct RecipeLibraryView: View {
             .sheet(isPresented: $showFilterSheet) { filterSheet }
             .sheet(isPresented: $showCategorize) { categorizeSheet }
             .sheet(isPresented: $showCookbookPicker) { cookbookSheet }
+            .onChange(of: section) {
+                // Filters changed underfoot: drop IDs that are no longer
+                // visible so bulk actions can't hit hidden recipes.
+                selection.formIntersection(filtered.map { $0.id })
+            }
+            .onChange(of: selectedCategory) {
+                selection.formIntersection(filtered.map { $0.id })
+            }
             .alert("New cookbook", isPresented: $showNewCookbook) {
                 TextField("Name", text: $newCookbookName)
                 Button("Create", action: createCookbook)
@@ -443,6 +451,11 @@ struct RecipeLibraryView: View {
 
     // MARK: - Selection toolbar
 
+    private var allVisibleSelected: Bool {
+        let visibleIds = Set(filtered.map { $0.id })
+        return !visibleIds.isEmpty && selection == visibleIds
+    }
+
     private var selectionBar: some View {
         VStack(spacing: 0) {
             Text("\(selection.count) selected")
@@ -451,13 +464,13 @@ struct RecipeLibraryView: View {
                 .padding(.bottom, 2)
             HStack(spacing: 4) {
                 Button {
-                    if selection.count == filtered.count && !filtered.isEmpty {
+                    if allVisibleSelected {
                         selection = []
                     } else {
                         selection = Set(filtered.map { $0.id })
                     }
                 } label: {
-                    Image(systemName: !selection.isEmpty && selection.count == filtered.count
+                    Image(systemName: allVisibleSelected
                         ? "checkmark.square.fill" : "square")
                         .font(.title3)
                         .frame(minWidth: 44, minHeight: 44)
@@ -743,8 +756,9 @@ struct RecipeLibraryView: View {
         if !typed.isEmpty { cats.insert(typed) }
         guard !cats.isEmpty else { return }
         var count = 0
+        let byId = recipesById
         for id in selection {
-            guard let recipe = recipesById[id], !recipe.deleted else { continue }
+            guard let recipe = byId[id], !recipe.deleted else { continue }
             var existing = recipe.categories
             for cat in cats where !existing.contains(where: { $0.lowercased() == cat.lowercased() }) {
                 existing.append(cat)
@@ -777,7 +791,8 @@ struct RecipeLibraryView: View {
     /// (same aisle-guess + scale pipeline as plan-to-list).
     private func addSelectedToShoppingList() {
         let deviceId = currentDeviceId()
-        let inputs = selection.compactMap { recipesById[$0] }.flatMap { recipe in
+        let byId = recipesById
+        let inputs = selection.compactMap { byId[$0] }.flatMap { recipe in
             recipe.ingredients.map { ing in
                 PlanGroceryInput(name: ing.name, quantity: ing.quantity, unit: ing.unit,
                     baseServings: recipe.servings, targetServings: recipe.servings,
@@ -795,9 +810,15 @@ struct RecipeLibraryView: View {
             context.insert(list)
         }
         for line in lines {
-            context.insert(ListItem(listId: list.id, name: line.name,
-                quantity: line.totalQuantity.map { String(format: "%.2g", $0) } ?? "",
-                aisle: guessAisle(for: line.name), deviceId: deviceId))
+            // Same pipeline as plan-to-list: fraction display with unit, and
+            // the relationship set so ListsTabView (which renders list.items)
+            // shows the rows.
+            let qty = line.totalQuantity.map { scaledDisplay(name: "", quantity: $0, unit: line.unit, factor: 1).trimmingCharacters(in: .whitespaces) } ?? ""
+            let item = ListItem(listId: list.id, name: line.name, quantity: qty,
+                aisle: guessAisle(for: line.name),
+                recipeId: line.recipeIds.first, deviceId: deviceId)
+            item.shoppingList = list
+            context.insert(item)
         }
         try? context.save()
         flash("Added \(lines.count) items to Shopping")
@@ -808,8 +829,9 @@ struct RecipeLibraryView: View {
         let deviceId = currentDeviceId()
         let today = Calendar.current.startOfDay(for: Date())
         var count = 0
+        let byId = recipesById
         for id in selection {
-            guard let recipe = recipesById[id], !recipe.deleted else { continue }
+            guard let recipe = byId[id], !recipe.deleted else { continue }
             context.insert(Plan(householdId: "hh-demo", date: today, meal: .dinner,
                 recipeId: recipe.id, servings: recipe.servings, deviceId: deviceId))
             count += 1
@@ -819,8 +841,9 @@ struct RecipeLibraryView: View {
     }
 
     private func deleteSelected() {
+        let byId = recipesById
         for id in selection {
-            guard let recipe = recipesById[id] else { continue }
+            guard let recipe = byId[id] else { continue }
             recipe.deleted = true
             recipe.updatedAt = Date()
         }
@@ -1125,9 +1148,12 @@ struct RecipeDetailView: View {
             context.insert(list)
         }
         for line in lines {
-            context.insert(ListItem(listId: list.id, name: line.name,
-                quantity: line.totalQuantity.map { String(format: "%.2g", $0) } ?? "",
-                aisle: guessAisle(for: line.name), deviceId: deviceId))
+            let qty = line.totalQuantity.map { scaledDisplay(name: "", quantity: $0, unit: line.unit, factor: 1).trimmingCharacters(in: .whitespaces) } ?? ""
+            let item = ListItem(listId: list.id, name: line.name, quantity: qty,
+                aisle: guessAisle(for: line.name),
+                recipeId: line.recipeIds.first, deviceId: deviceId)
+            item.shoppingList = list
+            context.insert(item)
         }
         try? context.save()
         addedMessage = "Added \(lines.count) items to Shopping"
