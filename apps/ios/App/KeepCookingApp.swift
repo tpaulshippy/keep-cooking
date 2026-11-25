@@ -869,6 +869,9 @@ struct DrawerShellView: View {
             // swipe left on open drawer dismisses it.
             .gesture(drawerOpen ? nil : edgeOpenGesture)
             .safeAreaInset(edge: .bottom) { bottomBar }
+            // While the drawer is open VoiceOver must not reach the
+            // content dimmed behind the backdrop.
+            .accessibilityHidden(drawerOpen)
 
             if drawerOpen {
                 // Dimmed backdrop — tap to dismiss.
@@ -883,13 +886,13 @@ struct DrawerShellView: View {
             }
         }
         .animation(.easeInOut(duration: 0.22), value: drawerOpen)
+        // Each quick-add destination owns its own NavigationStack —
+        // no outer stack here (avoids nested navigation chrome).
         .sheet(item: $quickAdd) { kind in
-            NavigationStack {
-                switch kind {
-                case .clip: ClipView()
-                case .scan: OCRScanView()
-                case .caption: CaptionsImportView()
-                }
+            switch kind {
+            case .clip: ClipView()
+            case .scan: OCRScanView()
+            case .caption: CaptionsImportView()
             }
         }
     }

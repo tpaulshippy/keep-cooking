@@ -23,24 +23,40 @@ final class DemoFlowsUITests: XCTestCase {
         XCTAssertTrue(element.waitForExistence(timeout: timeout), message)
     }
 
+    /// Open the drawer and choose a section row
+    /// (identifiers: drawer-recipes, drawer-plan, drawer-lists, …).
+    private func goDrawer(_ app: XCUIApplication, _ row: String) {
+        let hamburger = app.buttons["drawer-hamburger"]
+        wait(hamburger, "drawer hamburger missing")
+        hamburger.tap()
+        let dest = id(app, row)
+        wait(dest, "\(row) drawer row missing")
+        dest.tap()
+    }
+
     // MARK: 1 — offline-launch: fresh install lists seeded recipes; persists.
 
     func testOfflineLaunch() throws {
         let app = XCUIApplication()
         app.launch()
 
-        wait(app.tabBars.buttons["Recipes"], "Recipes tab missing")
-        // Seeded recipes appear with zero backend configured.
+        // Drawer shell launches into Recipes: seeded list, no tab bar.
+        XCTAssertEqual(app.tabBars.count, 0, "drawer shell must not show a tab bar")
         wait(id(app, "recipe-list"), "seeded recipe list missing")
         XCTAssertGreaterThan(app.cells.count + app.buttons.count, 3,
             "expected seeded recipes")
+        // Drawer opens over content and lists sections.
+        let hamburger = app.buttons["drawer-hamburger"]
+        wait(hamburger, "drawer hamburger missing")
+        hamburger.tap()
+        wait(id(app, "drawer-recipes"), "drawer recipes row missing")
+        app.buttons["Dismiss navigation menu"].tap()
         sleep(2)
 
         // Kill + relaunch: the list persists (SwiftData, offline-first).
         app.terminate()
         sleep(1)
         app.launch()
-        wait(app.tabBars.buttons["Recipes"], "Recipes tab missing after relaunch")
         wait(id(app, "recipe-list"), "recipe list missing after relaunch")
         sleep(2)
     }
@@ -51,10 +67,13 @@ final class DemoFlowsUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
 
-        wait(app.tabBars.buttons["More"], "More tab missing")
-        app.tabBars.buttons["More"].tap()
-        wait(id(app, "more-ocr"), "OCR entry missing")
-        id(app, "more-ocr").tap()
+        wait(id(app, "recipe-list"), "seeded recipe list missing")
+        let add = id(app, "add-recipe-button")
+        wait(add, "add-recipe button missing")
+        add.tap()
+        let scan = app.buttons["Scan cookbook (OCR)"]
+        wait(scan, "Scan cookbook entry missing")
+        scan.tap()
 
         // Tap 1: paste/type recognized text.
         let editor = app.textViews["ocr-text"]
@@ -92,8 +111,9 @@ final class DemoFlowsUITests: XCTestCase {
         app.launch()
 
         // Week plan with demo entries (Mon/Wed/Fri dinners, seeded offline).
-        wait(app.tabBars.buttons["Plan"], "Plan tab missing")
-        app.tabBars.buttons["Plan"].tap()
+        let planTab = app.buttons["Plan tab"]
+        wait(planTab, "Plan tab missing")
+        planTab.tap()
         wait(app.buttons["Add week to list"], "Add-week button missing")
         sleep(1)
         app.buttons["Add week to list"].tap()
@@ -101,7 +121,8 @@ final class DemoFlowsUITests: XCTestCase {
         sleep(2)
 
         // Aggregated, aisle-sorted list → check off the first item.
-        app.tabBars.buttons["Lists"].tap()
+        // (Lists lives in the drawer; the bottom-bar shortcut is "Shopping".)
+        goDrawer(app, "drawer-lists")
         let weeklyHeader = app.staticTexts.containing(
             NSPredicate(format: "label CONTAINS 'Weekly shop'")).firstMatch
         wait(weeklyHeader, "Weekly shop list missing")
@@ -113,7 +134,9 @@ final class DemoFlowsUITests: XCTestCase {
         sleep(2)
 
         // Cook mode reachable from a recipe: scaler + step pager.
-        app.tabBars.buttons["Recipes"].tap()
+        let recipesTab = app.buttons["Recipes tab"]
+        wait(recipesTab, "Recipes tab missing")
+        recipesTab.tap()
         wait(id(app, "recipe-list"), "recipe list missing")
         let firstRecipe = id(app, "recipe-list").descendants(matching: .button).firstMatch
         wait(firstRecipe, "no recipe row")
