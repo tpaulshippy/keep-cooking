@@ -301,19 +301,14 @@ public final class LiveVoiceInput: VoiceAudioInput {
     }
 
     #if os(iOS)
-    /// Play-and-record so read-aloud ducks under listening; activated before
-    /// `engine.start()` so the engine never starts on a cold session.
-    /// `.defaultToSpeaker` is required: without it play-and-record routes
-    /// output to the earpiece receiver (quiet, phone-to-ear). `.allowBluetooth`
-    /// keeps hands-free headsets working while cooking.
-    /// Mode is `.voiceChat` (not `.spokenAudio`) for its hardware echo
-    /// cancellation: the mic stays usable while replies play, which is what
-    /// makes Paprika-style barge-in ("repeat" over a read-aloud) possible.
-    /// `.spokenAudio` has no echo canceller — the mic hears the speaker.
+    /// Mode stays `.spokenAudio`: `.voiceChat` was tried for its hardware
+    /// echo cancellation but rendered TTS inaudible in practice, so it was
+    /// reverted — barge-in matching in `startListening` remains the echo
+    /// defense. `.spokenAudio` is proven audible with this exact setup.
     private func configureAudioSession() {
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.duckOthers, .defaultToSpeaker, .allowBluetooth])
+            try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.duckOthers, .defaultToSpeaker, .allowBluetooth])
             try session.setActive(true)
         } catch {
             // Engine start below still reports failure via `isRunning`.
@@ -474,6 +469,12 @@ public final class VoiceCookManager {
         // Remembered for echo rejection: a transcript matching what we just
         // spoke (while still speaking) is our own speaker, not the cook.
         lastSpokenText = text
+        #if os(iOS)
+        // Re-assert the session: interruptions (calls, Siri, alerts) can
+        // deactivate it mid-cook, leaving TTS — and the mic tap — silently
+        // dead for the rest of the session. Idempotent when already active.
+        try? AVAudioSession.sharedInstance().setActive(true)
+        #endif
         let utterance = AVSpeechUtterance(string: text)
         if let locale {
             utterance.voice = AVSpeechSynthesisVoice(language: locale.identifier)
@@ -524,6 +525,10 @@ public final class VoiceCookManager {
     public func startListening(using input: VoiceAudioInput? = nil,
                                onTranscript: @escaping (String) -> Void) {
         guard listeningEnabled else { return }
+        // Re-entrant begins (double onAppear, late permission completions)
+        // must not tear down a live task: rebuilding the request discards
+        // the in-flight utterance's final — Heard with no reply, dot on.
+        if isListening, audioInput?.isRunning == true { return }
         if let input {
             audioInput = input
         } else if let live = LiveVoiceInput() {
