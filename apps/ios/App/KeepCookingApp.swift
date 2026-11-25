@@ -850,17 +850,12 @@ struct DrawerShellView: View {
     @State private var quickAdd: QuickAddKind? = nil
     /// Blank-recipe request forwarded to the library (single + menu entry).
     @State private var requestBlankRecipe = false
-
-    @Query(filter: #Predicate<Recipe> { !$0.deleted })
-    private var recipes: [Recipe]
-    @Query(filter: #Predicate<Plan> { !$0.deleted })
-    private var plans: [Plan]
-    @Query(filter: #Predicate<ShoppingList> { !$0.deleted })
-    private var lists: [ShoppingList]
-    @Query(filter: #Predicate<PantryItem> { !$0.deleted })
-    private var pantry: [PantryItem]
-    @Query(filter: #Predicate<Cookbook> { !$0.deleted })
-    private var cookbooks: [Cookbook]
+    /// Recipe filter state (section + sheet + visible count): the top-bar
+    /// center slot is the filter pill on Recipes, so it lives in the shell
+    /// and is passed down. Filter SHEET UI stays in the library.
+    @State private var librarySection: LibrarySection = .all
+    @State private var showFilterSheet = false
+    @State private var visibleRecipeCount = 0
 
     var body: some View {
         ZStack(alignment: .leading) {
@@ -918,39 +913,10 @@ struct DrawerShellView: View {
 
             Spacer(minLength: 0)
 
-            // Center pill: current section + count, chevron opens section switcher.
-            SwiftUI.Menu {
-                ForEach(DrawerSection.allCases) { section in
-                    Button {
-                        selection = section
-                    } label: {
-                        Label(section.title, systemImage: section.icon)
-                    }
-                }
-            } label: {
-                VStack(spacing: 1) {
-                    HStack(spacing: 4) {
-                        Text(selection.title)
-                            .font(.headline)
-                            .lineLimit(1)
-                        Image(systemName: "chevron.down")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                    Text(pillSubtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 8)
-                .background(Color(.secondarySystemBackground))
-                .clipShape(Capsule())
-                .contentShape(Capsule())
-                .frame(minWidth: 44, minHeight: 44)
-            }
-            .accessibilityLabel("Current section: \(selection.title), \(pillSubtitle). Activate to switch section.")
-            .accessibilityIdentifier("section-pill")
+            // Center slot — contextual, single header. On Recipes it is the
+            // FILTER pill (opens the filter sheet); everywhere else a plain
+            // non-interactive section title. The drawer is the sole switcher.
+            centerSlot
 
             Spacer(minLength: 0)
 
@@ -992,22 +958,45 @@ struct DrawerShellView: View {
         .background(Color(.systemBackground))
     }
 
-    private var pillSubtitle: String {
-        switch selection {
-        case .recipes:
-            return recipes.isEmpty ? "No recipes" : "\(recipes.count) recipes"
-        case .plan:
-            return plans.isEmpty ? "No meals planned" : "\(plans.count) meals"
-        case .menus:
-            return "Weekly menus"
-        case .lists:
-            return lists.isEmpty ? "No lists" : "\(lists.count) lists"
-        case .pantry:
-            return pantry.isEmpty ? "Pantry empty" : "\(pantry.count) items"
-        case .library:
-            return cookbooks.isEmpty ? "Search & categories" : "\(cookbooks.count) cookbooks"
-        case .settings:
-            return "Device & sync"
+    // MARK: Center slot — contextual single header
+
+    @ViewBuilder
+    private var centerSlot: some View {
+        if selection == .recipes {
+            Button {
+                showFilterSheet = true
+            } label: {
+                HStack(spacing: 4) {
+                    Text(librarySection.title)
+                        .font(.headline)
+                        .lineLimit(1)
+                    Text("\(visibleRecipeCount) recipes")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 8)
+                .background(Color(.secondarySystemBackground))
+                .clipShape(Capsule())
+                .contentShape(Capsule())
+                .frame(minWidth: 44, minHeight: 44)
+            }
+            .accessibilityLabel("Recipe filter: \(librarySection.title), \(visibleRecipeCount) recipes. Activate to change filter.")
+            .accessibilityIdentifier("filter-pill")
+        } else {
+            Text(selection.title)
+                .font(.headline)
+                .lineLimit(1)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 8)
+                .background(Color(.secondarySystemBackground))
+                .clipShape(Capsule())
+                .frame(minWidth: 44, minHeight: 44)
+                .accessibilityIdentifier("section-pill")
         }
     }
 
@@ -1018,7 +1007,12 @@ struct DrawerShellView: View {
         Group {
             switch selection {
             case .recipes:
-                RecipeLibraryView(requestBlankRecipe: $requestBlankRecipe)
+                RecipeLibraryView(
+                    requestBlankRecipe: $requestBlankRecipe,
+                    section: $librarySection,
+                    showFilterSheet: $showFilterSheet,
+                    visibleRecipeCount: $visibleRecipeCount
+                )
             case .plan:
                 PlanTabView()
             case .menus:

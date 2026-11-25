@@ -109,6 +109,9 @@ public struct LibraryHomeView: View {
                 }
             }
             .navigationTitle("Library")
+            // Shell top bar is the only header: hide this root bar, keep it
+            // for pushed search/cookbook/duplicate views (own chrome).
+            .toolbar(.hidden, for: .navigationBar)
         }
     }
 }

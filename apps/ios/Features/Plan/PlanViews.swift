@@ -113,7 +113,6 @@ public struct PlanView: View {
             // Bottom scroll inset so the last rows clear the floating tab bar.
             .contentMargins(.bottom, 48, for: .scrollContent)
         }
-        .navigationTitle("Plan")
         .safeAreaPadding(.bottom, 8)
     }
 
