@@ -111,6 +111,12 @@ public final class LiveVoiceInput: VoiceAudioInput {
     var onError: ((String) -> Void)?
     private var lastForwarded = ""
     private var lastPartialForwarded = ""
+    /// Recognition route for this session. Starts on-device when the
+    /// recognizer supports it; drops to server on the first on-device
+    /// failure and stays there (retrying a missing offline model every
+    /// 0.8s would just delay hearing). Reset every `start`, so the next
+    /// session tries on-device again.
+    private var preferOnDevice = true
     private var generation = 0
     private var tapInstalled = false
 
@@ -136,6 +142,8 @@ public final class LiveVoiceInput: VoiceAudioInput {
         shouldKeepListening = true
         self.onTranscript = onTranscript
         lastForwarded = ""
+        lastPartialForwarded = ""
+        preferOnDevice = recognizer.supportsOnDeviceRecognition
         #if os(iOS)
         configureAudioSession()
         #endif
@@ -185,15 +193,28 @@ public final class LiveVoiceInput: VoiceAudioInput {
         // Partial results keep the task alive through pauses; we only
         // forward finals (partials like "nex" would spam "didn't catch that").
         request.shouldReportPartialResults = true
-        // Do NOT require on-device: when the offline dictation model isn't
-        // downloaded the task fails with no transcripts and `isRunning`
-        // stays true. Server recognition is the reliable default.
-        request.requiresOnDeviceRecognition = false
+        // On-device first for privacy + offline use; server fallback happens
+        // in the task-error handler below when the on-device attempt fails
+        // (missing offline model, unsupported language, ...). Forcing
+        // on-device unconditionally fails silently with zero transcripts
+        // when the model isn't downloaded, so it must never be required.
+        request.requiresOnDeviceRecognition = preferOnDevice
         self.request = request
         task = recognizer.recognitionTask(with: request) { [weak self] result, error in
             guard let self, myGeneration == self.generation else { return }
             if let error {
                 guard self.shouldKeepListening else { return }
+                if self.preferOnDevice {
+                    // On-device attempt failed — fall back to server for the
+                    // rest of this session (next session tries on-device
+                    // again). The note clears on the next transcript.
+                    self.preferOnDevice = false
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onError?("On-device speech isn't available — using online recognition.")
+                    }
+                    self.scheduleRestart(after: 0.5, generation: myGeneration)
+                    return
+                }
                 // Surface the cause: without this the engine runs with zero
                 // transcripts and the pill claims "listening" (the deaf-mic
                 // report). The manager dedups repeats from the retry loop.
@@ -479,11 +500,13 @@ public final class VoiceCookManager {
     // MARK: Listening
 
     /// Starts continuous listening. Pass a mock via `input` in tests; with
-    /// nil the manager uses on-device recognition. On the simulator it falls
-    /// back to the mock (no mic needed, `micDenied` stays false so the
-    /// simulator-only debug bar can inject transcripts); on device a missing
-    /// recognizer reports a failed start instead of a mock that claims
-    /// "listening" but never delivers transcripts.
+    /// nil the manager uses on-device recognition first and falls back to
+    /// server recognition if the on-device attempt fails (missing offline
+    /// model, ...). On the simulator it falls back to the mock (no mic
+    /// needed, `micDenied` stays false so the simulator-only debug bar can
+    /// inject transcripts); on device a missing recognizer reports a failed
+    /// start instead of a mock that claims "listening" but never delivers
+    /// transcripts.
     /// `isListening` honestly reflects `audioInput?.isRunning` after the
     /// start attempt; on failure it stays false with a retry prompt in
     /// `lastReply`.
