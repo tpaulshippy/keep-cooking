@@ -118,6 +118,11 @@ final class DemoFlowsUITests: XCTestCase {
         let firstRecipe = id(app, "recipe-list").descendants(matching: .button).firstMatch
         wait(firstRecipe, "no recipe row")
         firstRecipe.tap()
+        // Detail opens on the Ingredients pane; the cook entry point
+        // (Start Cooking) lives in the Directions pane (detail revamp).
+        let directionsToggle = app.buttons["Directions"]
+        wait(directionsToggle, "Directions toggle missing")
+        directionsToggle.tap()
         let cook = app.buttons["cook-button"]
         wait(cook, "Cook button missing")
         cook.tap()
