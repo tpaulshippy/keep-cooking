@@ -238,6 +238,31 @@ final class E2EHeaderBindingTests: XCTestCase {
         XCTAssertEqual(opened.payload, env.payload)
     }
 
+    func testRecipeIngredientNamesSurviveEnvelopeRoundTrip() throws {
+        // Seeds carry BOTH name ("white miso") and quantity-only display
+        // ("3 tbsp"); sync must transport both keys untouched so the detail
+        // pane can compose "qty unit name" after a sync instead of finding
+        // a quantity-only string where the name was.
+        let ing: JSONValue = ["id": "ing1", "name": "white miso",
+                              "quantity": 3, "unit": "tbsp", "display": "3 tbsp",
+                              "position": 1]
+        let env = SyncEnvelope(id: "recipe-01", updatedAt: base, deviceId: "device-a",
+                               entity: .recipe,
+                               payload: ["title": "Weeknight Miso Salmon",
+                                         "ingredients": [ing]])
+        let plain = try JSONDecoder().decode(SyncEnvelope.self,
+                                             from: JSONEncoder().encode(env))
+        XCTAssertEqual(plain.payload, env.payload)
+        let names = plain.payload["ingredients"]?.arrayValue?.compactMap {
+            $0.objectValue?["name"]?.stringValue
+        }
+        let displays = plain.payload["ingredients"]?.arrayValue?.compactMap {
+            $0.objectValue?["display"]?.stringValue
+        }
+        XCTAssertEqual(names, ["white miso"])
+        XCTAssertEqual(displays, ["3 tbsp"])
+    }
+
     func testRoundTripPreservesSubsecondOrdering() throws {
         // Same-second edits must NOT collapse onto one instant: the blind
         // server applies strict LWW (stored wins ties), so flooring to whole

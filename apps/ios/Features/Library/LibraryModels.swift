@@ -17,7 +17,7 @@ import UIKit
 extension Recipe: LibraryRecipe {
     public var recipeId: String { id }
     public var ingredientNames: [String] {
-        (ingredients).map { $0.display.isEmpty ? $0.name : $0.display }
+        ingredients.map { ingredientIdentity(name: $0.name, display: $0.display) }
     }
     public var stepTexts: [String] { steps.map { $0.text } }
 }

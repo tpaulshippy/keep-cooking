@@ -55,6 +55,26 @@ final class CookTests: XCTestCase {
             "Salt to taste")
     }
 
+    func testScaledDisplayKeepsSeedShapedNames() {
+        // Seeds carry BOTH a name ("white miso") and a quantity-only display
+        // ("3 tbsp"): the detail pane composes from name+quantity+unit, never
+        // display alone, so names survive and the stepper visibly rescales.
+        XCTAssertEqual(
+            scaledDisplay(name: "white miso", quantity: 3, unit: "tbsp", factor: 1),
+            "3 tbsp white miso")
+        XCTAssertEqual(
+            scaledDisplay(name: "all-purpose flour", quantity: 2.25, unit: "cup", factor: 1),
+            "2¼ cup all-purpose flour")
+        // Servings stepper doubled: quantities rescale with the name kept.
+        XCTAssertEqual(
+            scaledDisplay(name: "white miso", quantity: 3, unit: "tbsp", factor: 2),
+            "6 tbsp white miso")
+        // Unmeasured merged rows stay bare at any factor.
+        XCTAssertEqual(
+            scaledDisplay(name: "Salt to taste", quantity: nil, unit: "", factor: 2),
+            "Salt to taste")
+    }
+
     // MARK: - Timer parser
 
     func testTimerParserRangeUsesUpperBound() {

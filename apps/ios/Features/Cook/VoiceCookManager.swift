@@ -566,14 +566,7 @@ public final class VoiceCookManager {
         // spoke (while still speaking) is our own speaker, not the cook.
         lastSpokenText = text
         #if os(iOS)
-        // Re-assert the session: interruptions (calls, Siri, alerts) can
-        // deactivate it mid-cook, leaving TTS — and the mic tap — silently
-        // dead for the rest of the session. Idempotent when already active.
-        // The override lasts only until a route change, so re-assert it for
-        // every utterance as well as during microphone setup.
-        let session = AVAudioSession.sharedInstance()
-        try? session.setActive(true)
-        try? session.overrideOutputAudioPort(.speaker)
+        ensureAudibleSpeechSession()
         #endif
         let utterance = AVSpeechUtterance(string: text)
         if let locale {
@@ -588,6 +581,38 @@ public final class VoiceCookManager {
         synthesizer.stopSpeaking(at: .immediate)
         isReadingAloud = false
     }
+
+    #if os(iOS)
+    /// Routes TTS at full device volume for every utterance.
+    ///
+    /// The previous code never set a category: with no mic session the
+    /// category stays SoloAmbient, which the silent switch mutes (loud on
+    /// the simulator, silent on device). And when the mic IS live the
+    /// voiceChat + duckOthers session applies voice processing that ducks
+    /// TTS to inaudible on device. So: while the mic owns the session keep
+    /// voiceChat (barge-in echo cancellation) and re-assert the speaker
+    /// override; otherwise use plain playback, which defaults to the
+    /// speaker and ignores the silent switch. Route failures surface in
+    /// `lastReply` (visible above the pill) instead of being swallowed.
+    /// Re-asserts every utterance because interruptions (calls, Siri,
+    /// alerts) can deactivate the session mid-cook; idempotent otherwise.
+    private func ensureAudibleSpeechSession() {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            if audioInput?.isRunning == true {
+                try session.setCategory(.playAndRecord, mode: .voiceChat,
+                    options: [.defaultToSpeaker, .allowBluetooth])
+                try session.setActive(true)
+                try session.overrideOutputAudioPort(.speaker)
+            } else {
+                try session.setCategory(.playback, mode: .default)
+                try session.setActive(true)
+            }
+        } catch {
+            lastReply = "Speaker audio couldn't start: \(error.localizedDescription)"
+        }
+    }
+    #endif
 
     /// Reads the current step aloud on entry / step change when enabled.
     /// The UI lane calls this on appear and whenever `session.stepIndex` changes.
