@@ -1,0 +1,18 @@
+apps/ios/Features/Cook/CookTests.swift
+  h_6bbd00fe0a456a 574-777
+apps/ios/Features/Cook/VoiceCommandParser.swift
+  h_6bbd00fe0a456a 387-388,539-664
+apps/ios/Features/Cook/VoiceCookManager.swift
+  h_6bbd00fe0a456a 74-83,186-203,235-237,258-293,296-299,455-484,657-670,673,678,719-831,839-844,961,963,1094
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3858934a79b9e95fe2bc789375fe6cc3885ba91b",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
