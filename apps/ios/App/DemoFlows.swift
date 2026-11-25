@@ -307,36 +307,6 @@ struct RecipeLibraryView: View {
                 }
             }
             .navigationTitle("Recipes")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    SwiftUI.Menu {
-                        Button {
-                            createNew()
-                        } label: {
-                            Label("Create New Recipe", systemImage: "square.and.pencil")
-                        }
-                        Button {
-                            addDestination = .ocr
-                        } label: {
-                            Label("Scan cookbook", systemImage: "camera.viewfinder")
-                        }
-                        Button {
-                            addDestination = .clip
-                        } label: {
-                            Label("Clip URL", systemImage: "link")
-                        }
-                        Button {
-                            addDestination = .caption
-                        } label: {
-                            Label("Import caption", systemImage: "captions.bubble")
-                        }
-                    } label: {
-                        Image(systemName: "plus")
-                            .frame(minWidth: 44, minHeight: 44)
-                            .accessibilityIdentifier("add-recipe-button")
-                    }
-                }
-            }
             .overlay(alignment: .bottom) {
                 if isSelecting { selectionBar } else { bottomBar }
             }
