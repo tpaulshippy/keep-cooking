@@ -104,7 +104,13 @@ public final class LiveVoiceInput: VoiceAudioInput {
     public private(set) var isRunning = false
     private var shouldKeepListening = false
     private var onTranscript: ((String) -> Void)?
+    /// Live partial words for display only (set by the manager; never
+    /// routed to command handling).
+    var onPartial: ((String) -> Void)?
+    /// Recognition failures for display (set by the manager).
+    var onError: ((String) -> Void)?
     private var lastForwarded = ""
+    private var lastPartialForwarded = ""
     private var generation = 0
     private var tapInstalled = false
 
@@ -145,6 +151,8 @@ public final class LiveVoiceInput: VoiceAudioInput {
         shouldKeepListening = false
         generation += 1
         onTranscript = nil
+        onPartial = nil
+        onError = nil
         stopEngineAndTask()
         #if os(iOS)
         deactivateAudioSession()
@@ -168,6 +176,8 @@ public final class LiveVoiceInput: VoiceAudioInput {
         task = nil
         request = nil
         guard recognizer.isAvailable else {
+            let message = "Speech recognition isn't available right now — check your connection."
+            DispatchQueue.main.async { [weak self] in self?.onError?(message) }
             scheduleRestart(after: 1.5, generation: myGeneration)
             return
         }
@@ -182,8 +192,19 @@ public final class LiveVoiceInput: VoiceAudioInput {
         self.request = request
         task = recognizer.recognitionTask(with: request) { [weak self] result, error in
             guard let self, myGeneration == self.generation else { return }
-            if error != nil {
+            if let error {
                 guard self.shouldKeepListening else { return }
+                // Surface the cause: without this the engine runs with zero
+                // transcripts and the pill claims "listening" (the deaf-mic
+                // report). The manager dedups repeats from the retry loop.
+                let nsError = error as NSError
+                let message: String
+                if nsError.domain == NSURLErrorDomain {
+                    message = "Speech recognition can't reach Apple — check your connection."
+                } else {
+                    message = nsError.localizedDescription
+                }
+                DispatchQueue.main.async { [weak self] in self?.onError?(message) }
                 // Transient (network handoff, audio glitch, timeout):
                 // fresh request so listening resumes instead of going deaf.
                 self.scheduleRestart(after: 0.8, generation: myGeneration)
@@ -196,6 +217,7 @@ public final class LiveVoiceInput: VoiceAudioInput {
             if result.isFinal {
                 if text != self.lastForwarded {
                     self.lastForwarded = text
+                    self.lastPartialForwarded = text
                     DispatchQueue.main.async { [weak self] in
                         self?.onTranscript?(text)
                     }
@@ -203,6 +225,15 @@ public final class LiveVoiceInput: VoiceAudioInput {
                 // Apple finishes the task after a final — restart so the
                 // NEXT command is heard.
                 self.scheduleRestart(after: 0.25, generation: myGeneration)
+            } else if text != self.lastPartialForwarded {
+                // Live display only: partials update the Heard caption so
+                // the cook sees audio flowing before pausing for the final.
+                // Never routed to command handling (partials like "nex"
+                // would spam "didn't catch that").
+                self.lastPartialForwarded = text
+                DispatchQueue.main.async { [weak self] in
+                    self?.onPartial?(text)
+                }
             }
         }
     }
@@ -293,10 +324,14 @@ public final class VoiceCookManager {
     public private(set) var isReadingAloud = false
     public private(set) var isListening = false
     public var lastReply = ""
-    /// Last transcript the recognizer delivered (final results only). Shown
-    /// in the pill so the cook can tell "heard but not understood" apart
-    /// from "not hearing". Updated for both live and simulated input.
+    /// Last transcript the recognizer delivered (live partials + finals).
+    /// Shown in the pill so the cook can tell "heard but not understood"
+    /// apart from "not hearing". Updated for both live and simulated input.
     public var lastHeardTranscript = ""
+    /// Latest recognition failure, if any. Set by the input's error path
+    /// (deduped against retry-loop repeats), cleared on the next transcript
+    /// or stop. Shown in the pill so silent task death is diagnosable.
+    public var listeningError: String?
     public private(set) var micDenied = false
 
     // MARK: View-wired callbacks (all optional; the view owns rendering)
@@ -476,10 +511,25 @@ public final class VoiceCookManager {
         audioInput?.start(onTranscript: { [weak self] transcript in
             guard let self else { return }
             // Record what was heard BEFORE handling, so the pill can show
-            // the words even when the command itself is unknown.
+            // the words even when the command itself is unknown. A fresh
+            // transcript also means recovery: drop any earlier error.
             self.lastHeardTranscript = transcript
+            self.listeningError = nil
             onTranscript(transcript)
         })
+        if let live = audioInput as? LiveVoiceInput {
+            live.onPartial = { [weak self] text in
+                self?.lastHeardTranscript = text
+            }
+            live.onError = { [weak self] message in
+                guard let self else { return }
+                // The retry loop re-reports persistent failures; only
+                // publish changes so the pill doesn't churn.
+                if self.listeningError != message {
+                    self.listeningError = message
+                }
+            }
+        }
         let running = audioInput?.isRunning ?? false
         isListening = running
         if !running {
@@ -508,6 +558,7 @@ public final class VoiceCookManager {
         audioInput?.stop()
         isListening = false
         lastHeardTranscript = ""
+        listeningError = nil
     }
 
     /// Simulator/debug helper: delivers a transcript through the active

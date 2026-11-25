@@ -556,6 +556,9 @@ public struct CookModeView: View {
     // and mic-denied state observe it.
     private var voiceBottomBar: some View {
         VStack(spacing: 8) {
+            if voiceManager.listeningError != nil {
+                voiceErrorView
+            }
             if !voiceManager.lastHeardTranscript.isEmpty {
                 voiceHeardView
             }
@@ -578,6 +581,7 @@ public struct CookModeView: View {
 
     /// What the recognizer last delivered, so the cook can distinguish
     /// "heard but not understood" from "not hearing". Shown above the reply.
+    /// Updates live as partial words arrive, settling on the final.
     private var voiceHeardView: some View {
         Text("Heard: “\(voiceManager.lastHeardTranscript)”")
             .font(.caption)
@@ -587,6 +591,19 @@ public struct CookModeView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
             .accessibilityLabel("Heard: \(voiceManager.lastHeardTranscript)")
+    }
+
+    /// Recognition failure, if any (no network, recognizer busy, ...).
+    /// Red so it reads as an error, not a reply.
+    private var voiceErrorView: some View {
+        Text(voiceManager.listeningError ?? "")
+            .font(.caption)
+            .foregroundStyle(.red)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
+            .accessibilityLabel("Voice error: \(voiceManager.listeningError ?? "")")
     }
 
     /// Reply area directly above the pill: last spoken/heard reply.
