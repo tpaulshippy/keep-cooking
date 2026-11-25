@@ -1,0 +1,30 @@
+apps/ios/App/DemoFlows.swift
+  h_6bbd00fe0a456a 1040-1057,1217
+apps/ios/App/KeepCookingApp.swift
+  h_6bbd00fe0a456a 66-72,858-862,886
+apps/ios/Features/Cook/CookTests.swift
+  h_6bbd00fe0a456a 58-77
+apps/ios/Features/Cook/VoiceCookManager.swift
+  h_6bbd00fe0a456a 569,585-616
+apps/ios/Features/Library/DuplicateFinder.swift
+  h_6bbd00fe0a456a 243,250,255-262
+apps/ios/Features/Library/DuplicateFinderTests.swift
+  h_6bbd00fe0a456a 116-137
+apps/ios/Features/Library/LibraryModels.swift
+  h_6bbd00fe0a456a 20
+apps/ios/Features/Library/LibraryViews.swift
+  h_6bbd00fe0a456a 402-403
+apps/ios/Sync/SyncEngineTests.swift
+  h_6bbd00fe0a456a 241-265
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e4cb4497aca26e5b6632fdd4e9fb50035bfe32c6",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
