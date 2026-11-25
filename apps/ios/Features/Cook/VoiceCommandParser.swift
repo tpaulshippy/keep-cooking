@@ -476,22 +476,43 @@ public func validatedStep(requested: Int, stepCount: Int) -> Int? {
 private func parseVoiceTimer(_ text: String) -> VoiceCommand? {
     let prefixes = ["start a timer", "start the timer", "start timer",
                     "set a timer", "set the timer", "set timer"]
-    var rest: String?
     for prefix in prefixes where text == prefix || text.hasPrefix(prefix + " ") {
-        rest = text == prefix ? "" : String(text.dropFirst(prefix.count + 1))
-        break
+        var remainder = text == prefix ? "" : String(text.dropFirst(prefix.count + 1))
+        if remainder.hasPrefix("for ") { remainder = String(remainder.dropFirst("for ".count)) }
+        remainder = remainder.trimmingCharacters(in: .whitespaces)
+        guard !remainder.isEmpty else { return .startTimer(seconds: nil, label: nil) }
+        guard let seconds = voiceTimerSeconds(in: remainder) else { return nil }
+        return .startTimer(seconds: seconds, label: nil)
     }
-    guard var remainder = rest else { return nil }
-    if remainder.hasPrefix("for ") { remainder = String(remainder.dropFirst("for ".count)) }
-    remainder = remainder.trimmingCharacters(in: .whitespaces)
-    guard !remainder.isEmpty else { return .startTimer(seconds: nil, label: nil) }
-    guard let seconds = voiceTimerSeconds(in: remainder) else { return nil }
-    return .startTimer(seconds: seconds, label: nil)
+
+    // Paprika parity: "set a 10 minute timer" / "start 5 minute timers".
+    for verb in ["start", "set"] {
+        guard text == verb || text.hasPrefix(verb + " ") else { continue }
+        var rest = text == verb ? "" : String(text.dropFirst(verb.count + 1))
+        if rest.hasPrefix("a ") { rest = String(rest.dropFirst(2)) }
+        if rest.hasPrefix("the ") { rest = String(rest.dropFirst(4)) }
+        if rest == "timer" || rest == "timers" { return .startTimer(seconds: nil, label: nil) }
+        let durationPart: String
+        if rest.hasSuffix(" timers") {
+            durationPart = String(rest.dropLast(" timers".count))
+        } else if rest.hasSuffix(" timer") {
+            durationPart = String(rest.dropLast(" timer".count))
+        } else {
+            continue
+        }
+        var duration = durationPart.trimmingCharacters(in: .whitespaces)
+        if duration.hasPrefix("for ") { duration = String(duration.dropFirst(4)) }
+        duration = duration.trimmingCharacters(in: .whitespaces)
+        guard !duration.isEmpty, let seconds = voiceTimerSeconds(in: duration) else { continue }
+        return .startTimer(seconds: seconds, label: nil)
+    }
+    return nil
 }
 
 private func parseVoiceIngredientAmount(_ text: String) -> VoiceCommand? {
     guard text.hasPrefix("how much ") else { return nil }
-    let suffixes = ["do i need", "do we need", "will i need"]
+    // Longer auxiliaries first so "do i need" wins over the bare "i need".
+    let suffixes = ["do i need", "do we need", "will i need", "i need", "we need"]
     var middle: String?
     for suffix in suffixes where text.hasSuffix(suffix) {
         middle = String(text.dropFirst("how much ".count).dropLast(suffix.count))

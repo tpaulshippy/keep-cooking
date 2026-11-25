@@ -359,24 +359,42 @@ fun validatedStep(requested: Int, stepCount: Int): Int? {
 
 private fun parseVoiceTimer(text: String): VoiceCommand? {
     val prefixes = listOf("start a timer", "start the timer", "start timer", "set a timer", "set the timer", "set timer")
-    var remainder: String? = null
     for (prefix in prefixes) {
         if (text == prefix || text.startsWith("$prefix ")) {
-            remainder = if (text == prefix) "" else text.drop(prefix.length + 1)
-            break
+            var rest = if (text == prefix) "" else text.drop(prefix.length + 1)
+            if (rest.startsWith("for ")) rest = rest.drop("for ".length)
+            rest = rest.trim()
+            if (rest.isEmpty()) return VoiceCommand.StartTimer(seconds = null, label = null)
+            val seconds = voiceTimerSeconds(rest) ?: return null
+            return VoiceCommand.StartTimer(seconds = seconds, label = null)
         }
     }
-    var rest = remainder ?: return null
-    if (rest.startsWith("for ")) rest = rest.drop("for ".length)
-    rest = rest.trim()
-    if (rest.isEmpty()) return VoiceCommand.StartTimer(seconds = null, label = null)
-    val seconds = voiceTimerSeconds(rest) ?: return null
-    return VoiceCommand.StartTimer(seconds = seconds, label = null)
+    // Paprika parity: "set a 10 minute timer" / "start 5 minute timers".
+    for (verb in listOf("start", "set")) {
+        if (text != verb && !text.startsWith("$verb ")) continue
+        var rest = if (text == verb) "" else text.drop(verb.length + 1)
+        if (rest.startsWith("a ")) rest = rest.drop(2)
+        if (rest.startsWith("the ")) rest = rest.drop(4)
+        if (rest == "timer" || rest == "timers") return VoiceCommand.StartTimer(seconds = null, label = null)
+        val durationPart = when {
+            rest.endsWith(" timers") -> rest.dropLast(" timers".length)
+            rest.endsWith(" timer") -> rest.dropLast(" timer".length)
+            else -> continue
+        }
+        var duration = durationPart.trim()
+        if (duration.startsWith("for ")) duration = duration.drop(4)
+        duration = duration.trim()
+        if (duration.isEmpty()) continue
+        val seconds = voiceTimerSeconds(duration) ?: continue
+        return VoiceCommand.StartTimer(seconds = seconds, label = null)
+    }
+    return null
 }
 
 private fun parseVoiceIngredientAmount(text: String): VoiceCommand? {
     if (!text.startsWith("how much ")) return null
-    val suffixes = listOf("do i need", "do we need", "will i need")
+    // Longer auxiliaries first so "do i need" wins over the bare "i need".
+    val suffixes = listOf("do i need", "do we need", "will i need", "i need", "we need")
     var middle: String? = null
     for (suffix in suffixes) {
         if (text.endsWith(suffix)) {
