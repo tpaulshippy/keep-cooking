@@ -1,0 +1,20 @@
+apps/android/app/src/main/java/com/keepcooking/app/cook/VoiceCommandParser.kt
+  h_6bbd00fe0a456a 376-382,384-386,392-410
+apps/android/app/src/test/java/com/keepcooking/app/CookLogicTest.kt
+  h_6bbd00fe0a456a 205-211
+apps/ios/Features/Cook/CookTests.swift
+  h_6bbd00fe0a456a 245-257
+apps/ios/Features/Cook/VoiceCommandParser.swift
+  h_6bbd00fe0a456a 492-496,498-500,506-525
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fcbf24dc5056821db42f8fd0f9070fab2ee90e35",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
