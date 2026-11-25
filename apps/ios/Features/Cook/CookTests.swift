@@ -203,8 +203,11 @@ final class CookTests: XCTestCase {
         XCTAssertEqual(parseVoiceCommand("previous step"), .previous)
         XCTAssertEqual(parseVoiceCommand("repeat that"), .repeatStep)
         // Wake-word prefix is stripped generally.
-        XCTAssertEqual(parseVoiceCommand("smidgen next"), .next)
-        XCTAssertEqual(parseVoiceCommand("hey smidgen, previous step"), .previous)
+        XCTAssertEqual(parseVoiceCommand("keep cooking next"), .next)
+        XCTAssertEqual(parseVoiceCommand("hey keep cooking, previous step"), .previous)
+        // Retired wake word is rejected.
+        XCTAssertEqual(parseVoiceCommand("smidgen next"), .unknown)
+        XCTAssertEqual(parseVoiceCommand("hey smidgen, previous step"), .unknown)
     }
 
     func testVoiceGoToStep() {
@@ -240,17 +243,17 @@ final class CookTests: XCTestCase {
         XCTAssertEqual(parseVoiceCommand("reset the scale"), .resetScale)
     }
 
-    func testVoiceSmidgenPrefixRule() {
+    func testVoiceWakeWordPrefixRule() {
         // Bare ambiguous utterances stay unknown ...
         XCTAssertEqual(parseVoiceCommand("halve it"), .unknown)
         XCTAssertEqual(parseVoiceCommand("double it"), .unknown)
         XCTAssertEqual(parseVoiceCommand("come again"), .unknown)
-        // ... but are honored with the "smidgen" prefix.
-        XCTAssertEqual(parseVoiceCommand("smidgen halve it"), .halveScale)
-        XCTAssertEqual(parseVoiceCommand("smidgen double it"), .doubleScale)
-        XCTAssertEqual(parseVoiceCommand("smidgen come again"), .repeatStep)
-        XCTAssertEqual(parseVoiceCommand("smidgen what was that?"), .repeatStep)
-        XCTAssertEqual(parseVoiceCommand("smidgen cancel"), .stopCooking)
+        // ... but are honored with the "keep cooking" prefix.
+        XCTAssertEqual(parseVoiceCommand("keep cooking halve it"), .halveScale)
+        XCTAssertEqual(parseVoiceCommand("keep cooking double it"), .doubleScale)
+        XCTAssertEqual(parseVoiceCommand("keep cooking come again"), .repeatStep)
+        XCTAssertEqual(parseVoiceCommand("keep cooking what was that?"), .repeatStep)
+        XCTAssertEqual(parseVoiceCommand("keep cooking cancel"), .stopCooking)
     }
 
     func testVoiceMidSentenceGuard() {
@@ -326,12 +329,12 @@ extension CookTests {
         XCTAssertEqual(normalizeVoiceText("I`m done"), "im done")
     }
 
-    func testVoiceSmidgenImDoneCurly() {
-        XCTAssertEqual(parseVoiceCommand("smidgen I\u{2019}m done"), .next)
+    func testVoiceWakeWordImDoneCurly() {
+        XCTAssertEqual(parseVoiceCommand("keep cooking I\u{2019}m done"), .next)
     }
 
-    func testVoiceSmidgenImDoneAscii() {
-        XCTAssertEqual(parseVoiceCommand("smidgen I'm done"), .next)
+    func testVoiceWakeWordImDoneAscii() {
+        XCTAssertEqual(parseVoiceCommand("keep cooking I'm done"), .next)
     }
 
     func testVoiceBareImDoneUnknownBothQuotes() {
@@ -516,5 +519,55 @@ extension CookTests {
     func testValidatedStepEmptyRecipeNil() {
         XCTAssertNil(validatedStep(requested: 1, stepCount: 0))
         XCTAssertNil(validatedStep(requested: VoiceCommand.lastStep, stepCount: 0))
+    }
+
+    // Fix 6: explicit ambiguity signal (fuzzy nil is ambiguous OR no-match).
+    func testAmbiguousTieTrue() {
+        XCTAssertTrue(
+            isFuzzyVoiceMatchAmbiguous("flour", candidates: ["white flour", "wheat flour"]))
+    }
+
+    func testAmbiguousExactDuplicateTrue() {
+        XCTAssertTrue(
+            isFuzzyVoiceMatchAmbiguous("flour", candidates: ["Flour", "flour"]))
+    }
+
+    func testAmbiguousSingleMatchFalse() {
+        XCTAssertFalse(
+            isFuzzyVoiceMatchAmbiguous("flour", candidates: ["All-purpose flour", "Sugar"]))
+    }
+
+    func testAmbiguousNoMatchFalse() {
+        XCTAssertFalse(
+            isFuzzyVoiceMatchAmbiguous("cinnamon", candidates: ["flour", "sugar"]))
+    }
+
+    func testAmbiguousEmptyQueryFalse() {
+        XCTAssertFalse(isFuzzyVoiceMatchAmbiguous("  ", candidates: ["flour"]))
+    }
+
+    // Fix 7: compound durations sum instead of truncating.
+    func testVoiceTimerCompoundHourAndMinutes() {
+        XCTAssertEqual(
+            parseVoiceCommand("start a timer for 1 hour 30 minutes"),
+            .startTimer(seconds: 5400, label: nil))
+    }
+
+    func testVoiceTimerCompoundWords() {
+        XCTAssertEqual(
+            parseVoiceCommand("start a timer for one hour thirty minutes"),
+            .startTimer(seconds: 5400, label: nil))
+    }
+
+    func testVoiceTimerCompoundMixedDigitAndWords() {
+        XCTAssertEqual(
+            parseVoiceCommand("start a timer for 1 hour thirty minutes"),
+            .startTimer(seconds: 5400, label: nil))
+    }
+
+    func testVoiceTimerCompoundTooLargeUnknown() {
+        // 11h + 2h = 13h exceeds the 12h bound.
+        XCTAssertEqual(
+            parseVoiceCommand("start a timer for 11 hours 2 hours"), .unknown)
     }
 }

@@ -10,6 +10,13 @@ import Foundation
 /// Cook mode for one recipe. Caller passes live SwiftData values as plain
 /// snapshots so this view stays store-agnostic (works with @Query or previews).
 public struct CookModeView: View {
+    /// Set while a session is on screen (appear/disappear); nav intents
+    /// require it so they never claim a step change when no live session
+    /// can consume the handoff. Single source of truth — CookModeView and
+    /// KeepCookingIntents both read this, never a string-literal copy
+    /// (same pattern as VoiceCookManager.pendingCommandKey).
+    public static let sessionActiveKey = "cook.sessionActive"
+
     public struct IngredientSnapshot: Hashable, Sendable {
         public var id: String
         public var name: String
@@ -114,6 +121,11 @@ public struct CookModeView: View {
         .onAppear {
             KeepAwake.enable()
             session.loadTimers(from: steps.map { $0.text })
+            // Mark the session active so Shortcuts nav intents accept
+            // handoffs while Cook mode can consume them (cleared below).
+            UserDefaults.standard.set(true, forKey: Self.sessionActiveKey)
+            // Sync voice scale from any restored servings before wiring.
+            session.scale = factor
             // Wire voice callbacks (idempotent per appearance).
             wireVoiceCallbacks()
             // Consume any Shortcuts/intent handoff written while away.
@@ -132,7 +144,10 @@ public struct CookModeView: View {
         }
         .onDisappear {
             KeepAwake.disable()
-            CookActivityStub.cancel(ids: scheduledIds)
+            UserDefaults.standard.set(false, forKey: Self.sessionActiveKey)
+            // Cancel both view-started timers and voice-started ones (the
+            // manager retains those ids in `scheduledTimerIds`).
+            CookActivityStub.cancel(ids: scheduledIds + voiceManager.scheduledTimerIds)
             // Manager's stopListening also persists listeningEnabled off,
             // fixing the stale-flag bug (was: stopped input, left flag true).
             voiceManager.stopListening()
@@ -141,6 +156,12 @@ public struct CookModeView: View {
             // Re-read on every step change (pager swipe, dots, Back/Next/Finish).
             // speakCurrentStep interrupts first so rapid swipes never pile up.
             speakCurrentStep()
+        }
+        .onChange(of: targetServings) {
+            // Manual stepper -> session sync (voice -> servings flows through
+            // onScaleCommand). Without this, "double it" after a manual
+            // change computes from a stale `session.scale`.
+            session.scale = factor
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             voiceBottomBar
@@ -576,12 +597,15 @@ public struct CookModeView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(voiceManager.readAloudEnabled ? "Read aloud on" : "Read aloud off")
             .accessibilityHint("Toggles spoken step replies")
-            // Listening toggle (mic icon + live dot).
+            // Listening toggle (mic icon + live dot). `listeningEnabled` is the
+            // persisted intent; `isListening` is the live engine state —
+            // the dot tracks the engine so a dead recognizer can't show a
+            // green "listening" that hears nothing.
             Button {
                 toggleListening()
             } label: {
                 HStack(spacing: 6) {
-                    if voiceManager.listeningEnabled {
+                    if voiceManager.isListening {
                         Circle()
                             .fill(Color.green)
                             .frame(width: 8, height: 8)
@@ -594,7 +618,7 @@ public struct CookModeView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(voiceManager.listeningEnabled ? "Listening on" : "Listening off")
+            .accessibilityLabel(voiceManager.isListening ? "Listening on" : (voiceManager.listeningEnabled ? "Starting listening" : "Listening off"))
             .accessibilityHint("Toggles voice commands")
         }
         .padding(.horizontal, 14)
@@ -631,9 +655,10 @@ public struct CookModeView: View {
             servingsBinding.wrappedValue = min(max(base * factor, lower), upper)
         }
         // onTimerCommand: intentionally unwired. The timer is scheduled by
-        // the manager; its reply is already set on lastReply and shown in
-        // the pill. No view-side scheduling (avoids double-scheduling with
-        // CookActivityStub) and no scheduledIds bookkeeping needed here.
+        // the manager, which retains its notification ids in
+        // `scheduledTimerIds`; onDisappear cancels those alongside this
+        // view's `scheduledIds` (no double-scheduling, no leaked alerts).
+        // Its reply is already set on lastReply and shown in the pill.
         // onStopCooking: intentionally no navigation. This view is
         // store-agnostic with no router; popping mid-cook would strand
         // timers/keep-awake state. The manager's "Done cooking." reply is
