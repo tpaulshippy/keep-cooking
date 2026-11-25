@@ -597,13 +597,13 @@ public final class StablePartialFirer {
         return { item.cancel() }
     }
 
-    /// Latest pending text (nil when idle). Exposed for tests/debug.
+    /// Latest pending text (nil when idle). Exposed for tests.
     public var pending: String? { pendingText }
 
-    /// Observe one partial. Unknown/ineligible partials NEVER arm the timer
-    /// (they just keep updating Heard via the caller); a changed eligible
-    /// partial cancels and replaces the pending timer; an identical repeat
-    /// keeps the existing timer so speech cadence doesn't restart it.
+    /// Observe one partial. Unknown/ineligible partials NEVER arm the timer;
+    /// a changed eligible partial cancels and replaces the pending timer;
+    /// an identical repeat keeps the existing timer so speech cadence
+    /// doesn't restart it.
     public func notePartial(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }

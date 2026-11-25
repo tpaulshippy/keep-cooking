@@ -50,7 +50,6 @@ public struct CookModeView: View {
     // cook.listeningEnabled default false).
     @State private var voiceManager = VoiceCookManager()
     #if targetEnvironment(simulator)
-    @State private var simVoiceText = ""
     #endif
 
     public init(title: String, baseServings: Double,
@@ -516,42 +515,6 @@ public struct CookModeView: View {
 
     // MARK: - Voice bottom bar (Paprika parity pill + reply + mic-denied)
 
-    #if targetEnvironment(simulator)
-    /// Simulator-only voice harness: the sim has no mic or recognizer, so
-    /// this field injects typed transcripts through the same MockVoiceInput
-    /// + `handle` path the device uses (replies, scale sync, timers). Never
-    /// compiled into device builds.
-    private var simVoiceDebugBar: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Simulated voice input")
-                .font(.caption).bold()
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-            HStack(spacing: 8) {
-                TextField("Type a command, e.g. next", text: $simVoiceText)
-                    .textFieldStyle(.roundedBorder)
-                    .autocorrectionDisabled()
-                    .frame(minHeight: 44)
-                    .accessibilityLabel("Simulated voice command")
-                Button("Send") {
-                    let command = simVoiceText.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !command.isEmpty else { return }
-                    simVoiceText = ""
-                    voiceManager.emitSimulatedTranscript(command)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(simVoiceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .frame(minHeight: 44)
-                .accessibilityHint("Injects the typed command into the voice pipeline")
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(Color(.tertiarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-    #endif
-
     // Bound to VoiceCookManager: pill toggles drive the manager, reply text
     // and mic-denied state observe it.
     private var voiceBottomBar: some View {
@@ -559,47 +522,18 @@ public struct CookModeView: View {
             if voiceManager.listeningError != nil {
                 voiceErrorView
             }
-            if !voiceManager.lastHeardTranscript.isEmpty {
-                voiceHeardView
-            }
             if !voiceManager.lastReply.isEmpty {
                 voiceReplyView
             }
             if voiceManager.micDenied {
                 micDeniedPlacard
             }
-            #if targetEnvironment(simulator)
-            simVoiceDebugBar
-            #endif
             stepPillBar
         }
         .padding(.horizontal)
         .padding(.top, 8)
         .padding(.bottom, 10)
         .background(.bar)
-    }
-
-    /// What the recognizer last delivered, so the cook can distinguish
-    /// "heard but not understood" from "not hearing". Shown above the reply.
-    /// Updates live as partial words arrive, settling on the final.
-    private var voiceHeardView: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Heard: “\(voiceManager.lastHeardTranscript)”")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityLabel("Heard: \(voiceManager.lastHeardTranscript)")
-            if !voiceManager.lastDebugLine.isEmpty {
-                Text(voiceManager.lastDebugLine)
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 6)
     }
 
     /// Recognition failure, if any (no network, recognizer busy, ...).
