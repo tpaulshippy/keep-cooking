@@ -93,57 +93,150 @@ public final class LiveVoiceInput: VoiceAudioInput {
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
     public private(set) var isRunning = false
+    private var shouldKeepListening = false
+    private var onTranscript: ((String) -> Void)?
+    private var lastForwarded = ""
+    private var generation = 0
+    private var tapInstalled = false
 
     public init?(locale: Locale = .current) {
         #if targetEnvironment(simulator)
         return nil
         #else
-        guard let recognizer = SFSpeechRecognizer(locale: locale),
-              recognizer.isAvailable else { return nil }
-        self.recognizer = recognizer
+        // Locale fallback: `.current` may resolve to an unsupported locale
+        // (init succeeds but `isAvailable` is false and the task errors
+        // silently). Prefer current when usable, else en-US.
+        if let r = SFSpeechRecognizer(locale: locale), r.isAvailable {
+            recognizer = r
+        } else if let fallback = SFSpeechRecognizer(locale: Locale(identifier: "en-US")) {
+            recognizer = fallback
+        } else {
+            return nil
+        }
         #endif
     }
 
     public func start(onTranscript: @escaping (String) -> Void) {
-        stop()
+        stopEngineAndTask()
+        shouldKeepListening = true
+        self.onTranscript = onTranscript
+        lastForwarded = ""
         #if os(iOS)
         configureAudioSession()
         #endif
-        let request = SFSpeechAudioBufferRecognitionRequest()
-        request.shouldReportPartialResults = false
-        // Prefer on-device recognition when the recognizer supports it.
-        if recognizer.supportsOnDeviceRecognition {
-            request.requiresOnDeviceRecognition = true
-        }
-        self.request = request
-        let inputNode = engine.inputNode
-        let format = inputNode.outputFormat(forBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
-            self?.request?.append(buffer)
-        }
-        task = recognizer.recognitionTask(with: request) { result, _ in
-            guard let result, result.isFinal else { return }
-            onTranscript(result.bestTranscription.formattedString)
-        }
-        do {
-            try engine.start()
-            isRunning = true
-        } catch {
-            stop()
+        startEngineIfNeeded()
+        startRecognition()
+        isRunning = engine.isRunning && shouldKeepListening
+        if !isRunning {
+            stopEngineAndTask()
         }
     }
 
     public func stop() {
-        engine.stop()
-        engine.inputNode.removeTap(onBus: 0)
+        shouldKeepListening = false
+        generation += 1
+        onTranscript = nil
+        stopEngineAndTask()
+        #if os(iOS)
+        deactivateAudioSession()
+        #endif
+    }
+
+    // MARK: - Continuous recognition internals
+
+    /// Starts (or restarts) one recognition request on the already-running
+    /// engine. Apple ends tasks after a final result, ~60s, or transient
+    /// errors — without a restart the engine keeps running but delivers
+    /// zero transcripts ("shows listening but no reply").
+    private func startRecognition() {
+        guard shouldKeepListening else { return }
+        generation += 1
+        let myGeneration = generation
+        // Stale task/request from the previous generation: end them; their
+        // callbacks carry the old generation and are ignored below.
+        task?.cancel()
+        request?.endAudio()
+        task = nil
+        request = nil
+        guard recognizer.isAvailable else {
+            scheduleRestart(after: 1.5, generation: myGeneration)
+            return
+        }
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        // Partial results keep the task alive through pauses; we only
+        // forward finals (partials like "nex" would spam "didn't catch that").
+        request.shouldReportPartialResults = true
+        // Do NOT require on-device: when the offline dictation model isn't
+        // downloaded the task fails with no transcripts and `isRunning`
+        // stays true. Server recognition is the reliable default.
+        request.requiresOnDeviceRecognition = false
+        self.request = request
+        task = recognizer.recognitionTask(with: request) { [weak self] result, error in
+            guard let self, myGeneration == self.generation else { return }
+            if error != nil {
+                guard self.shouldKeepListening else { return }
+                // Transient (network handoff, audio glitch, timeout):
+                // fresh request so listening resumes instead of going deaf.
+                self.scheduleRestart(after: 0.8, generation: myGeneration)
+                return
+            }
+            guard let result else { return }
+            let text = result.bestTranscription.formattedString
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return }
+            if result.isFinal {
+                if text != self.lastForwarded {
+                    self.lastForwarded = text
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onTranscript?(text)
+                    }
+                }
+                // Apple finishes the task after a final — restart so the
+                // NEXT command is heard.
+                self.scheduleRestart(after: 0.25, generation: myGeneration)
+            }
+        }
+    }
+
+    private func scheduleRestart(after delay: TimeInterval, generation gen: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, self.shouldKeepListening, gen == self.generation else { return }
+            self.startRecognition()
+        }
+    }
+
+    private func startEngineIfNeeded() {
+        if !tapInstalled {
+            let inputNode = engine.inputNode
+            let format = inputNode.outputFormat(forBus: 0)
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+                self?.request?.append(buffer)
+            }
+            tapInstalled = true
+        }
+        if !engine.isRunning {
+            do {
+                engine.prepare()
+                try engine.start()
+            } catch {
+                // `isRunning` check in `start` reports the failure.
+            }
+        }
+    }
+
+    private func stopEngineAndTask() {
+        if tapInstalled {
+            engine.inputNode.removeTap(onBus: 0)
+            tapInstalled = false
+        }
+        if engine.isRunning {
+            engine.stop()
+        }
         request?.endAudio()
         task?.cancel()
         request = nil
         task = nil
         isRunning = false
-        #if os(iOS)
-        deactivateAudioSession()
-        #endif
     }
 
     #if os(iOS)
@@ -277,6 +370,14 @@ public final class VoiceCookManager {
         pendingPermissionCompletion = nil
         let granted = speech && mic
         micDenied = !granted
+        if granted {
+            micDenied = false
+        } else {
+            // Denied: clear the persisted intent so the pill doesn't stay
+            // stuck on "listening" with no engine behind it (the
+            // "shows listening but no reply" report).
+            listeningEnabled = false
+        }
         completion(granted)
     }
 
@@ -341,8 +442,14 @@ public final class VoiceCookManager {
         let running = audioInput?.isRunning ?? false
         isListening = running
         if !running {
+            // Hard failure (no engine): drop the intent too, so the pill
+            // doesn't claim "listening" while deaf. Permission denials are
+            // handled the same way in `finishPermissionsIfReady`.
+            listeningEnabled = false
             lastReply = "I couldn't start listening. Check the microphone and try again."
             speak(lastReply)
+        } else {
+            micDenied = false
         }
     }
 
