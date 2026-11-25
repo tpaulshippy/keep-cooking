@@ -384,7 +384,8 @@ public func parseVoiceCommand(_ transcript: String) -> VoiceCommand {
     case "read ingredients", "read the ingredients", "list ingredients",
          "list the ingredients", "what are the ingredients":
         return .readIngredients
-    case "double the recipe", "double recipe", "double the scale", "double scale":
+    case "double the recipe", "double recipe", "double the scale", "double scale",
+          "double":
         return .doubleScale
     case "halve the recipe", "halve recipe", "halve the scale", "halve scale":
         return .halveScale
@@ -534,4 +535,130 @@ private func parseVoiceAddToList(_ text: String) -> VoiceCommand? {
     let name = String(remainder.dropLast(" list".count)).trimmingCharacters(in: .whitespaces)
     guard !name.isEmpty else { return nil }
     return .addToList(listName: name)
+}
+
+// MARK: - Stable-partial eligibility
+
+/// Whether a parsed command may execute via the client-side stable-partial
+/// fallback (see `StablePartialFirer` / `VoiceCookManager`). Unknown
+/// partials never fire (they would spam "Sorry…" mid-utterance). Prefix
+/// hazards are excluded even when they parse known:
+///   - `.stopSpeaking` (bare "stop" is a prefix of "stop cooking"),
+///   - all `.startTimer` (bare "start/set timer" needs a real final; numeric
+///     durations like "step 1" vs "step 10" shift under more speech),
+///   - all `.goToStep` (numeric-prefix hazard: "step 1" vs "step 10").
+/// Everything else (next/previous/repeat/startOver/readIngredients/scale/
+/// amount/cross/uncross/addToList/stopCooking) may stable-fire once its FULL
+/// current text parses known and stays unchanged for the stability window.
+public func isStablePartialEligible(_ cmd: VoiceCommand) -> Bool {
+    switch cmd {
+    case .unknown, .stopSpeaking, .startTimer, .goToStep:
+        return false
+    default:
+        return true
+    }
+}
+
+// MARK: - Stable partial firer (client-side finals)
+
+/// Client-side stability fallback for devices where Apple endpointing never
+/// delivers `isFinal=true` (confirmed device evidence: partials arrive,
+/// finals never do). When a partial parses to a KNOWN, stable-eligible
+/// command (see `isStablePartialEligible`) and stays unchanged for `delay`
+/// seconds, the pending text fires through the manager's final-delivery
+/// path — a redundant path alongside real finals, which remain authoritative.
+///
+/// Timing is injectable: production passes a DispatchQueue.main scheduler;
+/// tests pass a fake that captures work and fires it manually.
+public final class StablePartialFirer {
+    /// Stability window: partial must be unchanged this long to fire.
+    public static let defaultDelay: TimeInterval = 1.4
+    private let delay: TimeInterval
+    private let isEligible: (String) -> Bool
+    private let schedule: (TimeInterval, @escaping () -> Void) -> (() -> Void)
+    private let onFire: (String) -> Void
+    private var pendingText: String?
+    private var cancelWork: (() -> Void)?
+
+    public init(delay: TimeInterval = StablePartialFirer.defaultDelay,
+                isEligible: @escaping (String) -> Bool = { isStablePartialEligible(parseVoiceCommand($0)) },
+                schedule: @escaping (TimeInterval, @escaping () -> Void) -> (() -> Void),
+                onFire: @escaping (String) -> Void) {
+        self.delay = delay
+        self.isEligible = isEligible
+        self.schedule = schedule
+        self.onFire = onFire
+    }
+
+    /// Main-queue scheduler for production use.
+    public static func mainQueueSchedule(delay: TimeInterval, work: @escaping () -> Void) -> (() -> Void) {
+        let item = DispatchWorkItem(block: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
+        return { item.cancel() }
+    }
+
+    /// Latest pending text (nil when idle). Exposed for tests/debug.
+    public var pending: String? { pendingText }
+
+    /// Observe one partial. Unknown/ineligible partials NEVER arm the timer
+    /// (they just keep updating Heard via the caller); a changed eligible
+    /// partial cancels and replaces the pending timer; an identical repeat
+    /// keeps the existing timer so speech cadence doesn't restart it.
+    public func notePartial(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard isEligible(trimmed) else {
+            cancelPending()
+            return
+        }
+        if pendingText == trimmed { return }
+        cancelWork?()
+        pendingText = trimmed
+        let expected = trimmed
+        cancelWork = schedule(delay) { [weak self] in
+            guard let self, self.pendingText == expected else { return }
+            self.pendingText = nil
+            self.cancelWork = nil
+            self.onFire(expected)
+        }
+    }
+
+    public func cancelPending() {
+        cancelWork?()
+        cancelWork = nil
+        pendingText = nil
+    }
+}
+
+// MARK: - Stable delivery consumption (late-final dedup)
+
+/// Single-use consumption guard for a stable-fired text. A late Apple final
+/// for the SAME text arriving before the soft restart dedups instead of
+/// double-firing (`shouldDropFinal` consumes the guard); the soft restart
+/// clears it so the SAME command works again in the new generation (stale
+/// late finals from the old task never reach the manager — the input's
+/// generation guard drops them first).
+public struct StableConsumeState {
+    private var deliveredText: String?
+
+    public init() {}
+
+    public mutating func recordStableDelivery(_ text: String) {
+        deliveredText = text
+    }
+
+    /// Returns true when this real final must be dropped as a late duplicate
+    /// of a just-stable-fired delivery. Consumes the guard (one duplicate
+    /// dropped, never a blanket suppression of repeats).
+    public mutating func shouldDropFinal(_ text: String) -> Bool {
+        guard let delivered = deliveredText, delivered == text else { return false }
+        deliveredText = nil
+        return true
+    }
+
+    /// New generation (post-stable soft restart): the same word is allowed
+    /// again.
+    public mutating func resetForNewGeneration() {
+        deliveredText = nil
+    }
 }

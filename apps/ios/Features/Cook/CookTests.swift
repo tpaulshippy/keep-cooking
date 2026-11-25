@@ -571,3 +571,207 @@ extension CookTests {
             parseVoiceCommand("start a timer for 11 hours 2 hours"), .unknown)
     }
 }
+
+// MARK: - Stable partial fallback (client-side finals for stalled endpointing)
+
+/// Fake clock for `StablePartialFirer` + manager soft-restart timing:
+/// captures scheduled work so tests fire it manually by delay.
+private final class FakeStableClock {
+    struct Entry { var fire: () -> Void; var delay: TimeInterval; var cancelled = false }
+    var entries: [Entry] = []
+    func schedule(delay: TimeInterval, work: @escaping () -> Void) -> (() -> Void) {
+        entries.append(Entry(fire: work, delay: delay))
+        let index = entries.count - 1
+        return { [weak self] in self?.entries[index].cancelled = true }
+    }
+    var liveCount: Int { entries.filter { !$0.cancelled }.count }
+    func liveDelays() -> [TimeInterval] { entries.filter { !$0.cancelled }.map { $0.delay } }
+    func fireAllLive() {
+        for index in entries.indices where !entries[index].cancelled {
+            entries[index].cancelled = true
+            entries[index].fire()
+        }
+    }
+    func fire(delay target: TimeInterval) {
+        for index in entries.indices
+            where !entries[index].cancelled && abs(entries[index].delay - target) < 0.001 {
+            entries[index].cancelled = true
+            entries[index].fire()
+        }
+    }
+}
+
+extension CookTests {
+    // Bare "double" (user-explicit) parses; "double it" stays wake-word-only.
+    func testVoiceBareDoubleParses() {
+        XCTAssertEqual(parseVoiceCommand("double"), .doubleScale)
+        XCTAssertEqual(parseVoiceCommand("Double."), .doubleScale)
+        XCTAssertEqual(parseVoiceCommand("double it"), .unknown)
+        XCTAssertEqual(parseVoiceCommand("keep cooking double it"), .doubleScale)
+    }
+
+    func testStableEligibility() {
+        // Allowed: next, repeat, double (+ siblings named in the contract).
+        XCTAssertTrue(isStablePartialEligible(.next))
+        XCTAssertTrue(isStablePartialEligible(.repeatStep))
+        XCTAssertTrue(isStablePartialEligible(.doubleScale))
+        XCTAssertTrue(isStablePartialEligible(.previous))
+        XCTAssertTrue(isStablePartialEligible(.startOver))
+        XCTAssertTrue(isStablePartialEligible(.readIngredients))
+        XCTAssertTrue(isStablePartialEligible(.halveScale))
+        XCTAssertTrue(isStablePartialEligible(.resetScale))
+        // Excluded: unknown, bare stop, ALL timers, ALL go-to-step.
+        XCTAssertFalse(isStablePartialEligible(.unknown))
+        XCTAssertFalse(isStablePartialEligible(.stopSpeaking))
+        XCTAssertFalse(isStablePartialEligible(.startTimer(seconds: nil, label: nil)))
+        XCTAssertFalse(isStablePartialEligible(.startTimer(seconds: 600, label: nil)))
+        XCTAssertFalse(isStablePartialEligible(.goToStep(3)))
+        XCTAssertFalse(isStablePartialEligible(.goToStep(VoiceCommand.lastStep)))
+    }
+
+    func testStableFiresKnownAfterTimeout() {
+        let clock = FakeStableClock()
+        var fired: [String] = []
+        let firer = StablePartialFirer(
+            delay: 1.4,
+            schedule: clock.schedule,
+            onFire: { fired.append($0) })
+        firer.notePartial("Next")
+        XCTAssertTrue(fired.isEmpty, "must not fire synchronously")
+        XCTAssertEqual(clock.liveCount, 1)
+        XCTAssertEqual(clock.liveDelays().first ?? -1, 1.4, accuracy: 0.001)
+        clock.fireAllLive()
+        XCTAssertEqual(fired, ["Next"])
+    }
+
+    func testStableUnknownNeverFires() {
+        let clock = FakeStableClock()
+        var fired: [String] = []
+        let firer = StablePartialFirer(
+            delay: 1.4,
+            schedule: clock.schedule,
+            onFire: { fired.append($0) })
+        firer.notePartial("please tell me the next step")
+        XCTAssertEqual(parseVoiceCommand("please tell me the next step"), .unknown)
+        XCTAssertEqual(clock.liveCount, 0, "unknown partials must never arm the timer")
+        clock.fireAllLive()
+        XCTAssertTrue(fired.isEmpty)
+    }
+
+    func testStableChangedPartialResetsTimer() {
+        let clock = FakeStableClock()
+        var fired: [String] = []
+        let firer = StablePartialFirer(
+            delay: 1.4,
+            schedule: clock.schedule,
+            onFire: { fired.append($0) })
+        firer.notePartial("Next")
+        XCTAssertEqual(clock.liveCount, 1)
+        firer.notePartial("previous")
+        XCTAssertEqual(clock.liveCount, 1, "changed partial replaces the pending timer")
+        clock.fireAllLive()
+        XCTAssertEqual(fired, ["previous"], "only the latest stable text fires")
+    }
+
+    func testStableUnknownCancelsPending() {
+        let clock = FakeStableClock()
+        var fired: [String] = []
+        let firer = StablePartialFirer(
+            delay: 1.4,
+            schedule: clock.schedule,
+            onFire: { fired.append($0) })
+        firer.notePartial("Next")
+        firer.notePartial("nex")
+        XCTAssertEqual(parseVoiceCommand("nex"), .unknown)
+        XCTAssertEqual(clock.liveCount, 0, "unknown partial cancels pending work")
+        clock.fireAllLive()
+        XCTAssertTrue(fired.isEmpty)
+    }
+
+    func testStableExcludedPrefixesNeverFire() {
+        let clock = FakeStableClock()
+        var fired: [String] = []
+        let firer = StablePartialFirer(
+            delay: 1.4,
+            schedule: clock.schedule,
+            onFire: { fired.append($0) })
+        // Real parser mapping (not hand-built commands): each parses KNOWN
+        // but is excluded from the stable path.
+        for text in ["stop",
+                     "start the timer",
+                     "start a timer for 10 minutes",
+                     "go to step 3",
+                     "go to step 10"] {
+            XCTAssertNotEqual(parseVoiceCommand(text), .unknown, "\(text) parses known")
+            firer.notePartial(text)
+            XCTAssertEqual(clock.liveCount, 0, "\(text) must never arm the stable timer")
+        }
+        clock.fireAllLive()
+        XCTAssertTrue(fired.isEmpty)
+    }
+
+    // MARK: - Stable delivery consumption (late-final dedup, repeat after restart)
+
+    func testStableLateDuplicateFinalDropsOnce() {
+        // Mirrors the manager contract: a stable execution records the text;
+        // a late Apple final for the SAME text (same generation, before the
+        // soft restart) drops instead of double-firing — exactly once, never
+        // a blanket suppression.
+        var consume = StableConsumeState()
+        consume.recordStableDelivery("Next")
+        XCTAssertTrue(consume.shouldDropFinal("Next"), "late duplicate drops")
+        XCTAssertFalse(consume.shouldDropFinal("Next"), "guard is single-use")
+        XCTAssertFalse(consume.shouldDropFinal("previous"), "other finals execute")
+    }
+
+    func testStableSameCommandWorksAfterSoftRestart() {
+        // Full cycle at the logic level: stable fire -> late duplicate drops
+        // -> soft restart (new generation) -> the SAME command executes again
+        // (no stale guard), and the repeat cycle dedups its own late final.
+        var consume = StableConsumeState()
+        consume.recordStableDelivery("Next") // first stable fire
+        XCTAssertTrue(consume.shouldDropFinal("Next")) // its late duplicate
+        consume.resetForNewGeneration() // ~0.25s soft restart
+        XCTAssertFalse(consume.shouldDropFinal("Next"),
+                       "post-restart finals execute; only pre-restart late finals drop")
+        consume.recordStableDelivery("Next") // repeat utterance stable-fires
+        XCTAssertTrue(consume.shouldDropFinal("Next")) // its late duplicate
+        consume.resetForNewGeneration()
+        XCTAssertFalse(consume.shouldDropFinal("Next")) // and again
+    }
+
+    func testStableFirerRearmsAfterRestart() {
+        // The firer itself works again after a fire + cancel cycle, so the
+        // repeat utterance in the new generation can stable-fire.
+        let clock = FakeStableClock()
+        var fired: [String] = []
+        let firer = StablePartialFirer(
+            delay: 1.4,
+            schedule: clock.schedule,
+            onFire: { fired.append($0) })
+        firer.notePartial("Next")
+        clock.fire(delay: 1.4)
+        XCTAssertEqual(fired, ["Next"])
+        firer.cancelPending() // what the soft restart does
+        firer.notePartial("Next")
+        XCTAssertEqual(clock.liveCount, 1)
+        clock.fire(delay: 1.4)
+        XCTAssertEqual(fired, ["Next", "Next"])
+    }
+
+    func testStableDoubleFiresAndScales() {
+        // End-to-end at the parser level: "double" is known, eligible, and
+        // maps to .doubleScale (the manager's handle applies the scale).
+        XCTAssertEqual(parseVoiceCommand("double"), .doubleScale)
+        XCTAssertTrue(isStablePartialEligible(parseVoiceCommand("double")))
+        let clock = FakeStableClock()
+        var fired: [String] = []
+        let firer = StablePartialFirer(
+            delay: 1.4,
+            schedule: clock.schedule,
+            onFire: { fired.append($0) })
+        firer.notePartial("double")
+        clock.fire(delay: 1.4)
+        XCTAssertEqual(fired, ["double"])
+    }
+}

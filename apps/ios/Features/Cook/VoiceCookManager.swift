@@ -71,6 +71,16 @@ public protocol VoiceAudioInput: AnyObject {
     func stop()
 }
 
+// MARK: - Transcript source (TEMPORARY TestFlight diagnostic)
+
+/// Where a delivered transcript came from. Real Apple finals and stable-fired
+/// partials share the SAME manager final-delivery path; the DEBUG line tags
+/// which one fired so device logs stay interpretable.
+enum VoiceTranscriptSource {
+    case final
+    case partialStable
+}
+
 /// In-memory input for the simulator and tests. Tests inject this via
 /// `startListening(using:onTranscript:)` and drive transcripts with `emit(_:)`.
 public final class MockVoiceInput: VoiceAudioInput {
@@ -173,6 +183,24 @@ public final class LiveVoiceInput: VoiceAudioInput {
         #endif
     }
 
+    /// Records a stable-fired text in the within-task dedup state, so a late
+    /// Apple final for the same text dedups instead of double-firing.
+    /// Called by the manager's stable-partial fallback (same generation).
+    func markConsumed(_ text: String) {
+        lastForwarded = text
+        lastPartialForwarded = text
+    }
+
+    /// Soft restarts ONLY the recognition task after a stable execution:
+    /// fresh generation + cleared within-task dedup so the SAME command
+    /// works again. The AVAudioEngine and mic tap keep running (no audio
+    /// gap); the only `endAudio` is the standard request teardown inside
+    /// `startRecognition`.
+    func restartRecognitionKeepingEngine() {
+        guard shouldKeepListening else { return }
+        startRecognition()
+    }
+
     // MARK: - Continuous recognition internals
 
     /// Starts (or restarts) one recognition request on the already-running
@@ -204,6 +232,9 @@ public final class LiveVoiceInput: VoiceAudioInput {
         // Partial results keep the task alive through pauses; we only
         // forward finals (partials like "nex" would spam "didn't catch that").
         request.shouldReportPartialResults = true
+        // Dictation hint: continuous command-style utterances, not a search
+        // query (reference parity: continuous implementations set this).
+        request.taskHint = .dictation
         // On-device first for privacy + offline use; server fallback happens
         // in the task-error handler below when the on-device attempt fails
         // (missing offline model, unsupported language, ...). Forcing
@@ -224,8 +255,48 @@ public final class LiveVoiceInput: VoiceAudioInput {
                 DispatchQueue.main.async { [weak self] in self?.onEvent?("stale-drop gen=\(myGeneration)") }
                 return
             }
+            // Result BEFORE error: Apple can bundle a final result with an
+            // error, and discarding the result would drop a heard command.
+            // The error half still runs below (fallback/message/restart)
+            // unless the result half already forwarded a final + scheduled
+            // its restart — one restart per callback, never two.
+            var finalForwarded = false
+            if let result {
+                let text = result.bestTranscription.formattedString
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !text.isEmpty {
+                    if result.isFinal {
+                        if text != self.lastForwarded {
+                            self.lastForwarded = text
+                            self.lastPartialForwarded = text
+                            DispatchQueue.main.async { [weak self] in
+                                self?.onTranscript?(text)
+                            }
+                        }
+                        finalForwarded = true
+                        // Apple finishes the task after a final — restart so
+                        // the NEXT command is heard.
+                        self.scheduleRestart(after: 0.25, generation: myGeneration)
+                    } else if text != self.lastPartialForwarded {
+                        // Live display only: partials update the Heard caption
+                        // so the cook sees audio flowing before pausing for
+                        // the final. Never routed to command handling
+                        // (partials like "nex" would spam "didn't catch
+                        // that"); the manager's stable-partial fallback owns
+                        // execution for stalled endpointing.
+                        self.lastPartialForwarded = text
+                        DispatchQueue.main.async { [weak self] in
+                            self?.onPartial?(text)
+                        }
+                    }
+                }
+            }
             if let error {
                 guard self.shouldKeepListening else { return }
+                // A forwarded final already executed + scheduled its restart;
+                // surfacing this bundled error would alarm over a success and
+                // double-schedule the restart.
+                if finalForwarded { return }
                 if self.preferOnDevice {
                     // On-device attempt failed — fall back to server for the
                     // rest of this session (next session tries on-device
@@ -252,31 +323,6 @@ public final class LiveVoiceInput: VoiceAudioInput {
                 // fresh request so listening resumes instead of going deaf.
                 self.scheduleRestart(after: 0.8, generation: myGeneration)
                 return
-            }
-            guard let result else { return }
-            let text = result.bestTranscription.formattedString
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { return }
-            if result.isFinal {
-                if text != self.lastForwarded {
-                    self.lastForwarded = text
-                    self.lastPartialForwarded = text
-                    DispatchQueue.main.async { [weak self] in
-                        self?.onTranscript?(text)
-                    }
-                }
-                // Apple finishes the task after a final — restart so the
-                // NEXT command is heard.
-                self.scheduleRestart(after: 0.25, generation: myGeneration)
-            } else if text != self.lastPartialForwarded {
-                // Live display only: partials update the Heard caption so
-                // the cook sees audio flowing before pausing for the final.
-                // Never routed to command handling (partials like "nex"
-                // would spam "didn't catch that").
-                self.lastPartialForwarded = text
-                DispatchQueue.main.async { [weak self] in
-                    self?.onPartial?(text)
-                }
             }
         }
     }
@@ -405,6 +451,36 @@ public final class VoiceCookManager {
 
     private let synthesizer = AVSpeechSynthesizer()
     private var audioInput: VoiceAudioInput?
+
+    /// Stability fallback: fires an unchanged KNOWN partial through the
+    /// final path when Apple endpointing never delivers `isFinal=true`.
+    /// Created per `startListening`; cancelled on real finals (final wins),
+    /// on unknown/changed partials, and in `stopListening`.
+    private var stableFirer: StablePartialFirer?
+    /// Single-use consumption guard: a stable-fired text dedups a late Apple
+    /// final for the SAME text arriving before the soft restart. Cleared on
+    /// consumption and on every soft restart (new generation allows the same
+    /// word again; stale late finals are dropped by the input's generation
+    /// guard before reaching here). Pure logic lives in
+    /// `StableConsumeState` (same-target tests cover it).
+    private var stableConsume = StableConsumeState()
+    /// External transcript consumer (the view's `handle` call). Stored so
+    /// both real finals and stable-fired partials share one `deliverFinal`.
+    private var externalOnTranscript: ((String) -> Void)?
+    /// Source tag for the TEMPORARY TestFlight DEBUG line, set by
+    /// `deliverFinal` before invoking the external consumer so `handle`'s
+    /// own DEBUG line reports the same source.
+    private var lastSource: VoiceTranscriptSource = .final
+    /// Soft-restart work scheduled ~0.25s after each stable execution.
+    private var stableRestartCancel: (() -> Void)?
+    /// Test seam: when set, `startListening` and the post-stable soft
+    /// restart use this scheduler instead of `DispatchQueue.main`, so
+    /// same-target tests drive timing deterministically with a fake clock.
+    var stableScheduler: ((TimeInterval, @escaping () -> Void) -> (() -> Void))?
+    /// Stability window override for tests (defaults to 1.4s).
+    var stableDelay: TimeInterval = StablePartialFirer.defaultDelay
+    /// Post-stable soft-restart delay (matches the post-final 0.25s restart).
+    static let stableRestartDelay: TimeInterval = 0.25
 
     /// Notification ids scheduled by voice-started timers (`handle`
     /// `.startTimer`). Retained so CookModeView.onDisappear can cancel them
@@ -578,53 +654,28 @@ public final class VoiceCookManager {
             audioInput = nil
             #endif
         }
+        externalOnTranscript = onTranscript
+        let scheduler = stableScheduler ?? StablePartialFirer.mainQueueSchedule
+        stableFirer = StablePartialFirer(
+            delay: stableDelay,
+            schedule: scheduler,
+            onFire: { [weak self] text in
+                // Scheduler fires on main in production; hop to MainActor.
+                Task { @MainActor [weak self] in
+                    self?.stableFired(text)
+                }
+            })
+        stableConsume.resetForNewGeneration()
+        stableRestartCancel?()
+        stableRestartCancel = nil
         audioInput?.start(onTranscript: { [weak self] transcript in
             guard let self else { return }
-            // Snapshot arrival state BEFORE barge-in handling for the
-            // temporary DEBUG line (stopSpeakingOutput clears isSpeaking).
-            let wasSpeaking = self.synthesizer.isSpeaking
-            let echo = self.isEchoOfLastSpoken(transcript)
-            self.lastArrivalWasSpeaking = wasSpeaking
-            self.lastArrivalEcho = echo
-            self.lastArrivalTranscript = transcript
-            if wasSpeaking {
-                // Barge-in path: with hardware echo cancellation (voiceChat
-                // mode) the mic stays live while replies play. Our own audio
-                // is still the likeliest transcript — drop it when it matches
-                // what we just spoke; otherwise stop talking and obey the
-                // cook ("repeat" / "stop speaking" over a read-aloud).
-                if echo {
-                    self.lastDebugLine = "DEBUG final=true speaking=true echo=true front=\(self.isAppFrontmost) parse=\(self.debugParseLabel(parseVoiceCommand(transcript))) replied=false"
-                    return
-                }
-                self.stopSpeakingOutput()
-            }
-            // Record what was heard BEFORE handling, so the pill can show
-            // the words even when the command itself is unknown. A fresh
-            // transcript also means recovery: drop any earlier error.
-            self.lastHeardTranscript = transcript
-            self.listeningError = nil
-            // Preliminary line; `handle` overwrites with parse + replied.
-            self.lastDebugLine = "DEBUG final=true speaking=\(wasSpeaking) echo=\(echo) front=\(self.isAppFrontmost) parse=... replied=..."
-            onTranscript(transcript)
+            self.receiveFinal(transcript, source: .final)
         })
         if let live = audioInput as? LiveVoiceInput {
             live.onPartial = { [weak self] text in
                 guard let self else { return }
-                if self.synthesizer.isSpeaking {
-                    // Barge-in: finals need silence to fire, and our own
-                    // read-aloud denies it — so the first real user speech
-                    // over our audio stops TTS, creating the silence the
-                    // final needs. Our own echo (a partial contained in
-                    // what we're speaking) is ignored so read-aloud can't
-                    // cut itself off.
-                    if self.partialIsEcho(text) { return }
-                    self.stopSpeakingOutput()
-                }
-                self.lastHeardTranscript = text
-                // TEMPORARY TestFlight diagnostic: proves partials flow.
-                // A later final overwrites this line (see onTranscript above).
-                self.lastDebugLine = "DEBUG partial='\(String(text.prefix(24)))' awaiting final"
+                self.receivePartial(text)
             }
             live.onError = { [weak self] message in
                 guard let self else { return }
@@ -665,6 +716,119 @@ public final class VoiceCookManager {
         }
     }
 
+    /// Shared final-delivery entry: real Apple finals AND stable-fired
+    /// partials both route here, so echo/frontmost/Heard handling is
+    /// identical. A late Apple final matching a just-stable-fired text is
+    /// dropped once (single-use `StableConsumeState`); on device the
+    /// LiveVoiceInput `markConsumed` dedup is the primary guard.
+    func receiveFinal(_ transcript: String, source: VoiceTranscriptSource = .final) {
+        if source == .final {
+            // LiveVoiceInput schedules its own post-final restart. Cancel the
+            // stable-path restart so a real final arriving in the 0.25s
+            // window cannot cause a second restart that interrupts the next
+            // utterance. This applies to duplicate finals too: the input
+            // restarts after every final, even when its text dedups.
+            stableRestartCancel?()
+            stableRestartCancel = nil
+        }
+        if source == .final, stableConsume.shouldDropFinal(transcript) {
+            lastDebugLine += " [dup-drop]"
+            return
+        }
+        // A real final supersedes any pending stable timer for an older
+        // partial — otherwise the fallback would double-fire after it.
+        if source == .final { stableFirer?.cancelPending() }
+        deliverFinal(transcript, source: source)
+    }
+
+    /// Shared partial-handling entry (wired to `LiveVoiceInput.onPartial`).
+    /// Updates Heard as today, and arms/cancels the stability fallback:
+    /// unknown/ineligible partials (including mid-utterance fragments that
+    /// parse `.unknown`) never fire — they just keep updating Heard.
+    func receivePartial(_ text: String) {
+        if synthesizer.isSpeaking {
+            // Barge-in: finals need silence to fire, and our own
+            // read-aloud denies it — so the first real user speech
+            // over our audio stops TTS, creating the silence the
+            // final needs. Our own echo (a partial contained in
+            // what we're speaking) is ignored so read-aloud can't
+            // cut itself off.
+            if partialIsEcho(text) { return }
+            stopSpeakingOutput()
+        }
+        lastHeardTranscript = text
+        // TEMPORARY TestFlight diagnostic: proves partials flow.
+        // A later final overwrites this line (see receiveFinal above).
+        lastDebugLine = "DEBUG partial='\(String(text.prefix(24)))' awaiting final"
+        stableFirer?.notePartial(text)
+    }
+
+    /// Stability fallback fire: route the unchanged KNOWN partial through
+    /// the EXACT same final path, mark it consumed so a late Apple final
+    /// for the same text dedups, tag the DEBUG line, then softly restart
+    /// only the recognition task (~0.25s, engine/tap untouched) so the SAME
+    /// command works again. A final arriving before that restart still hits
+    /// the consumption guard and does not double-fire.
+    private func stableFired(_ text: String) {
+        (audioInput as? LiveVoiceInput)?.markConsumed(text)
+        stableConsume.recordStableDelivery(text)
+        deliverFinal(text, source: .partialStable)
+        lastDebugLine += " [stable-fire]"
+        let scheduler = stableScheduler ?? StablePartialFirer.mainQueueSchedule
+        stableRestartCancel?()
+        stableRestartCancel = scheduler(Self.stableRestartDelay) { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.softRestartAfterStable()
+            }
+        }
+    }
+
+    /// Post-stable soft restart: new generation (same word allowed again),
+    /// tracker reset, pending stable work cleared. Stale late finals from
+    /// the old task are dropped by the input's generation guard before
+    /// reaching the manager.
+    private func softRestartAfterStable() {
+        stableRestartCancel = nil
+        stableConsume.resetForNewGeneration()
+        stableFirer?.cancelPending()
+        (audioInput as? LiveVoiceInput)?.restartRecognitionKeepingEngine()
+    }
+
+    /// The extracted `startListening` onTranscript body: echo/barge-in,
+    /// Heard/error, preliminary DEBUG line (tagged with the transcript
+    /// source), then the external consumer.
+    private func deliverFinal(_ transcript: String, source: VoiceTranscriptSource) {
+        lastSource = source
+        let sourceLabel = source == .final ? "final" : "partial-stable"
+        // Snapshot arrival state BEFORE barge-in handling for the
+        // temporary DEBUG line (stopSpeakingOutput clears isSpeaking).
+        let wasSpeaking = synthesizer.isSpeaking
+        let echo = isEchoOfLastSpoken(transcript)
+        lastArrivalWasSpeaking = wasSpeaking
+        lastArrivalEcho = echo
+        lastArrivalTranscript = transcript
+        if wasSpeaking {
+            // Barge-in path: with hardware echo cancellation (voiceChat
+            // mode) the mic stays live while replies play. Our own audio
+            // is still the likeliest transcript — drop it when it matches
+            // what we just spoke; otherwise stop talking and obey the
+            // cook ("repeat" / "stop speaking" over a read-aloud).
+            if echo {
+                lastDebugLine = "DEBUG source=\(sourceLabel) speaking=true echo=true front=\(isAppFrontmost) parse=\(debugParseLabel(parseVoiceCommand(transcript))) replied=false"
+                return
+            }
+            stopSpeakingOutput()
+        }
+        // Record what was heard BEFORE handling, so the pill can show
+        // the words even when the command itself is unknown. A fresh
+        // transcript also means recovery: drop any earlier error.
+        lastHeardTranscript = transcript
+        listeningError = nil
+        // Preliminary line; `handle` overwrites with parse + replied.
+        lastDebugLine = "DEBUG source=\(sourceLabel) speaking=\(wasSpeaking) echo=\(echo) front=\(isAppFrontmost) parse=... replied=..."
+        externalOnTranscript?(transcript)
+    }
+
     /// Tears down listening AND clears the persisted `listeningEnabled` flag,
     /// so a late permission completion (see `requestPermissionsThenStart`)
     /// can never start the mic after the view has disappeared:
@@ -672,6 +836,12 @@ public final class VoiceCookManager {
     /// cancelled here. CookModeView.onDisappear relies on this (it must not
     /// leave a stale "on").
     public func stopListening() {
+        stableFirer?.cancelPending()
+        stableFirer = nil
+        stableConsume.resetForNewGeneration()
+        stableRestartCancel?()
+        stableRestartCancel = nil
+        externalOnTranscript = nil
         pendingPermissionCompletion = nil
         pendingSpeechGranted = nil
         pendingMicGranted = nil
@@ -788,8 +958,9 @@ public final class VoiceCookManager {
         let front = isAppFrontmost
         let cmd = parseVoiceCommand(transcript)
         let parseLabel = debugParseLabel(cmd)
+        let sourceLabel = lastSource == .final ? "final" : "partial-stable"
         guard front else {
-            lastDebugLine = "DEBUG final=true speaking=\(speakingAtArrival) echo=\(echoAtArrival) front=false parse=\(parseLabel) replied=false"
+            lastDebugLine = "DEBUG source=\(sourceLabel) speaking=\(speakingAtArrival) echo=\(echoAtArrival) front=false parse=\(parseLabel) replied=false"
             return false
         }
         let replyBefore = lastReply
@@ -920,7 +1091,7 @@ public final class VoiceCookManager {
             handled = false
         }
         let replied = (lastReply != replyBefore)
-        lastDebugLine = "DEBUG final=true speaking=\(speakingAtArrival) echo=\(echoAtArrival) front=\(front) parse=\(parseLabel) replied=\(replied)"
+        lastDebugLine = "DEBUG source=\(sourceLabel) speaking=\(speakingAtArrival) echo=\(echoAtArrival) front=\(front) parse=\(parseLabel) replied=\(replied)"
         return handled
     }
 
