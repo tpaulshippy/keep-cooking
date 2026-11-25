@@ -474,6 +474,7 @@ extension SyncCoordinator {
         if let v = r.prepMinutes { payload["prepMinutes"] = .int(v) }
         if let v = r.cookMinutes { payload["cookMinutes"] = .int(v) }
         if let v = r.rating { payload["rating"] = .double(v) }
+        payload["isFavorite"] = .bool(r.isFavorite)
         payload["ingredients"] = .array(r.ingredients.map { ing in
             .object([
                 "id": .string(ing.id),
@@ -587,6 +588,7 @@ extension SyncCoordinator {
             if let v = p["prepMinutes"]?.intValue { r.prepMinutes = v }
             if let v = p["cookMinutes"]?.intValue { r.cookMinutes = v }
             if let v = p["rating"]?.doubleValue { r.rating = v }
+            if let v = p["isFavorite"]?.boolValue { r.isFavorite = v }
             if let v = str("source") { r.source = v }
             if let v = str("sourceUrl") { r.sourceUrl = v }
             if let v = p["categories"]?.arrayValue { r.categories = v.compactMap { $0.stringValue } }
@@ -638,6 +640,7 @@ extension SyncCoordinator {
                 prepMinutes: p["prepMinutes"]?.intValue,
                 cookMinutes: p["cookMinutes"]?.intValue,
                 rating: p["rating"]?.doubleValue,
+                isFavorite: p["isFavorite"]?.boolValue ?? false,
                 source: str("source") ?? "", sourceUrl: str("sourceUrl") ?? "",
                 categories: p["categories"]?.arrayValue?.compactMap { $0.stringValue } ?? [],
                 photoOriginal: p["photoKeys"]?.objectValue?["original"]?.stringValue,

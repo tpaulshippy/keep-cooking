@@ -374,7 +374,7 @@ struct RecipeDetailView: View {
 
     // MARK: - Revamp: header / panes / floating actions
 
-    private var isFavorite: Bool { (recipe.rating ?? 0) >= 5 }
+    private var isFavorite: Bool { recipe.isFavorite }
 
     private var shareText: String {
         [recipe.title, recipe.recipeDescription]
@@ -469,6 +469,7 @@ struct RecipeDetailView: View {
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.plain)
+                .accessibilityAddTraits(item == pane ? .isSelected : [])
                 .background(item == pane ? Color(.systemBackground) : Color.clear)
                 .clipShape(Capsule())
                 .foregroundStyle(item == pane ? .primary : .secondary)
@@ -482,7 +483,7 @@ struct RecipeDetailView: View {
     private var ingredientsPane: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Button("Scale & Convert") { servings = recipe.servings }
+                Button("Reset servings") { servings = recipe.servings }
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.blue)
                 Spacer()
@@ -607,7 +608,7 @@ struct RecipeDetailView: View {
     }
 
     private func setRating(_ stars: Int) {
-        if Int(recipe.rating ?? -1) == stars {
+        if recipe.rating == Double(stars) {
             recipe.rating = nil
         } else {
             recipe.rating = Double(stars)
@@ -617,18 +618,31 @@ struct RecipeDetailView: View {
     }
 
     private func toggleFavorite() {
-        recipe.rating = isFavorite ? nil : 5
+        recipe.isFavorite.toggle()
         recipe.updatedAt = Date()
         try? context.save()
     }
 
     /// Real SwiftData insert: this recipe planned for tonight's dinner.
+    /// Skips the insert when a matching non-deleted plan already exists,
+    /// so a double tap can't double that recipe's grocery quantities
+    /// (addWeekToList aggregates every plan entry).
     private func addToPlan() {
         let tonight = Calendar.current.startOfDay(for: Date())
-        context.insert(Plan(householdId: recipe.householdId, date: tonight,
-            meal: .dinner, recipeId: recipe.id,
-            servings: servings, deviceId: currentDeviceId()))
-        try? context.save()
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: tonight) ?? tonight
+        let householdId = recipe.householdId
+        let recipeId = recipe.id
+        let mealRaw = MealSlot.dinner.rawValue
+        let dup = (try? context.fetch(FetchDescriptor<Plan>(predicate: #Predicate<Plan> {
+            !$0.deleted && $0.householdId == householdId
+                && $0.date >= tonight && $0.date < tomorrow && $0.mealRaw == mealRaw
+        })))?.contains(where: { $0.recipeId == recipeId }) ?? false
+        if !dup {
+            context.insert(Plan(householdId: recipe.householdId, date: tonight,
+                meal: .dinner, recipeId: recipe.id,
+                servings: servings, deviceId: currentDeviceId()))
+            try? context.save()
+        }
         addedMessage = "Planned \(recipe.title) for tonight"
     }
 
