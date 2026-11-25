@@ -533,6 +533,20 @@ public final class VoiceCookManager {
         }
         audioInput?.start(onTranscript: { [weak self] transcript in
             guard let self else { return }
+            // Echo guard: the mic hears our own speaker (e.g. it transcribed
+            // the step read-aloud). Drop anything arriving while TTS is
+            // playing — otherwise replies retrigger commands ("Next step."
+            // -> next) or stack duplicate timers. Barge-in over a reply is
+            // sacrificed, with one exception ("stop speaking" below); the
+            // deaf window is only the utterance length.
+            if self.synthesizer.isSpeaking {
+                // Barge-in exception: "stop speaking" must get through to
+                // silence the very audio that's blocking the mic.
+                if parseVoiceCommand(transcript) == .stopSpeaking {
+                    onTranscript(transcript)
+                }
+                return
+            }
             // Record what was heard BEFORE handling, so the pill can show
             // the words even when the command itself is unknown. A fresh
             // transcript also means recovery: drop any earlier error.
@@ -542,7 +556,9 @@ public final class VoiceCookManager {
         })
         if let live = audioInput as? LiveVoiceInput {
             live.onPartial = { [weak self] text in
-                self?.lastHeardTranscript = text
+                // Same echo guard for the live Heard caption.
+                guard let self, !self.synthesizer.isSpeaking else { return }
+                self.lastHeardTranscript = text
             }
             live.onError = { [weak self] message in
                 guard let self else { return }
