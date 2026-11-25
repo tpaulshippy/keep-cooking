@@ -251,10 +251,13 @@ public final class LiveVoiceInput: VoiceAudioInput {
     #if os(iOS)
     /// Play-and-record so read-aloud ducks under listening; activated before
     /// `engine.start()` so the engine never starts on a cold session.
+    /// `.defaultToSpeaker` is required: without it play-and-record routes
+    /// output to the earpiece receiver (quiet, phone-to-ear). `.allowBluetooth`
+    /// keeps hands-free headsets working while cooking.
     private func configureAudioSession() {
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playAndRecord, mode: .spokenAudio, options: .duckOthers)
+            try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.duckOthers, .defaultToSpeaker, .allowBluetooth])
             try session.setActive(true)
         } catch {
             // Engine start below still reports failure via `isRunning`.
