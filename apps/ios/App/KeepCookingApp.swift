@@ -1102,6 +1102,7 @@ struct DrawerShellView: View {
             .padding(.horizontal, 20)
             .padding(.top, 20)
             .padding(.bottom, 12)
+            .safeAreaPadding(.top, 8)
             .accessibilityAddTraits(.isHeader)
 
             ScrollView {
@@ -1135,7 +1136,7 @@ struct DrawerShellView: View {
         .overlay(alignment: .trailing) {
             Divider()
         }
-        .ignoresSafeArea(edges: .vertical)
+        .ignoresSafeArea(edges: .bottom)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Navigation menu")
     }
