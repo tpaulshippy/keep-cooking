@@ -1,0 +1,16 @@
+apps/ios/App/KeepCookingApp.swift
+  h_6bbd00fe0a456a 872-874,889-890,892-895
+apps/ios/UITests/DemoFlowsUITests.swift
+  h_6bbd00fe0a456a 26-36,43-44,48-53,70-76,114-116,124-125,137-139
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "602ee682d13ab83db1eb91a0d59f77b647a3335f",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
