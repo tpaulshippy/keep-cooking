@@ -1,0 +1,121 @@
+{
+  "id": "0190c8a1-7a2e-7b3c-9d1e-000000000004",
+  "updatedAt": "2026-11-20T12:00:00Z",
+  "deviceId": "seed",
+  "deleted": false,
+  "entity": "recipe",
+  "title": "Avocado Toast",
+  "description": "Seed Avocado Toast.",
+  "servings": 4,
+  "prepMinutes": 10,
+  "cookMinutes": 20,
+  "rating": 4.0,
+  "source": "Seed",
+  "sourceUrl": "https://example.com/r4",
+  "categories": [
+    "breakfast",
+    "quick"
+  ],
+  "householdId": "hh-demo",
+  "photoKeys": {
+    "original": "photos/0190c8a1-7a2e-7b3c-9d1e-000000000004/original.jpg",
+    "large1024": "photos/0190c8a1-7a2e-7b3c-9d1e-000000000004/1024.jpg",
+    "thumb": "photos/0190c8a1-7a2e-7b3c-9d1e-000000000004/thumb.jpg"
+  },
+  "ingredients": [
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000004-ing1",
+      "name": "sourdough bread",
+      "quantity": 4,
+      "unit": "slices",
+      "display": "4 slices",
+      "position": 0,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000004"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000004-ing2",
+      "name": "avocado",
+      "quantity": 2,
+      "unit": "",
+      "display": "2 ripe",
+      "position": 1,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000004"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000004-ing3",
+      "name": "lemon",
+      "quantity": 0.5,
+      "unit": "",
+      "display": "1/2 lemon, juiced",
+      "position": 2,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000004"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000004-ing4",
+      "name": "chili flakes",
+      "quantity": 0.25,
+      "unit": "tsp",
+      "display": "1/4 tsp",
+      "position": 3,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000004"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000004-ing5",
+      "name": "salt",
+      "quantity": 0.5,
+      "unit": "tsp",
+      "display": "1/2 tsp",
+      "position": 4,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000004"
+    }
+  ],
+  "steps": [
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000004-st1",
+      "position": 0,
+      "text": "Toast the sourdough bread until deep golden, about 4 minutes.",
+      "timers": [
+        {
+          "seconds": 240,
+          "label": "toast"
+        }
+      ],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000004"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000004-st2",
+      "position": 1,
+      "text": "Halve the avocados, remove pits, and scoop into a bowl.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000004"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000004-st3",
+      "position": 2,
+      "text": "Mash with lemon juice and salt, keeping it chunky.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000004"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000004-st4",
+      "position": 3,
+      "text": "Pile the avocado onto the toast.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000004"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000004-st5",
+      "position": 4,
+      "text": "Finish with chili flakes and flaky salt.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000004"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000004-st6",
+      "position": 5,
+      "text": "Serve immediately while the toast is crisp.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000004"
+    }
+  ]
+}

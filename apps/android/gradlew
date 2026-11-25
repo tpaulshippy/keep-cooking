@@ -1,0 +1,12 @@
+#!/usr/bin/env sh
+# Minimal Gradle wrapper bootstrap. If a system Gradle is installed, use it;
+# otherwise download Gradle 8.7. Full wrapper jar is generated via `gradle wrapper`
+# on a machine with the Android SDK. CI uses gradle/actions/setup-gradle instead.
+set -e
+if command -v gradle >/dev/null 2>&1; then
+  exec gradle "$@"
+else
+  echo "Gradle not found. Install Gradle 8.7+ and Android SDK, then run: gradle wrapper" >&2
+  echo "CI: uses gradle/actions/setup-gradle with gradle-version 8.7 (no wrapper jar required)." >&2
+  exit 1
+fi
