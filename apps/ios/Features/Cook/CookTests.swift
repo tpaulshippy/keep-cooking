@@ -235,6 +235,26 @@ final class CookTests: XCTestCase {
         XCTAssertEqual(
             parseVoiceCommand("start the timer"),
             .startTimer(seconds: nil, label: nil))
+        // Paprika parity: duration before "timer", no "for".
+        XCTAssertEqual(
+            parseVoiceCommand("set a 10 minute timer"),
+            .startTimer(seconds: 600, label: nil))
+        XCTAssertEqual(
+            parseVoiceCommand("start a 5 minute timer"),
+            .startTimer(seconds: 300, label: nil))
+        // Articles doubling as the quantity ("a" = 1) still parse.
+        XCTAssertEqual(
+            parseVoiceCommand("set a minute timer"),
+            .startTimer(seconds: 60, label: nil))
+        XCTAssertEqual(
+            parseVoiceCommand("set an hour timer"),
+            .startTimer(seconds: 3600, label: nil))
+        XCTAssertEqual(
+            parseVoiceCommand("set a hundred minute timer"),
+            .startTimer(seconds: 6000, label: nil))
+        // Bare verbs and bare plurals stay unknown.
+        XCTAssertEqual(parseVoiceCommand("set"), .unknown)
+        XCTAssertEqual(parseVoiceCommand("start timers"), .unknown)
     }
 
     func testVoiceScaleCommands() {
@@ -284,6 +304,10 @@ final class CookTests: XCTestCase {
     func testVoiceIngredientAmount() {
         XCTAssertEqual(
             parseVoiceCommand("how much flour do i need"),
+            .ingredientAmount(name: "flour"))
+        // Lenient auxiliary ("How much flour I need?" without "do").
+        XCTAssertEqual(
+            parseVoiceCommand("how much flour i need"),
             .ingredientAmount(name: "flour"))
     }
 

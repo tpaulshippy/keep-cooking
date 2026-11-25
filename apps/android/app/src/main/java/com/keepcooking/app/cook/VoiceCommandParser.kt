@@ -359,24 +359,59 @@ fun validatedStep(requested: Int, stepCount: Int): Int? {
 
 private fun parseVoiceTimer(text: String): VoiceCommand? {
     val prefixes = listOf("start a timer", "start the timer", "start timer", "set a timer", "set the timer", "set timer")
-    var remainder: String? = null
     for (prefix in prefixes) {
         if (text == prefix || text.startsWith("$prefix ")) {
-            remainder = if (text == prefix) "" else text.drop(prefix.length + 1)
-            break
+            var rest = if (text == prefix) "" else text.drop(prefix.length + 1)
+            if (rest.startsWith("for ")) rest = rest.drop("for ".length)
+            rest = rest.trim()
+            if (rest.isEmpty()) return VoiceCommand.StartTimer(seconds = null, label = null)
+            val seconds = voiceTimerSeconds(rest) ?: return null
+            return VoiceCommand.StartTimer(seconds = seconds, label = null)
         }
     }
-    var rest = remainder ?: return null
-    if (rest.startsWith("for ")) rest = rest.drop("for ".length)
-    rest = rest.trim()
-    if (rest.isEmpty()) return VoiceCommand.StartTimer(seconds = null, label = null)
-    val seconds = voiceTimerSeconds(rest) ?: return null
-    return VoiceCommand.StartTimer(seconds = seconds, label = null)
+    // Paprika parity: "set a 10 minute timer" / "start 5 minute timers".
+    for (verb in listOf("start", "set")) {
+        if (text != verb && !text.startsWith("$verb ")) continue
+        var rest = if (text == verb) "" else text.drop(verb.length + 1)
+        var unstripped: String? = null
+        for (article in listOf("a ", "an ", "the ")) {
+            if (rest.startsWith(article)) {
+                unstripped = rest
+                rest = rest.drop(article.length)
+                break
+            }
+        }
+        if (rest == "timer") return VoiceCommand.StartTimer(seconds = null, label = null)
+        val seconds = parsePaprikaTimerBody(rest)
+            ?: unstripped?.let { parsePaprikaTimerBody(it) } ?: continue
+        return VoiceCommand.StartTimer(seconds = seconds, label = null)
+    }
+    return null
+}
+
+/**
+ * Parses the body of a Paprika-style timer command ("10 minute" from
+ * "set a 10 minute timer"). Null when there is no "<duration> timer" shape
+ * or the duration is unparseable. The caller retries with the article
+ * intact since "a"/"an" can be the quantity ("a minute" = 60s).
+ */
+private fun parsePaprikaTimerBody(rest: String): Int? {
+    val durationPart = when {
+        rest.endsWith(" timers") -> rest.dropLast(" timers".length)
+        rest.endsWith(" timer") -> rest.dropLast(" timer".length)
+        else -> return null
+    }
+    var duration = durationPart.trim()
+    if (duration.startsWith("for ")) duration = duration.drop(4)
+    duration = duration.trim()
+    if (duration.isEmpty()) return null
+    return voiceTimerSeconds(duration)
 }
 
 private fun parseVoiceIngredientAmount(text: String): VoiceCommand? {
     if (!text.startsWith("how much ")) return null
-    val suffixes = listOf("do i need", "do we need", "will i need")
+    // Longer auxiliaries first so "do i need" wins over the bare "i need".
+    val suffixes = listOf("do i need", "do we need", "will i need", "i need", "we need")
     var middle: String? = null
     for (suffix in suffixes) {
         if (text.endsWith(suffix)) {
