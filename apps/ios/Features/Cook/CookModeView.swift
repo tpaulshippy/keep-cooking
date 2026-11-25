@@ -597,12 +597,15 @@ public struct CookModeView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(voiceManager.readAloudEnabled ? "Read aloud on" : "Read aloud off")
             .accessibilityHint("Toggles spoken step replies")
-            // Listening toggle (mic icon + live dot).
+            // Listening toggle (mic icon + live dot). `listeningEnabled` is the
+            // persisted intent; `isListening` is the live engine state —
+            // the dot tracks the engine so a dead recognizer can't show a
+            // green "listening" that hears nothing.
             Button {
                 toggleListening()
             } label: {
                 HStack(spacing: 6) {
-                    if voiceManager.listeningEnabled {
+                    if voiceManager.isListening {
                         Circle()
                             .fill(Color.green)
                             .frame(width: 8, height: 8)
@@ -615,7 +618,7 @@ public struct CookModeView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(voiceManager.listeningEnabled ? "Listening on" : "Listening off")
+            .accessibilityLabel(voiceManager.isListening ? "Listening on" : (voiceManager.listeningEnabled ? "Starting listening" : "Listening off"))
             .accessibilityHint("Toggles voice commands")
         }
         .padding(.horizontal, 14)
