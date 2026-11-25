@@ -1,0 +1,14 @@
+apps/android/app/src/main/java/com/keepcooking/app/shortcuts/AppShortcuts.kt
+  h_6bbd00fe0a456a 291,298
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8b30486cdedadab4cdf66a96d7f5b009070aabfa",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
