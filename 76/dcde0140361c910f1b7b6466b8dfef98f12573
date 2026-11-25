@@ -1,0 +1,18 @@
+apps/ios/App/DemoFlows.swift
+  h_6bbd00fe0a456a 377,472,486,611,621,627-629,632-645
+apps/ios/App/KeepCookingApp.swift
+  h_6bbd00fe0a456a 477,591,643
+apps/ios/Core/Models.swift
+  h_6bbd00fe0a456a 96-97,122,141
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "76dcde0140361c910f1b7b6466b8dfef98f12573",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
