@@ -560,10 +560,7 @@ public final class VoiceCookManager {
 
     // MARK: Speech output
 
-    /// Speaks text, optionally in the recipe locale. Always selects the
-    /// best installed voice (premium > enhanced > default) for the locale
-    /// so cook-along output uses a neural-quality voice when available
-    /// instead of the default compact voice.
+    /// Speaks text, optionally in the recipe locale.
     public func speak(_ text: String, locale: Locale? = nil) {
         // Remembered for echo rejection: a transcript matching what we just
         // spoke (while still speaking) is our own speaker, not the cook.
@@ -579,51 +576,11 @@ public final class VoiceCookManager {
         try? session.overrideOutputAudioPort(.speaker)
         #endif
         let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = bestSpeechVoice(for: locale)
-            ?? (locale.map { AVSpeechSynthesisVoice(language: $0.identifier) })
+        if let locale {
+            utterance.voice = AVSpeechSynthesisVoice(language: locale.identifier)
+        }
         synthesizer.speak(utterance)
         isReadingAloud = true
-    }
-
-    /// Best installed `AVSpeechSynthesisVoice` for a locale (premium >
-    /// enhanced > default). Falls back through exact locale → language code →
-    /// system language → en-US → best overall, so a missing locale voice
-    /// still upgrades from the compact default.
-    func bestSpeechVoice(for locale: Locale? = nil) -> AVSpeechSynthesisVoice? {
-        let all = AVSpeechSynthesisVoice.speechVoices()
-        guard !all.isEmpty else { return nil }
-        let effective = locale ?? Locale.current
-        let targetTag = effective.identifier.replacingOccurrences(of: "_", with: "-").lowercased()
-        let targetLang = effective.language.languageCode?.identifier.lowercased()
-        let currentLang = Locale.current.language.languageCode?.identifier.lowercased()
-
-        func rank(_ voice: AVSpeechSynthesisVoice) -> Int {
-            switch voice.quality {
-            case .premium: return 3
-            case .enhanced: return 2
-            default: return 1
-            }
-        }
-        func sorted(_ voices: [AVSpeechSynthesisVoice]) -> [AVSpeechSynthesisVoice] {
-            voices.sorted {
-                if rank($0) != rank($1) { return rank($0) > rank($1) }
-                return $0.identifier < $1.identifier
-            }
-        }
-
-        let exact = all.filter { $0.language.lowercased() == targetTag }
-        if let best = sorted(exact).first { return best }
-        if let lang = targetLang {
-            let byLang = all.filter { $0.language.lowercased().hasPrefix(lang) }
-            if let best = sorted(byLang).first { return best }
-        }
-        if let sys = currentLang, sys != targetLang {
-            let bySystem = all.filter { $0.language.lowercased().hasPrefix(sys) }
-            if let best = sorted(bySystem).first { return best }
-        }
-        let enUS = all.filter { $0.language.lowercased() == "en-us" }
-        if let best = sorted(enUS).first { return best }
-        return sorted(all).first
     }
 
     /// Stops speech output immediately.
