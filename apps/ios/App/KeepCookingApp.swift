@@ -1137,7 +1137,13 @@ struct DrawerShellView: View {
         .background(Color(.secondarySystemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 0))
         .overlay(alignment: .trailing) {
-            Divider()
+            // Vertical edge rule. NOTE: a bare Divider() here would be a
+            // *horizontal* line vertically centered in the panel (Divider's
+            // long axis is horizontal; `trailing` only pins the x-axis) —
+            // that was the stray hairline across the Library row.
+            Rectangle()
+                .fill(Color(.separator))
+                .frame(width: 1)
         }
         .ignoresSafeArea(edges: .bottom)
         .accessibilityElement(children: .contain)
@@ -1151,7 +1157,7 @@ struct DrawerShellView: View {
             .textCase(.uppercase)
             .padding(.horizontal, 12)
             .padding(.top, 12)
-            .padding(.bottom, 2)
+            .padding(.bottom, 4)
             .accessibilityAddTraits(.isHeader)
     }
 
