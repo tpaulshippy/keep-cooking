@@ -306,10 +306,14 @@ public final class LiveVoiceInput: VoiceAudioInput {
     /// `.defaultToSpeaker` is required: without it play-and-record routes
     /// output to the earpiece receiver (quiet, phone-to-ear). `.allowBluetooth`
     /// keeps hands-free headsets working while cooking.
+    /// Mode is `.voiceChat` (not `.spokenAudio`) for its hardware echo
+    /// cancellation: the mic stays usable while replies play, which is what
+    /// makes Paprika-style barge-in ("repeat" over a read-aloud) possible.
+    /// `.spokenAudio` has no echo canceller — the mic hears the speaker.
     private func configureAudioSession() {
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.duckOthers, .defaultToSpeaker, .allowBluetooth])
+            try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.duckOthers, .defaultToSpeaker, .allowBluetooth])
             try session.setActive(true)
         } catch {
             // Engine start below still reports failure via `isRunning`.
@@ -353,6 +357,10 @@ public final class VoiceCookManager {
     /// (deduped against retry-loop repeats), cleared on the next transcript
     /// or stop. Shown in the pill so silent task death is diagnosable.
     public var listeningError: String?
+    /// Last text handed to TTS. A transcript matching this (normalized)
+    /// while it is still playing is our own speaker — see the barge-in
+    /// path in `startListening`.
+    private var lastSpokenText = ""
     public private(set) var micDenied = false
 
     // MARK: View-wired callbacks (all optional; the view owns rendering)
@@ -463,6 +471,9 @@ public final class VoiceCookManager {
 
     /// Speaks text, optionally in the recipe locale.
     public func speak(_ text: String, locale: Locale? = nil) {
+        // Remembered for echo rejection: a transcript matching what we just
+        // spoke (while still speaking) is our own speaker, not the cook.
+        lastSpokenText = text
         let utterance = AVSpeechUtterance(string: text)
         if let locale {
             utterance.voice = AVSpeechSynthesisVoice(language: locale.identifier)
@@ -533,19 +544,14 @@ public final class VoiceCookManager {
         }
         audioInput?.start(onTranscript: { [weak self] transcript in
             guard let self else { return }
-            // Echo guard: the mic hears our own speaker (e.g. it transcribed
-            // the step read-aloud). Drop anything arriving while TTS is
-            // playing — otherwise replies retrigger commands ("Next step."
-            // -> next) or stack duplicate timers. Barge-in over a reply is
-            // sacrificed, with one exception ("stop speaking" below); the
-            // deaf window is only the utterance length.
             if self.synthesizer.isSpeaking {
-                // Barge-in exception: "stop speaking" must get through to
-                // silence the very audio that's blocking the mic.
-                if parseVoiceCommand(transcript) == .stopSpeaking {
-                    onTranscript(transcript)
-                }
-                return
+                // Barge-in path: with hardware echo cancellation (voiceChat
+                // mode) the mic stays live while replies play. Our own audio
+                // is still the likeliest transcript — drop it when it matches
+                // what we just spoke; otherwise stop talking and obey the
+                // cook ("repeat" / "stop speaking" over a read-aloud).
+                if self.isEchoOfLastSpoken(transcript) { return }
+                self.stopSpeakingOutput()
             }
             // Record what was heard BEFORE handling, so the pill can show
             // the words even when the command itself is unknown. A fresh
@@ -556,7 +562,9 @@ public final class VoiceCookManager {
         })
         if let live = audioInput as? LiveVoiceInput {
             live.onPartial = { [weak self] text in
-                // Same echo guard for the live Heard caption.
+                // Partials stay gated while TTS plays (barge-in resolves on
+                // finals): this keeps echo fragments out of the Heard
+                // caption while our audio is in the air.
                 guard let self, !self.synthesizer.isSpeaking else { return }
                 self.lastHeardTranscript = text
             }
@@ -847,6 +855,26 @@ public final class VoiceCookManager {
     private func reply(_ text: String) {
         lastReply = text
         speak(text)
+    }
+
+    /// True when the transcript is almost certainly our own speaker: it
+    /// matches the last utterance we spoke (normalized for case and
+    /// punctuation). Only consulted while TTS is playing. Exact-match is
+    /// deliberately conservative — a mixed transcript (echo + real command)
+    /// falls through to normal handling, where it usually parses as
+    /// `.unknown` ("Sorry, I didn't catch that.") rather than firing a
+    /// phantom command.
+    private func isEchoOfLastSpoken(_ transcript: String) -> Bool {
+        let heard = normalizeEchoText(transcript)
+        guard !heard.isEmpty else { return false }
+        return heard == normalizeEchoText(lastSpokenText)
+    }
+
+    private func normalizeEchoText(_ text: String) -> String {
+        text.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 
     private func voiceDurationString(_ seconds: Int) -> String {
