@@ -49,6 +49,9 @@ public struct CookModeView: View {
     // (same UserDefaults keys: cook.readAloudEnabled default true,
     // cook.listeningEnabled default false).
     @State private var voiceManager = VoiceCookManager()
+    #if targetEnvironment(simulator)
+    @State private var simVoiceText = ""
+    #endif
 
     public init(title: String, baseServings: Double,
                 ingredients: [IngredientSnapshot], steps: [StepSnapshot],
@@ -513,6 +516,42 @@ public struct CookModeView: View {
 
     // MARK: - Voice bottom bar (Paprika parity pill + reply + mic-denied)
 
+    #if targetEnvironment(simulator)
+    /// Simulator-only voice harness: the sim has no mic or recognizer, so
+    /// this field injects typed transcripts through the same MockVoiceInput
+    /// + `handle` path the device uses (replies, scale sync, timers). Never
+    /// compiled into device builds.
+    private var simVoiceDebugBar: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Simulated voice input")
+                .font(.caption).bold()
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+            HStack(spacing: 8) {
+                TextField("Type a command, e.g. next", text: $simVoiceText)
+                    .textFieldStyle(.roundedBorder)
+                    .autocorrectionDisabled()
+                    .frame(minHeight: 44)
+                    .accessibilityLabel("Simulated voice command")
+                Button("Send") {
+                    let command = simVoiceText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !command.isEmpty else { return }
+                    simVoiceText = ""
+                    voiceManager.emitSimulatedTranscript(command)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(simVoiceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .frame(minHeight: 44)
+                .accessibilityHint("Injects the typed command into the voice pipeline")
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(Color(.tertiarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+    #endif
+
     // Bound to VoiceCookManager: pill toggles drive the manager, reply text
     // and mic-denied state observe it.
     private var voiceBottomBar: some View {
@@ -523,6 +562,9 @@ public struct CookModeView: View {
             if voiceManager.micDenied {
                 micDeniedPlacard
             }
+            #if targetEnvironment(simulator)
+            simVoiceDebugBar
+            #endif
             stepPillBar
         }
         .padding(.horizontal)
@@ -670,8 +712,20 @@ public struct CookModeView: View {
 
     /// Permission-then-start entry point (shared by toggle-ON + onAppear resume).
     /// Never starts the engine synchronously after requesting — the start
-    /// happens inside the permission completion.
+    /// happens inside the permission completion. On the simulator there are
+    /// no mic/speech permissions and the mock input needs none, so the
+    /// permission gate is skipped there.
     private func beginListening() {
+        #if targetEnvironment(simulator)
+        voiceManager.startListening { transcript in
+            _ = voiceManager.handle(
+                transcript: transcript,
+                session: session,
+                ingredients: voiceIngredients,
+                steps: steps.map { $0.text }
+            )
+        }
+        #else
         voiceManager.requestPermissionsThenStart { [voiceManager, session] in
             voiceManager.startListening { transcript in
                 _ = voiceManager.handle(
@@ -682,6 +736,7 @@ public struct CookModeView: View {
                 )
             }
         }
+        #endif
     }
 
     private func toggleListening() {

@@ -438,7 +438,8 @@ public final class VoiceCookManager {
 
     /// Starts continuous listening. Pass a mock via `input` in tests; with
     /// nil the manager uses on-device recognition. On the simulator it falls
-    /// back to the mock (flagging `micDenied`); on device a missing
+    /// back to the mock (no mic needed, `micDenied` stays false so the
+    /// simulator-only debug bar can inject transcripts); on device a missing
     /// recognizer reports a failed start instead of a mock that claims
     /// "listening" but never delivers transcripts.
     /// `isListening` honestly reflects `audioInput?.isRunning` after the
@@ -452,13 +453,16 @@ public final class VoiceCookManager {
         } else if let live = LiveVoiceInput() {
             audioInput = live
         } else {
-            micDenied = true
             #if targetEnvironment(simulator)
+            // Simulated input needs no mic: leave `micDenied` false so the
+            // simulator shows the debug bar instead of the denied placard.
+            micDenied = false
             audioInput = MockVoiceInput()
             #else
             // Device with no usable recognizer: no mock — a mock would set
             // `isListening` with zero transcripts. Fall through with nil
             // input so the failure reply below fires honestly.
+            micDenied = true
             audioInput = nil
             #endif
         }
@@ -490,6 +494,14 @@ public final class VoiceCookManager {
         listeningEnabled = false
         audioInput?.stop()
         isListening = false
+    }
+
+    /// Simulator/debug helper: delivers a transcript through the active
+    /// input as if it had been recognized. No-op unless listening with a
+    /// `MockVoiceInput` (simulator builds / tests). Lets the simulator
+    /// exercise the full `handle` path without a microphone.
+    public func emitSimulatedTranscript(_ transcript: String) {
+        (audioInput as? MockVoiceInput)?.emit(transcript)
     }
 
     // MARK: Shared handoff (Intents lane)
