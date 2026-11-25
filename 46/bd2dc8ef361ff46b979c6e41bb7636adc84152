@@ -1,0 +1,14 @@
+apps/ios/App/KeepCookingApp.swift
+  h_6bbd00fe0a456a 69,73,778-1221
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "46bd2dc8ef361ff46b979c6e41bb7636adc84152",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
