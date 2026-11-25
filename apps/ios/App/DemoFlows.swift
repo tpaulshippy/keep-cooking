@@ -942,6 +942,19 @@ struct RecipeDetailView: View {
     @State private var addedMessage: String?
     @State private var checked: Set<String> = []
     @State private var servings: Double
+    @State private var pane: DetailPane = .ingredients
+
+    /// Paprika-style segmented pane (custom capsule toggle, no copy).
+    private enum DetailPane: String, CaseIterable {
+        case ingredients
+        case directions
+        var title: String {
+            switch self {
+            case .ingredients: return "Ingredients"
+            case .directions: return "Directions"
+            }
+        }
+    }
 
     init(recipe: Recipe) {
         self.recipe = recipe
@@ -967,137 +980,57 @@ struct RecipeDetailView: View {
     }
 
     var body: some View {
-        List {
-            // Photo hero
-            Section {
-                heroHeader
-            }
-            .listRowInsets(EdgeInsets())
-            // Meta row — Serves label never compresses: fixedSize + layoutPriority
-            // keep "Serves 4" on one line; time/rating hug trailing edge.
-            Section {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 8) {
-                        Text("Serves \(servingsDisplay)")
-                            .font(.subheadline)
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
-                            .layoutPriority(2)
-                            .accessibilityLabel("Serves \(servingsDisplay)")
-                        Stepper("", value: $servings, in: 1...24, step: 1)
-                            .labelsHidden()
-                            .fixedSize()
-                            .layoutPriority(1)
-                            .accessibilityLabel("Servings")
-                        Spacer(minLength: 8)
-                        if let total = totalMinutes {
-                            Label("\(total) min", systemImage: "clock")
-                                .font(.subheadline).foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .fixedSize(horizontal: true, vertical: false)
-                                .layoutPriority(1)
+        ZStack(alignment: .bottomTrailing) {
+            ScrollView {
+                VStack(spacing: 0) {
+                    heroHeader
+                    VStack(alignment: .leading, spacing: 14) {
+                        titleBlock
+                        metaRow
+                        if let addedMessage {
+                            confirmRow(addedMessage)
                         }
-                        if let rating = recipe.rating {
-                            Label(String(format: "%.1f", rating), systemImage: "star.fill")
-                                .font(.subheadline).foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .fixedSize(horizontal: true, vertical: false)
-                                .layoutPriority(1)
+                        paneToggle
+                        if pane == .ingredients {
+                            ingredientsPane
+                        } else {
+                            directionsPane
                         }
                     }
-                    if !recipe.categories.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack {
-                                ForEach(recipe.categories, id: \.self) { cat in
-                                    Text(cat).font(.caption)
-                                        .padding(.horizontal, 8).padding(.vertical, 4)
-                                        .background(Color(.secondarySystemBackground))
-                                        .clipShape(Capsule())
-                                }
-                            }
-                        }
-                    }
+                    .padding(.horizontal)
+                    .padding(.top, 12)
+                    // Clearance so the floating action cluster never
+                    // covers the last step / ingredient.
+                    .padding(.bottom, 110)
                 }
             }
-            Section("Ingredients (\(sortedIngredients.count))") {
-                ForEach(sortedIngredients) { ing in
-                    Button {
-                        if checked.contains(ing.id) { checked.remove(ing.id) }
-                        else { checked.insert(ing.id) }
-                    } label: {
-                        HStack {
-                            Image(systemName: checked.contains(ing.id)
-                                ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(checked.contains(ing.id) ? .green : .secondary)
-                            Text(ing.display.isEmpty ? ing.name : ing.display)
-                                .strikethrough(checked.contains(ing.id))
-                                .foregroundStyle(checked.contains(ing.id) ? .secondary : .primary)
-                                .multilineTextAlignment(.leading)
-                            Spacer()
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            Section("Steps (\(sortedSteps.count))") {
-                ForEach(Array(sortedSteps.enumerated()), id: \.element.id) { idx, step in
-                    HStack(alignment: .top, spacing: 10) {
-                        Text("\(idx + 1)")
-                            .font(.caption.weight(.bold))
-                            .frame(width: 24, height: 24)
-                            .background(Color.accentColor.opacity(0.15))
-                            .foregroundStyle(Color.accentColor)
-                            .clipShape(Circle())
-                        Text(step.text)
-                    }
-                    .padding(.vertical, 2)
-                }
-            }
-            Section {
-                NavigationLink {
-                    CookModeView(
-                        title: recipe.title,
-                        baseServings: recipe.servings,
-                        ingredients: recipe.ingredients.map {
-                            CookModeView.IngredientSnapshot(id: $0.id, name: $0.name,
-                                quantity: $0.quantity, unit: $0.unit)
-                        },
-                        steps: recipe.steps.map {
-                            CookModeView.StepSnapshot(id: $0.id, position: $0.position, text: $0.text)
-                        },
-                        initialServings: servings)
-                } label: {
-                    Label("Cook", systemImage: "frying.pan")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .accessibilityIdentifier("cook-button")
-                Button {
-                    addToList()
-                } label: {
-                    Label("Add to shopping list", systemImage: "cart.badge.plus")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("add-to-list-button")
-            }
-            // Confirmation sits directly under the button that triggers it.
-            if let addedMessage {
-                Section {
-                    HStack {
-                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                        Text(addedMessage).foregroundStyle(.primary)
-                    }
-                    .padding(.vertical, 4)
-                    .accessibilityIdentifier("added-confirm")
-                }
-            }
+            floatingActions
         }
         .navigationTitle(recipe.title)
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("recipe-detail-title")
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { addToList() } label: {
+                    Image(systemName: "cart.badge.plus")
+                }
+                .accessibilityIdentifier("add-to-list-button")
+                .accessibilityLabel("Add to shopping list")
+                Button { addToPlan() } label: {
+                    Image(systemName: "calendar.badge.plus")
+                }
+                .accessibilityLabel("Add to tonight's plan")
+                Button { toggleFavorite() } label: {
+                    Image(systemName: isFavorite ? "heart.fill" : "heart")
+                        .foregroundStyle(isFavorite ? .red : .primary)
+                }
+                .accessibilityLabel(isFavorite ? "Remove from favorites" : "Add to favorites")
+                ShareLink(item: shareText) {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .accessibilityLabel("Share recipe")
+            }
+        }
     }
 
     private var servingsDisplay: String {
@@ -1111,7 +1044,7 @@ struct RecipeDetailView: View {
                 switch phase {
                 case .success(let img):
                     img.resizable().scaledToFill()
-                        .frame(height: 220).clipped()
+                        .frame(height: 180).clipped()
                 default:
                     placeholderHero
                 }
@@ -1124,11 +1057,285 @@ struct RecipeDetailView: View {
     private var placeholderHero: some View {
         ZStack {
             LinearGradient(colors: [.orange, .red.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                .frame(height: 140)
+                .frame(height: 180)
             Image(systemName: "fork.knife.circle.fill")
                 .font(.system(size: 48))
                 .foregroundStyle(.white.opacity(0.9))
         }
+    }
+
+    // MARK: - Revamp: header / panes / floating actions
+
+    private var isFavorite: Bool { recipe.isFavorite }
+
+    private var shareText: String {
+        [recipe.title, recipe.recipeDescription]
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .joined(separator: "\n\n")
+    }
+
+    private var breadcrumb: String {
+        "My Cookbook › \(recipe.categories.first ?? "Uncategorized")"
+    }
+
+    private var cookDestination: some View {
+        CookModeView(
+            title: recipe.title,
+            baseServings: recipe.servings,
+            ingredients: recipe.ingredients.map {
+                CookModeView.IngredientSnapshot(id: $0.id, name: $0.name,
+                    quantity: $0.quantity, unit: $0.unit)
+            },
+            steps: recipe.steps.map {
+                CookModeView.StepSnapshot(id: $0.id, position: $0.position, text: $0.text)
+            },
+            initialServings: servings)
+    }
+
+    /// Title + tappable 1–5 star rating + source link + breadcrumb.
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(recipe.title)
+                .font(.title2.weight(.bold))
+            HStack(spacing: 0) {
+                ForEach(1...5, id: \.self) { star in
+                    let filled = Double(star) <= (recipe.rating ?? 0)
+                    Button { setRating(star) } label: {
+                        Image(systemName: filled ? "star.fill" : "star")
+                            .font(.title3)
+                            .foregroundStyle(filled ? .yellow : .secondary)
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Rate \(star) star\(star == 1 ? "" : "s")")
+                }
+            }
+            .padding(.leading, -12)
+            if !recipe.sourceUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               let url = URL(string: recipe.sourceUrl),
+               url.scheme != nil {
+                Link(destination: url) {
+                    Label(recipe.source.isEmpty ? (url.host ?? "Source") : recipe.source,
+                        systemImage: "arrow.up.right.square")
+                        .font(.subheadline)
+                }
+            }
+            Text(breadcrumb)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// Prep / total / servings meta row with icons.
+    private var metaRow: some View {
+        HStack(spacing: 16) {
+            if let prep = recipe.prepMinutes {
+                Label("\(prep) min prep", systemImage: "clock")
+            }
+            if let total = totalMinutes {
+                Label("\(total) min total", systemImage: "timer")
+            }
+            Label("Serves \(servingsDisplay)", systemImage: "person.2.fill")
+                .accessibilityLabel("Serves \(servingsDisplay)")
+        }
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+    }
+
+    private func confirmRow(_ message: String) -> some View {
+        HStack {
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+            Text(message).foregroundStyle(.primary)
+        }
+        .padding(.vertical, 4)
+        .accessibilityIdentifier("added-confirm")
+    }
+
+    /// Custom capsule Ingredients|Directions toggle (44pt targets).
+    private var paneToggle: some View {
+        HStack(spacing: 0) {
+            ForEach(DetailPane.allCases, id: \.self) { item in
+                Button { pane = item } label: {
+                    Text(item.title)
+                        .font(.subheadline.weight(item == pane ? .semibold : .regular))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(item == pane ? .isSelected : [])
+                .background(item == pane ? Color(.systemBackground) : Color.clear)
+                .clipShape(Capsule())
+                .foregroundStyle(item == pane ? .primary : .secondary)
+            }
+        }
+        .padding(4)
+        .background(Color(.secondarySystemBackground))
+        .clipShape(Capsule())
+    }
+
+    private var ingredientsPane: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Button("Reset servings") { servings = recipe.servings }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.blue)
+                Spacer()
+                Text("Serves \(servingsDisplay)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Stepper("", value: $servings, in: 1...24, step: 1)
+                    .labelsHidden()
+                    .accessibilityLabel("Servings")
+            }
+            .padding(.vertical, 4)
+            ForEach(sortedIngredients) { ing in
+                Button {
+                    if checked.contains(ing.id) { checked.remove(ing.id) }
+                    else { checked.insert(ing.id) }
+                } label: {
+                    HStack {
+                        Image(systemName: checked.contains(ing.id)
+                            ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(checked.contains(ing.id) ? .green : .secondary)
+                        Text(ing.display.isEmpty ? ing.name : ing.display)
+                            .strikethrough(checked.contains(ing.id))
+                            .foregroundStyle(checked.contains(ing.id) ? .secondary : .primary)
+                            .multilineTextAlignment(.leading)
+                        Spacer()
+                    }
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Divider()
+            }
+        }
+    }
+
+    private var directionsPane: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("DESCRIPTION")
+            Text(recipe.recipeDescription.isEmpty
+                ? "No description yet." : recipe.recipeDescription)
+                .font(.body)
+                .foregroundStyle(recipe.recipeDescription.isEmpty ? .secondary : .primary)
+            sectionHeader("DIRECTIONS")
+            NavigationLink { cookDestination } label: {
+                Label("Start Cooking", systemImage: "play.fill")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, minHeight: 50)
+            }
+            .buttonStyle(.borderedProminent)
+            .clipShape(Capsule())
+            .controlSize(.large)
+            .accessibilityIdentifier("cook-button")
+            ForEach(Array(sortedSteps.enumerated()), id: \.element.id) { idx, step in
+                HStack(alignment: .top, spacing: 12) {
+                    Text("\(idx + 1)")
+                        .font(.headline)
+                        .frame(width: 32, height: 32)
+                        .background(Color.accentColor.opacity(0.15))
+                        .foregroundStyle(Color.accentColor)
+                        .clipShape(Circle())
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(step.text)
+                            .font(.body)
+                        if let hint = timerHint(for: step.text) {
+                            Label(hint, systemImage: "timer")
+                                .font(.caption)
+                                .foregroundStyle(.blue)
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+        }
+    }
+
+    /// Bottom-right floating cluster: cook-mode timer + pin/favorite.
+    /// Overlay only spans its own buttons, so scrolling stays unblocked.
+    private var floatingActions: some View {
+        VStack(spacing: 12) {
+            NavigationLink { cookDestination } label: {
+                Image(systemName: "timer")
+                    .font(.title2)
+                    .frame(width: 56, height: 56)
+                    .background(Color(.systemBackground))
+                    .foregroundStyle(Color.accentColor)
+                    .clipShape(Circle())
+                    .shadow(radius: 4)
+            }
+            .accessibilityLabel("Open cook mode")
+            .accessibilityIdentifier("floating-timer-button")
+            Button { toggleFavorite() } label: {
+                Image(systemName: isFavorite ? "pin.fill" : "pin")
+                    .font(.title2)
+                    .frame(width: 56, height: 56)
+                    .background(Color(.systemBackground))
+                    .foregroundStyle(isFavorite ? .red : .secondary)
+                    .clipShape(Circle())
+                    .shadow(radius: 4)
+            }
+            .accessibilityLabel(isFavorite ? "Unpin favorite" : "Pin favorite")
+        }
+        .padding(.trailing, 16)
+        .padding(.bottom, 24)
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+    }
+
+    /// Detects "N min/minutes" or "N hour(s)" in step text; label only.
+    private func timerHint(for text: String) -> String? {
+        let pattern = "(\\d+)\\s*(hours?|hrs?|minutes?|mins?)"
+        guard let rx = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return nil }
+        let ns = text as NSString
+        guard let match = rx.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)) else { return nil }
+        let num = ns.substring(with: match.range(at: 1))
+        let unit = ns.substring(with: match.range(at: 2)).lowercased()
+        let short = (unit.hasPrefix("hour") || unit.hasPrefix("hr")) ? "hr" : "min"
+        return "~\(num) \(short)"
+    }
+
+    private func setRating(_ stars: Int) {
+        if recipe.rating == Double(stars) {
+            recipe.rating = nil
+        } else {
+            recipe.rating = Double(stars)
+        }
+        recipe.updatedAt = Date()
+        try? context.save()
+    }
+
+    private func toggleFavorite() {
+        recipe.isFavorite.toggle()
+        recipe.updatedAt = Date()
+        try? context.save()
+    }
+
+    /// Real SwiftData insert: this recipe planned for tonight's dinner.
+    /// Skips the insert when a matching non-deleted plan already exists,
+    /// so a double tap can't double that recipe's grocery quantities
+    /// (addWeekToList aggregates every plan entry).
+    private func addToPlan() {
+        let tonight = Calendar.current.startOfDay(for: Date())
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: tonight) ?? tonight
+        let householdId = recipe.householdId
+        let recipeId = recipe.id
+        let mealRaw = MealSlot.dinner.rawValue
+        let dup = (try? context.fetch(FetchDescriptor<Plan>(predicate: #Predicate<Plan> {
+            !$0.deleted && $0.householdId == householdId
+                && $0.date >= tonight && $0.date < tomorrow && $0.mealRaw == mealRaw
+        })))?.contains(where: { $0.recipeId == recipeId }) ?? false
+        if !dup {
+            context.insert(Plan(householdId: recipe.householdId, date: tonight,
+                meal: .dinner, recipeId: recipe.id,
+                servings: servings, deviceId: currentDeviceId()))
+            try? context.save()
+        }
+        addedMessage = "Planned \(recipe.title) for tonight"
     }
 
     private func addToList() {
