@@ -22,32 +22,18 @@ import UIKit
 
 // MARK: - Shared helpers
 
-/// Handoff bridge to the live Cook session. Intent definitions live in the
-/// same in-app target as the consumer, so the pending command is written to
-/// `UserDefaults.standard` — the exact store
-/// `VoiceCookManager.consumePendingCommand` reads + clears (key
-/// "cook.pendingCommand"; do not rename without updating both sides).
-/// (An App Group suite would be a different store from the consumer here,
-/// so it must not be used.)
+/// Handoff bridge to the live Cook session. Intent extensions run in a
+/// separate process with no access to the in-memory CookSession /
+/// CookVoiceManager, so stateless nav intents write a pending command that
+/// the app consumes (and clears) on launch/foreground. Key is consumed by
+/// the Cook view + manager — do not rename without updating both sides.
 private enum CookPendingHandoff {
+    static let suiteName = "group.com.smidgen.share"
     static let key = "cook.pendingCommand"
 
-    /// Set while a CookModeView session is on screen (appear/disappear);
-    /// nav intents require it so they never claim a step change when no
-    /// live session can consume the handoff.
-    /// Single source of truth: CookModeView.sessionActiveKey.
-    static let sessionActiveKey = CookModeView.sessionActiveKey
-
     static func write(_ value: String) {
-        UserDefaults.standard.set(value, forKey: key)
-    }
-
-    /// Throws a spoken message when no Cook session is active to consume a
-    /// nav handoff. Call before `write` in every `openAppWhenRun` intent.
-    static func requireActiveSession() throws {
-        guard UserDefaults.standard.bool(forKey: sessionActiveKey) else {
-            throw IntentExecutionError.message("Open a recipe in Cook mode first, then try again.")
-        }
+        let defaults = UserDefaults(suiteName: suiteName) ?? .standard
+        defaults.set(value, forKey: key)
     }
 }
 
@@ -205,15 +191,12 @@ struct AddToListIntent: AppIntent {
 //
 // LIMITATION: AppIntent extensions run in a separate process with no access
 // to the live in-memory CookSession / CookVoiceManager. These intents are
-// therefore handoff-based: each one requires an active Cook session
-// (`CookPendingHandoff.requireActiveSession`, backed by the shared
-// CookModeView.sessionActiveKey flag CookModeView sets on appear/disappear) and then
-// writes UserDefaults.standard key "cook.pendingCommand" — "next" /
+// therefore handoff-based: each one writes UserDefaults
+// (group.com.smidgen.share, key "cook.pendingCommand") — "next" /
 // "previous" / "repeat" / "crossoff:<normalized-name>" — and opens the app
 // (openAppWhenRun=true) where the live session consumes + clears the
-// command. With no active session they throw a spoken "open Cook mode
-// first" message instead of claiming a step change. None of them performs
-// continuous listening — the Siri path is one-shot per invocation.
+// command. None of them performs continuous listening — the Siri path is
+// one-shot per invocation.
 
 /// "Next step" — writes a "next" pending command for the live session to
 /// consume on foreground, then opens the app. Stateless by design (no live
@@ -225,7 +208,6 @@ struct NextStepIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        try CookPendingHandoff.requireActiveSession()
         CookPendingHandoff.write("next")
         return .result(dialog: "Opening Keep Cooking to go to the next step.")
     }
@@ -239,7 +221,6 @@ struct PreviousStepIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        try CookPendingHandoff.requireActiveSession()
         CookPendingHandoff.write("previous")
         return .result(dialog: "Opening Keep Cooking to go back a step.")
     }
@@ -254,7 +235,6 @@ struct RepeatStepIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        try CookPendingHandoff.requireActiveSession()
         CookPendingHandoff.write("repeat")
         return .result(dialog: "Opening Keep Cooking to repeat this step.")
     }
@@ -278,7 +258,6 @@ struct CrossOffIngredientIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        try CookPendingHandoff.requireActiveSession()
         let needle = ingredient.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !needle.isEmpty else {
             throw IntentExecutionError.message("Tell me which ingredient to cross off.")
@@ -310,11 +289,8 @@ struct CrossOffIngredientIntent: AppIntent {
 }
 
 /// "Start cook timer" — logs a StepTimer on the "Shortcut Timers" recipe
-/// (so Cook mode sees it) AND, when notification authorization allows
-/// (requested when undetermined), schedules a real local notification
-/// mirroring CookActivityStub.schedule. Offline; does not drive the live
-/// CookSession. When alerts are not allowed, the timer is still logged but
-/// the dialog says it won't alert.
+/// (so Cook mode sees it) AND schedules a real local notification mirroring
+/// CookActivityStub.schedule. Offline; does not drive the live CookSession.
 struct StartCookTimerIntent: AppIntent {
     static var title: LocalizedStringResource = "Start Cook Timer"
     static var description = IntentDescription("Starts a cook timer and logs it on a recipe step.")
@@ -355,40 +331,18 @@ struct StartCookTimerIntent: AppIntent {
         recipe.updatedAt = Date()
         try context.save()
         // Real timer: mirror CookActivityStub.schedule — a local notification
-        // that fires even if the app is backgrounded. Authorization is
-        // checked first (requested when undetermined); when alerts are not
-        // allowed the StepTimer log above still stands, but the dialog says
-        // so instead of claiming a timer was set.
-        let center = UNUserNotificationCenter.current()
-        let settings = await center.notificationSettings()
-        let authorized: Bool
-        switch settings.authorizationStatus {
-        case .authorized, .provisional, .ephemeral:
-            authorized = true
-        case .notDetermined:
-            do {
-                authorized = try await center.requestAuthorization(options: [.alert, .sound])
-            } catch {
-                authorized = false
-            }
-        case .denied:
-            authorized = false
-        @unknown default:
-            authorized = false
-        }
-        if authorized {
-            let content = UNMutableNotificationContent()
-            content.title = "Keep Cooking timer"
-            content.body = "\(timerLabel) — done!"
-            content.sound = .default
-            let trigger = UNTimeIntervalNotificationTrigger(
-                timeInterval: max(1, TimeInterval(minutes * 60)), repeats: false)
-            try await center.add(UNNotificationRequest(
-                identifier: "cook-timer-\(UUID().uuidString)", content: content, trigger: trigger))
-            return .result(dialog: "Timer set for \(minutes) minutes: \(timerLabel).")
-        } else {
-            return .result(dialog: "Timer logged for \(minutes) minutes: \(timerLabel), but notifications are off so it won't alert you. Turn them on in Settings to get the alert.")
-        }
+        // that fires even if the app is backgrounded. Authorization cannot be
+        // prompted well from an intent, so schedule and let the countdown
+        // dialog stand; the StepTimer log above keeps Cook mode in sync.
+        let content = UNMutableNotificationContent()
+        content.title = "Keep Cooking timer"
+        content.body = "\(timerLabel) — done!"
+        content.sound = .default
+        let trigger = UNTimeIntervalNotificationTrigger(
+            timeInterval: max(1, TimeInterval(minutes * 60)), repeats: false)
+        try await UNUserNotificationCenter.current().add(UNNotificationRequest(
+            identifier: "cook-timer-\(UUID().uuidString)", content: content, trigger: trigger))
+        return .result(dialog: "Timer set for \(minutes) minutes: \(timerLabel).")
     }
 }
 

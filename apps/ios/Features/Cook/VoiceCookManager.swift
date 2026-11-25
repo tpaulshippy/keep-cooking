@@ -22,15 +22,6 @@
 //   - Permission-then-start: `requestPermissions(completion:)` /
 //     `requestPermissionsThenStart(_:)` join mic + speech results; the legacy
 //     `requestPermissions()` calls through.
-//   - `stopListening` clears persisted `listeningEnabled` and cancels any
-//     pending permission completion, so a late auth result can never start
-//     the mic after the view disappeared; `startListening` also guards on
-//     the flag. Simulator-only mock fallback: on device a missing
-//     recognizer reports a failed start instead of fake "listening".
-//   - Ambiguity: ties use `isFuzzyVoiceMatchAmbiguous` ("Which <name>?");
-//     `fuzzyVoiceMatch` nil alone means "I don't see ...".
-//   - Voice-started timer ids are retained in `scheduledTimerIds` for
-//     CookModeView.onDisappear cancellation.
 //   - Shared handoff: `consumePendingCommand(session:ingredients:steps:)`
 //     reads + clears the exact UserDefaults key "cook.pendingCommand".
 
@@ -102,150 +93,57 @@ public final class LiveVoiceInput: VoiceAudioInput {
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
     public private(set) var isRunning = false
-    private var shouldKeepListening = false
-    private var onTranscript: ((String) -> Void)?
-    private var lastForwarded = ""
-    private var generation = 0
-    private var tapInstalled = false
 
     public init?(locale: Locale = .current) {
         #if targetEnvironment(simulator)
         return nil
         #else
-        // Locale fallback: `.current` may resolve to an unsupported locale
-        // (init succeeds but `isAvailable` is false and the task errors
-        // silently). Prefer current when usable, else en-US.
-        if let r = SFSpeechRecognizer(locale: locale), r.isAvailable {
-            recognizer = r
-        } else if let fallback = SFSpeechRecognizer(locale: Locale(identifier: "en-US")) {
-            recognizer = fallback
-        } else {
-            return nil
-        }
+        guard let recognizer = SFSpeechRecognizer(locale: locale),
+              recognizer.isAvailable else { return nil }
+        self.recognizer = recognizer
         #endif
     }
 
     public func start(onTranscript: @escaping (String) -> Void) {
-        stopEngineAndTask()
-        shouldKeepListening = true
-        self.onTranscript = onTranscript
-        lastForwarded = ""
+        stop()
         #if os(iOS)
         configureAudioSession()
         #endif
-        startEngineIfNeeded()
-        startRecognition()
-        isRunning = engine.isRunning && shouldKeepListening
-        if !isRunning {
-            stopEngineAndTask()
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        request.shouldReportPartialResults = false
+        // Prefer on-device recognition when the recognizer supports it.
+        if recognizer.supportsOnDeviceRecognition {
+            request.requiresOnDeviceRecognition = true
+        }
+        self.request = request
+        let inputNode = engine.inputNode
+        let format = inputNode.outputFormat(forBus: 0)
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+            self?.request?.append(buffer)
+        }
+        task = recognizer.recognitionTask(with: request) { result, _ in
+            guard let result, result.isFinal else { return }
+            onTranscript(result.bestTranscription.formattedString)
+        }
+        do {
+            try engine.start()
+            isRunning = true
+        } catch {
+            stop()
         }
     }
 
     public func stop() {
-        shouldKeepListening = false
-        generation += 1
-        onTranscript = nil
-        stopEngineAndTask()
-        #if os(iOS)
-        deactivateAudioSession()
-        #endif
-    }
-
-    // MARK: - Continuous recognition internals
-
-    /// Starts (or restarts) one recognition request on the already-running
-    /// engine. Apple ends tasks after a final result, ~60s, or transient
-    /// errors — without a restart the engine keeps running but delivers
-    /// zero transcripts ("shows listening but no reply").
-    private func startRecognition() {
-        guard shouldKeepListening else { return }
-        generation += 1
-        let myGeneration = generation
-        // Stale task/request from the previous generation: end them; their
-        // callbacks carry the old generation and are ignored below.
-        task?.cancel()
-        request?.endAudio()
-        task = nil
-        request = nil
-        guard recognizer.isAvailable else {
-            scheduleRestart(after: 1.5, generation: myGeneration)
-            return
-        }
-        let request = SFSpeechAudioBufferRecognitionRequest()
-        // Partial results keep the task alive through pauses; we only
-        // forward finals (partials like "nex" would spam "didn't catch that").
-        request.shouldReportPartialResults = true
-        // Do NOT require on-device: when the offline dictation model isn't
-        // downloaded the task fails with no transcripts and `isRunning`
-        // stays true. Server recognition is the reliable default.
-        request.requiresOnDeviceRecognition = false
-        self.request = request
-        task = recognizer.recognitionTask(with: request) { [weak self] result, error in
-            guard let self, myGeneration == self.generation else { return }
-            if error != nil {
-                guard self.shouldKeepListening else { return }
-                // Transient (network handoff, audio glitch, timeout):
-                // fresh request so listening resumes instead of going deaf.
-                self.scheduleRestart(after: 0.8, generation: myGeneration)
-                return
-            }
-            guard let result else { return }
-            let text = result.bestTranscription.formattedString
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { return }
-            if result.isFinal {
-                if text != self.lastForwarded {
-                    self.lastForwarded = text
-                    DispatchQueue.main.async { [weak self] in
-                        self?.onTranscript?(text)
-                    }
-                }
-                // Apple finishes the task after a final — restart so the
-                // NEXT command is heard.
-                self.scheduleRestart(after: 0.25, generation: myGeneration)
-            }
-        }
-    }
-
-    private func scheduleRestart(after delay: TimeInterval, generation gen: Int) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self, self.shouldKeepListening, gen == self.generation else { return }
-            self.startRecognition()
-        }
-    }
-
-    private func startEngineIfNeeded() {
-        if !tapInstalled {
-            let inputNode = engine.inputNode
-            let format = inputNode.outputFormat(forBus: 0)
-            inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
-                self?.request?.append(buffer)
-            }
-            tapInstalled = true
-        }
-        if !engine.isRunning {
-            do {
-                engine.prepare()
-                try engine.start()
-            } catch {
-                // `isRunning` check in `start` reports the failure.
-            }
-        }
-    }
-
-    private func stopEngineAndTask() {
-        if tapInstalled {
-            engine.inputNode.removeTap(onBus: 0)
-            tapInstalled = false
-        }
-        if engine.isRunning {
-            engine.stop()
-        }
+        engine.stop()
+        engine.inputNode.removeTap(onBus: 0)
         request?.endAudio()
         task?.cancel()
         request = nil
         task = nil
         isRunning = false
+        #if os(iOS)
+        deactivateAudioSession()
+        #endif
     }
 
     #if os(iOS)
@@ -308,12 +206,6 @@ public final class VoiceCookManager {
 
     private let synthesizer = AVSpeechSynthesizer()
     private var audioInput: VoiceAudioInput?
-
-    /// Notification ids scheduled by voice-started timers (`handle`
-    /// `.startTimer`). Retained so CookModeView.onDisappear can cancel them
-    /// alongside its own `scheduledIds` (the schedule call's return used to
-    /// be discarded, leaking voice timers past Cook mode).
-    public private(set) var scheduledTimerIds: [String] = []
 
     // Single-flight permission join state: mic + speech results are tracked
     // separately so neither callback can clobber the other (denial race).
@@ -385,14 +277,6 @@ public final class VoiceCookManager {
         pendingPermissionCompletion = nil
         let granted = speech && mic
         micDenied = !granted
-        if granted {
-            micDenied = false
-        } else {
-            // Denied: clear the persisted intent so the pill doesn't stay
-            // stuck on "listening" with no engine behind it (the
-            // "shows listening but no reply" report).
-            listeningEnabled = false
-        }
         completion(granted)
     }
 
@@ -437,10 +321,8 @@ public final class VoiceCookManager {
     // MARK: Listening
 
     /// Starts continuous listening. Pass a mock via `input` in tests; with
-    /// nil the manager uses on-device recognition. On the simulator it falls
-    /// back to the mock (flagging `micDenied`); on device a missing
-    /// recognizer reports a failed start instead of a mock that claims
-    /// "listening" but never delivers transcripts.
+    /// nil the manager uses on-device recognition, falling back to the mock
+    /// (and setting `micDenied`) when the mic is unavailable.
     /// `isListening` honestly reflects `audioInput?.isRunning` after the
     /// start attempt; on failure it stays false with a retry prompt in
     /// `lastReply`.
@@ -453,41 +335,18 @@ public final class VoiceCookManager {
             audioInput = live
         } else {
             micDenied = true
-            #if targetEnvironment(simulator)
             audioInput = MockVoiceInput()
-            #else
-            // Device with no usable recognizer: no mock — a mock would set
-            // `isListening` with zero transcripts. Fall through with nil
-            // input so the failure reply below fires honestly.
-            audioInput = nil
-            #endif
         }
         audioInput?.start(onTranscript: onTranscript)
         let running = audioInput?.isRunning ?? false
         isListening = running
         if !running {
-            // Hard failure (no engine): drop the intent too, so the pill
-            // doesn't claim "listening" while deaf. Permission denials are
-            // handled the same way in `finishPermissionsIfReady`.
-            listeningEnabled = false
             lastReply = "I couldn't start listening. Check the microphone and try again."
             speak(lastReply)
-        } else {
-            micDenied = false
         }
     }
 
-    /// Tears down listening AND clears the persisted `listeningEnabled` flag,
-    /// so a late permission completion (see `requestPermissionsThenStart`)
-    /// can never start the mic after the view has disappeared:
-    /// `startListening` guards on the flag, and the pending completion is
-    /// cancelled here. CookModeView.onDisappear relies on this (it must not
-    /// leave a stale "on").
     public func stopListening() {
-        pendingPermissionCompletion = nil
-        pendingSpeechGranted = nil
-        pendingMicGranted = nil
-        listeningEnabled = false
         audioInput?.stop()
         isListening = false
     }
@@ -532,7 +391,7 @@ public final class VoiceCookManager {
                 if let id = ingredientId(matching: name, in: tuples) {
                     session.crossedOffIngredients.insert(id)
                     reply("Crossed off \(name).")
-                } else if isFuzzyVoiceMatchAmbiguous(name, candidates: ingredients.map { $0.name }) {
+                } else if fuzzyVoiceMatch(name, candidates: ingredients.map { $0.name }) != nil {
                     reply("Which \(name)? I see more than one matching ingredient.")
                 } else {
                     reply("I don't see \(name) in the ingredients.")
@@ -616,7 +475,7 @@ public final class VoiceCookManager {
             if let id = ingredientId(matching: name, in: tuples),
                let found = ingredients.first(where: { $0.id == id }) {
                 reply("You need \(scaledDisplay(name: found.name, quantity: found.quantity, unit: found.unit, factor: session.scale)).")
-            } else if isFuzzyVoiceMatchAmbiguous(name, candidates: ingredients.map { $0.name }) {
+            } else if fuzzyVoiceMatch(name, candidates: ingredients.map { $0.name }) != nil {
                 reply("Which \(name)? I see more than one matching ingredient.")
             } else {
                 reply("I don't see \(name) in the ingredients.")
@@ -625,7 +484,7 @@ public final class VoiceCookManager {
             if let id = ingredientId(matching: name, in: tuples) {
                 session.crossedOffIngredients.insert(id)
                 reply("Crossed off \(name).")
-            } else if isFuzzyVoiceMatchAmbiguous(name, candidates: ingredients.map { $0.name }) {
+            } else if fuzzyVoiceMatch(name, candidates: ingredients.map { $0.name }) != nil {
                 reply("Which \(name)? I see more than one matching ingredient.")
             } else {
                 reply("I don't see \(name) in the ingredients.")
@@ -634,7 +493,7 @@ public final class VoiceCookManager {
             if let id = ingredientId(matching: name, in: tuples) {
                 session.crossedOffIngredients.remove(id)
                 reply("Put back \(name).")
-            } else if isFuzzyVoiceMatchAmbiguous(name, candidates: ingredients.map { $0.name }) {
+            } else if fuzzyVoiceMatch(name, candidates: ingredients.map { $0.name }) != nil {
                 reply("Which \(name)? I see more than one matching ingredient.")
             } else {
                 reply("I don't see \(name) in the ingredients.")
@@ -679,8 +538,7 @@ public final class VoiceCookManager {
                 timer = nil
             }
             if let timer {
-                let ids = CookActivityStub.schedule(timers: [timer])
-                scheduledTimerIds.append(contentsOf: ids)
+                CookActivityStub.schedule(timers: [timer])
                 onTimerCommand?(timer)
                 reply("Timer started for \(timer.label), \(voiceDurationString(timer.seconds)).")
             } else {
