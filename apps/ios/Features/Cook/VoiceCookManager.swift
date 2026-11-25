@@ -335,6 +335,25 @@ public final class LiveVoiceInput: VoiceAudioInput {
     }
 
     private func startEngineIfNeeded() {
+        if !engine.isRunning {
+            #if os(iOS)
+            // Chat mode alone reduces processing (and playback level) for
+            // AVAudioEngine. Echo cancellation requires voice processing,
+            // enabled while the engine is stopped. Setting it on the input
+            // node enables the voice-processing I/O unit for both directions.
+            do {
+                if !engine.inputNode.isVoiceProcessingEnabled {
+                    try engine.inputNode.setVoiceProcessingEnabled(true)
+                }
+                DispatchQueue.main.async { [weak self] in
+                    self?.onEvent?("voice-processing=on")
+                }
+            } catch {
+                let message = "Voice processing couldn't start: \(error.localizedDescription)"
+                DispatchQueue.main.async { [weak self] in self?.onError?(message) }
+            }
+            #endif
+        }
         if !tapInstalled {
             let inputNode = engine.inputNode
             let format = inputNode.outputFormat(forBus: 0)
@@ -369,17 +388,21 @@ public final class LiveVoiceInput: VoiceAudioInput {
     }
 
     #if os(iOS)
-    /// Mode stays `.spokenAudio`: `.voiceChat` was tried for its hardware
-    /// echo cancellation but rendered TTS inaudible in practice, so it was
-    /// reverted — barge-in matching in `startListening` remains the echo
-    /// defense. `.spokenAudio` is proven audible with this exact setup.
+    /// Voice chat + engine voice processing provides echo cancellation for
+    /// barge-in. Chat mode alone is insufficient: Apple documents reduced
+    /// processing and lower playback without a voice-processing I/O unit.
+    /// Keep `defaultToSpeaker` as the persistent preference and explicitly
+    /// override to the built-in speaker/mic for this session so TTS cannot
+    /// silently fall back to the earpiece receiver.
     private func configureAudioSession() {
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.duckOthers, .defaultToSpeaker, .allowBluetooth])
+            try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.duckOthers, .defaultToSpeaker, .allowBluetooth])
             try session.setActive(true)
+            try session.overrideOutputAudioPort(.speaker)
         } catch {
-            // Engine start below still reports failure via `isRunning`.
+            let message = "Voice-chat speaker audio couldn't start: \(error.localizedDescription)"
+            DispatchQueue.main.async { [weak self] in self?.onError?(message) }
         }
     }
 
@@ -580,7 +603,11 @@ public final class VoiceCookManager {
         // Re-assert the session: interruptions (calls, Siri, alerts) can
         // deactivate it mid-cook, leaving TTS — and the mic tap — silently
         // dead for the rest of the session. Idempotent when already active.
-        try? AVAudioSession.sharedInstance().setActive(true)
+        // The override lasts only until a route change, so re-assert it for
+        // every utterance as well as during microphone setup.
+        let session = AVAudioSession.sharedInstance()
+        try? session.setActive(true)
+        try? session.overrideOutputAudioPort(.speaker)
         #endif
         let utterance = AVSpeechUtterance(string: text)
         if let locale {
