@@ -1,0 +1,62 @@
+api/drizzle/seed.sql
+  h_6bbd00fe0a456a 7-17,19-29,31-41,43-53,55-65,67-77,79-89,91-101,103-113,115-125,127-137,139-149
+apps/ios/Seed/recipe-01.json
+  h_6bbd00fe0a456a 28-55,59-68,76-121,126
+apps/ios/Seed/recipe-02.json
+  h_6bbd00fe0a456a 28,30-31,34-69,76-121,126
+apps/ios/Seed/recipe-03.json
+  h_6bbd00fe0a456a 28-63,68,76-126,131
+apps/ios/Seed/recipe-04.json
+  h_6bbd00fe0a456a 28-63,65,67-68,76-116,121
+apps/ios/Seed/recipe-05.json
+  h_6bbd00fe0a456a 28-37,39-65,67-68,76-121,126
+apps/ios/Seed/recipe-06.json
+  h_6bbd00fe0a456a 28-46,48-65,67-68,76-111,116
+apps/ios/Seed/recipe-07.json
+  h_6bbd00fe0a456a 28,30-31,34-69,76-121,126
+apps/ios/Seed/recipe-08.json
+  h_6bbd00fe0a456a 28-63,68,76-121,126
+apps/ios/Seed/recipe-09.json
+  h_6bbd00fe0a456a 28-63,68,76,79-128,131
+apps/ios/Seed/recipe-10.json
+  h_6bbd00fe0a456a 28-55,57-65,67-68,76,79-123,126
+apps/ios/Seed/recipe-11.json
+  h_6bbd00fe0a456a 28-63,67-68,76-121,126
+apps/ios/Seed/recipe-12.json
+  h_6bbd00fe0a456a 28-46,48-65,67-68,76-88,91-123,126
+packages/contracts/seed/recipe-01.json
+  h_6bbd00fe0a456a 28-55,59-68,76-121,126
+packages/contracts/seed/recipe-02.json
+  h_6bbd00fe0a456a 28,30-31,34-69,76-121,126
+packages/contracts/seed/recipe-03.json
+  h_6bbd00fe0a456a 28-63,68,76-126,131
+packages/contracts/seed/recipe-04.json
+  h_6bbd00fe0a456a 28-63,65,67-68,76-116,121
+packages/contracts/seed/recipe-05.json
+  h_6bbd00fe0a456a 28-37,39-65,67-68,76-121,126
+packages/contracts/seed/recipe-06.json
+  h_6bbd00fe0a456a 28-46,48-65,67-68,76-111,116
+packages/contracts/seed/recipe-07.json
+  h_6bbd00fe0a456a 28,30-31,34-69,76-121,126
+packages/contracts/seed/recipe-08.json
+  h_6bbd00fe0a456a 28-63,68,76-121,126
+packages/contracts/seed/recipe-09.json
+  h_6bbd00fe0a456a 28-63,68,76,79-128,131
+packages/contracts/seed/recipe-10.json
+  h_6bbd00fe0a456a 28-55,57-65,67-68,76,79-123,126
+packages/contracts/seed/recipe-11.json
+  h_6bbd00fe0a456a 28-63,67-68,76-121,126
+packages/contracts/seed/recipe-12.json
+  h_6bbd00fe0a456a 28-46,48-65,67-68,76-88,91-123,126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e704047c047f26207a07a6ea0655a09624c4acfd",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
