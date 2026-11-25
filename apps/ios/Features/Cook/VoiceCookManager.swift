@@ -176,6 +176,11 @@ public final class LiveVoiceInput: VoiceAudioInput {
     /// zero transcripts ("shows listening but no reply").
     private func startRecognition() {
         guard shouldKeepListening else { return }
+        // Fresh task = fresh utterance stream: clear within-task duplicate
+        // suppression so repeating the same word ("next", "repeat") is heard
+        // again. Keeps suppression within a single task only.
+        lastForwarded = ""
+        lastPartialForwarded = ""
         generation += 1
         let myGeneration = generation
         // Stale task/request from the previous generation: end them; their
@@ -345,10 +350,19 @@ public final class VoiceCookManager {
     public private(set) var isReadingAloud = false
     public private(set) var isListening = false
     public var lastReply = ""
-    /// Last transcript the recognizer delivered (live partials + finals).
+    /// Latest transcript the recognizer delivered (live partials + finals).
     /// Shown in the pill so the cook can tell "heard but not understood"
     /// apart from "not hearing". Updated for both live and simulated input.
     public var lastHeardTranscript = ""
+    /// TEMPORARY TestFlight debug caption (no Xcode): one-line summary of
+    /// the last transcript's path through echo/front/parse/reply. Shown
+    /// under the Heard line in `CookModeView.voiceHeardView`.
+    public var lastDebugLine = ""
+    /// Pre-barge-in arrival snapshot for the debug line (captured in
+    /// `startListening` before `stopSpeakingOutput()` clears `isSpeaking`).
+    private var lastArrivalWasSpeaking = false
+    private var lastArrivalEcho = false
+    private var lastArrivalTranscript = ""
     /// Latest recognition failure, if any. Set by the input's error path
     /// (deduped against retry-loop repeats), cleared on the next transcript
     /// or stop. Shown in the pill so silent task death is diagnosable.
@@ -550,13 +564,23 @@ public final class VoiceCookManager {
         }
         audioInput?.start(onTranscript: { [weak self] transcript in
             guard let self else { return }
-            if self.synthesizer.isSpeaking {
+            // Snapshot arrival state BEFORE barge-in handling for the
+            // temporary DEBUG line (stopSpeakingOutput clears isSpeaking).
+            let wasSpeaking = self.synthesizer.isSpeaking
+            let echo = self.isEchoOfLastSpoken(transcript)
+            self.lastArrivalWasSpeaking = wasSpeaking
+            self.lastArrivalEcho = echo
+            self.lastArrivalTranscript = transcript
+            if wasSpeaking {
                 // Barge-in path: with hardware echo cancellation (voiceChat
                 // mode) the mic stays live while replies play. Our own audio
                 // is still the likeliest transcript — drop it when it matches
                 // what we just spoke; otherwise stop talking and obey the
                 // cook ("repeat" / "stop speaking" over a read-aloud).
-                if self.isEchoOfLastSpoken(transcript) { return }
+                if echo {
+                    self.lastDebugLine = "DEBUG final=true speaking=true echo=true front=\(self.isAppFrontmost) parse=\(self.debugParseLabel(parseVoiceCommand(transcript))) replied=false"
+                    return
+                }
                 self.stopSpeakingOutput()
             }
             // Record what was heard BEFORE handling, so the pill can show
@@ -564,6 +588,8 @@ public final class VoiceCookManager {
             // transcript also means recovery: drop any earlier error.
             self.lastHeardTranscript = transcript
             self.listeningError = nil
+            // Preliminary line; `handle` overwrites with parse + replied.
+            self.lastDebugLine = "DEBUG final=true speaking=\(wasSpeaking) echo=\(echo) front=\(self.isAppFrontmost) parse=... replied=..."
             onTranscript(transcript)
         })
         if let live = audioInput as? LiveVoiceInput {
@@ -618,6 +644,7 @@ public final class VoiceCookManager {
         audioInput?.stop()
         isListening = false
         lastHeardTranscript = ""
+        lastDebugLine = ""
         listeningError = nil
     }
 
@@ -712,9 +739,28 @@ public final class VoiceCookManager {
                        session: CookSession,
                        ingredients: [VoiceIngredient],
                        steps: [String]) -> Bool {
-        guard isAppFrontmost else { return false }
+        // Prefer the pre-barge-in arrival snapshot when the transcript
+        // matches what startListening just captured; otherwise sample live.
+        let speakingAtArrival: Bool
+        let echoAtArrival: Bool
+        if transcript == lastArrivalTranscript {
+            speakingAtArrival = lastArrivalWasSpeaking
+            echoAtArrival = lastArrivalEcho
+        } else {
+            speakingAtArrival = synthesizer.isSpeaking
+            echoAtArrival = isEchoOfLastSpoken(transcript)
+        }
+        let front = isAppFrontmost
+        let cmd = parseVoiceCommand(transcript)
+        let parseLabel = debugParseLabel(cmd)
+        guard front else {
+            lastDebugLine = "DEBUG final=true speaking=\(speakingAtArrival) echo=\(echoAtArrival) front=false parse=\(parseLabel) replied=false"
+            return false
+        }
+        let replyBefore = lastReply
         let tuples = ingredients.map { (id: $0.id, name: $0.name) }
-        switch parseVoiceCommand(transcript) {
+        var handled = true
+        switch cmd {
         case .next:
             session.next()
             reply("Next step.")
@@ -836,9 +882,11 @@ public final class VoiceCookManager {
         case .unknown:
             lastReply = "Sorry, I didn't catch that."
             speak(lastReply)
-            return false
+            handled = false
         }
-        return true
+        let replied = (lastReply != replyBefore)
+        lastDebugLine = "DEBUG final=true speaking=\(speakingAtArrival) echo=\(echoAtArrival) front=\(front) parse=\(parseLabel) replied=\(replied)"
+        return handled
     }
 
     /// Tuple compatibility overload: the CookModeView lane passes
@@ -896,6 +944,29 @@ public final class VoiceCookManager {
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { !$0.isEmpty }
             .joined(separator: " ")
+    }
+
+    /// Short label for the TEMPORARY TestFlight DEBUG line.
+    func debugParseLabel(_ cmd: VoiceCommand) -> String {
+        switch cmd {
+        case .next: return "next"
+        case .previous: return "previous"
+        case .repeatStep: return "repeat"
+        case .goToStep(let n): return n == VoiceCommand.lastStep ? "goto-last" : "goto\(n)"
+        case .startOver: return "startover"
+        case .readIngredients: return "ingredients"
+        case .ingredientAmount(let n): return "amount:\(n)"
+        case .crossOff(let n): return "crossoff:\(n)"
+        case .uncross(let n): return "uncross:\(n)"
+        case .doubleScale: return "double"
+        case .halveScale: return "halve"
+        case .resetScale: return "reset"
+        case .addToList(let l): return "addtolist:\(l ?? "-")"
+        case .startTimer(let s, _): return s.map { "timer\($0)s" } ?? "timer"
+        case .stopSpeaking: return "stop-speaking"
+        case .stopCooking: return "stop-cooking"
+        case .unknown: return "unknown"
+        }
     }
 
     private func voiceDurationString(_ seconds: Int) -> String {

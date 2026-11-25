@@ -583,14 +583,23 @@ public struct CookModeView: View {
     /// "heard but not understood" from "not hearing". Shown above the reply.
     /// Updates live as partial words arrive, settling on the final.
     private var voiceHeardView: some View {
-        Text("Heard: “\(voiceManager.lastHeardTranscript)”")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .multilineTextAlignment(.leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 6)
-            .accessibilityLabel("Heard: \(voiceManager.lastHeardTranscript)")
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Heard: “\(voiceManager.lastHeardTranscript)”")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityLabel("Heard: \(voiceManager.lastHeardTranscript)")
+            if !voiceManager.lastDebugLine.isEmpty {
+                Text(voiceManager.lastDebugLine)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
     }
 
     /// Recognition failure, if any (no network, recognizer busy, ...).
