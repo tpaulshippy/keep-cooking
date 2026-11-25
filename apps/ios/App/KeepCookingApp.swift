@@ -960,6 +960,11 @@ struct DrawerShellView: View {
 
     // MARK: Center slot — contextual single header
 
+    /// "1 recipe" vs "N recipes" for the pill + VoiceOver.
+    private var recipeCountText: String {
+        visibleRecipeCount == 1 ? "1 recipe" : "\(visibleRecipeCount) recipes"
+    }
+
     @ViewBuilder
     private var centerSlot: some View {
         if selection == .recipes {
@@ -970,7 +975,7 @@ struct DrawerShellView: View {
                     Text(librarySection.title)
                         .font(.headline)
                         .lineLimit(1)
-                    Text("\(visibleRecipeCount) recipes")
+                    Text(recipeCountText)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -985,7 +990,7 @@ struct DrawerShellView: View {
                 .contentShape(Capsule())
                 .frame(minWidth: 44, minHeight: 44)
             }
-            .accessibilityLabel("Recipe filter: \(librarySection.title), \(visibleRecipeCount) recipes. Activate to change filter.")
+            .accessibilityLabel("Recipe filter: \(librarySection.title), \(recipeCountText). Activate to change filter.")
             .accessibilityIdentifier("filter-pill")
         } else {
             Text(selection.title)

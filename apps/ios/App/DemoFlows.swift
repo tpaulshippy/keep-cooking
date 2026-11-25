@@ -1455,10 +1455,12 @@ struct ListsTabView: View {
                 } else {
                     ShopListsView(lists: snapshots, onToggle: toggle, onAddItem: addItem)
                         .accessibilityIdentifier("lists-view")
-                        .toolbar(.hidden, for: .navigationBar)
                 }
             }
         }
+        // Stack-level so BOTH branches (empty + populated) hide the root
+        // bar — same pattern as the library root. Pushed views unaffected.
+        .toolbar(.hidden, for: .navigationBar)
     }
 
     private var snapshots: [ShoppingListSnapshot] {
