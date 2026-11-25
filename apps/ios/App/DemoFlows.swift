@@ -61,33 +61,177 @@ private func photoURL(forKey key: String?) -> URL? {
 
 // MARK: - Recipes tab (live list → detail → cook / add-to-list)
 
+// MARK: - Library sections + sort (bottom-bar revamp, Paprika-inspired)
+
+/// Top-pill filter sections. All/Favorites/Uncategorized/Trash are real
+/// SwiftData-backed filters; Most Recent sorts by updatedAt; Top Rated
+/// filters rating >= 4. No favorite flag exists on Recipe, so Favorites
+/// matches the "Favorites" category (case-insensitive).
+enum LibrarySection: String, CaseIterable, Hashable {
+    case all, recent, topRated, favorites, uncategorized, trash
+
+    var title: String {
+        switch self {
+        case .all: return "All Recipes"
+        case .recent: return "Most Recent"
+        case .topRated: return "Top Rated"
+        case .favorites: return "Favorites"
+        case .uncategorized: return "Uncategorized"
+        case .trash: return "Trash"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .all: return "tray.full"
+        case .recent: return "clock"
+        case .topRated: return "star"
+        case .favorites: return "heart"
+        case .uncategorized: return "tag.slash"
+        case .trash: return "trash"
+        }
+    }
+}
+
+enum LibrarySort: String, CaseIterable, Hashable {
+    case title, recent, rating
+
+    var title: String {
+        switch self {
+        case .title: return "Title"
+        case .recent: return "Most Recent"
+        case .rating: return "Top Rated"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .title: return "textformat"
+        case .recent: return "clock"
+        case .rating: return "star"
+        }
+    }
+}
+
+/// Add-menu navigation targets (Menu buttons can't host NavigationLinks).
+enum LibraryAddDestination: Hashable {
+    case clip, ocr, caption, duplicates
+}
+
 struct RecipeLibraryView: View {
     @Environment(\.modelContext) private var context
     @Query(filter: #Predicate<Recipe> { !$0.deleted },
            sort: [SortDescriptor(\Recipe.title)])
     private var recipes: [Recipe]
+    @Query(filter: #Predicate<Recipe> { $0.deleted },
+           sort: [SortDescriptor(\Recipe.updatedAt, order: .reverse)])
+    private var trashed: [Recipe]
+    @Query(sort: [SortDescriptor(\Cookbook.name)])
+    private var cookbooks: [Cookbook]
     @State private var searchText = ""
     @State private var selectedCategory: String? = nil
+    @State private var section: LibrarySection = .all
+    @State private var sort: LibrarySort = .title
+    @State private var showFilterSheet = false
+    @State private var showCategorize = false
+    @State private var showCookbookPicker = false
+    @State private var showNewCookbook = false
+    @State private var newCookbookName = ""
+    @State private var newCategoryText = ""
+    @State private var pendingCats: Set<String> = []
+    @State private var addDestination: LibraryAddDestination?
+    @State private var createdRecipe: Recipe?
+    @State private var isSelecting = false
+    @State private var selection: Set<String> = []
+    @State private var notice: String?
 
     private var allCategories: [String] {
         Array(Set(recipes.flatMap { $0.categories })).sorted()
+    }
+
+    private var base: [Recipe] {
+        switch section {
+        case .all, .recent:
+            return recipes
+        case .topRated:
+            return recipes.filter { ($0.rating ?? 0) >= 4 }
+        case .favorites:
+            return recipes.filter { $0.categories.contains { $0.lowercased() == "favorites" } }
+        case .uncategorized:
+            return recipes.filter { $0.categories.isEmpty }
+        case .trash:
+            return trashed
+        }
+    }
+
+    private func count(for target: LibrarySection) -> Int {
+        switch target {
+        case .all, .recent:
+            return recipes.count
+        case .topRated:
+            return recipes.filter { ($0.rating ?? 0) >= 4 }.count
+        case .favorites:
+            return recipes.filter { $0.categories.contains { $0.lowercased() == "favorites" } }.count
+        case .uncategorized:
+            return recipes.filter { $0.categories.isEmpty }.count
+        case .trash:
+            return trashed.count
+        }
+    }
+
+    private var recipesById: [String: Recipe] {
+        Dictionary(uniqueKeysWithValues: (recipes + trashed).map { ($0.id, $0) })
     }
 
     private var filtered: [Recipe] {
         // Single source of truth for search behavior — see LibrarySearch.swift.
         // A selection whose category vanished (e.g. last recipe deleted) is
         // ignored so the list can't strand on an empty "No results" state.
-        let categories = selectedCategory.flatMap { sel in
+        // Category chips don't apply inside Trash.
+        let categories = (section == .trash) ? [] : selectedCategory.flatMap { sel in
             allCategories.contains(sel) ? [sel] : nil
         } ?? []
-        return filterRecipes(recipes, filter: AdvancedFilter(
+        let searched = filterRecipes(base, filter: AdvancedFilter(
             query: searchText, categories: categories))
+        switch sort {
+        case .title:
+            return searched.sorted {
+                $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+            }
+        case .recent:
+            return searched.sorted { $0.updatedAt > $1.updatedAt }
+        case .rating:
+            return searched.sorted { ($0.rating ?? -1) > ($1.rating ?? -1) }
+        }
     }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                if !allCategories.isEmpty {
+                // Top section pill: "<Filter> / N recipes" opens the filter sheet.
+                Button {
+                    showFilterSheet = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(section.title)
+                            .font(.headline)
+                        Text("\(filtered.count) recipes")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Image(systemName: "chevron.down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(Color(.secondarySystemBackground))
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .frame(minHeight: 44)
+                .padding(.top, 8)
+                .accessibilityIdentifier("filter-pill")
+                if !allCategories.isEmpty && section != .trash {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             categoryChip(title: "All", selected: selectedCategory == nil) {
@@ -103,60 +247,608 @@ struct RecipeLibraryView: View {
                         .padding(.vertical, 8)
                     }
                 }
+                if let notice {
+                    Text(notice)
+                        .font(.subheadline)
+                        .foregroundStyle(.green)
+                        .padding(.vertical, 4)
+                        .accessibilityIdentifier("library-notice")
+                }
                 Group {
-                    if recipes.isEmpty {
+                    if section == .trash && trashed.isEmpty {
+                        ContentUnavailableView("Trash is empty", systemImage: "trash",
+                            description: Text("Deleted recipes move here and sync as tombstones."))
+                    } else if section != .trash && recipes.isEmpty {
                         VStack(spacing: 8) {
                             ContentUnavailableView("No recipes yet", systemImage: "book.pages",
                                 description: Text("Seeds load on first launch — airplane mode works."))
                             ActionsCTA()
                         }
                     } else if filtered.isEmpty {
-                        ContentUnavailableView.search(text: searchText)
+                        if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            ContentUnavailableView("No recipes here", systemImage: section.icon,
+                                description: Text("Nothing in \(section.title) yet."))
+                        } else {
+                            ContentUnavailableView.search(text: searchText)
+                        }
                     } else {
                         List {
                             ForEach(filtered, id: \.id) { recipe in
-                                NavigationLink {
-                                    RecipeDetailView(recipe: recipe)
-                                } label: {
-                                    HStack(spacing: 12) {
-                                        recipeThumb(for: recipe)
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(recipe.title).font(.headline)
-                                            Text(librarySubtitle(for: recipe))
-                                                .font(.caption).foregroundStyle(.secondary)
-                                                .lineLimit(2)
-                                        }
+                                if isSelecting {
+                                    Button {
+                                        toggleSelection(recipe)
+                                    } label: {
+                                        rowContent(for: recipe, showCheck: true)
                                     }
-                                    .padding(.vertical, 2)
+                                    .buttonStyle(.plain)
+                                    .accessibilityIdentifier("select-row-\(recipe.id)")
+                                } else if section == .trash {
+                                    HStack {
+                                        rowContent(for: recipe, showCheck: false)
+                                        Spacer()
+                                        Button("Restore") { restore(recipe) }
+                                            .buttonStyle(.bordered)
+                                            .frame(minHeight: 44)
+                                    }
+                                } else {
+                                    NavigationLink {
+                                        RecipeDetailView(recipe: recipe)
+                                    } label: {
+                                        rowContent(for: recipe, showCheck: false)
+                                    }
                                 }
                             }
-                            .onDelete(perform: tombstone)
+                            .onDelete(perform: section == .trash || isSelecting ? nil : tombstone)
                         }
                         .listStyle(.insetGrouped)
-                        .contentMargins(.bottom, 90, for: .scrollContent)
-                        .safeAreaPadding(.bottom, 8)
+                        .contentMargins(.bottom, 148, for: .scrollContent)
                         .accessibilityIdentifier("recipe-list")
                     }
                 }
             }
             .navigationTitle("Recipes")
-            .searchable(text: $searchText, prompt: "Search recipes")
-            .toolbar(content: {
+            .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    SwiftUI.Menu(content: {
-                        NavigationLink(destination: ClipView()) {
-                            Text("Clip recipe URL")
+                    SwiftUI.Menu {
+                        Button {
+                            createNew()
+                        } label: {
+                            Label("Create New Recipe", systemImage: "square.and.pencil")
                         }
-                        NavigationLink(destination: OCRScanView()) {
-                            Text("Scan cookbook (OCR)")
+                        Button {
+                            addDestination = .ocr
+                        } label: {
+                            Label("Scan cookbook", systemImage: "camera.viewfinder")
                         }
-                    }, label: {
+                        Button {
+                            addDestination = .clip
+                        } label: {
+                            Label("Clip URL", systemImage: "link")
+                        }
+                        Button {
+                            addDestination = .caption
+                        } label: {
+                            Label("Import caption", systemImage: "captions.bubble")
+                        }
+                    } label: {
                         Image(systemName: "plus")
+                            .frame(minWidth: 44, minHeight: 44)
                             .accessibilityIdentifier("add-recipe-button")
-                    })
+                    }
                 }
-            })
+            }
+            .overlay(alignment: .bottom) {
+                if isSelecting { selectionBar } else { bottomBar }
+            }
+            .sheet(isPresented: $showFilterSheet) { filterSheet }
+            .sheet(isPresented: $showCategorize) { categorizeSheet }
+            .sheet(isPresented: $showCookbookPicker) { cookbookSheet }
+            .onChange(of: section) {
+                // Filters changed underfoot: drop IDs that are no longer
+                // visible so bulk actions can't hit hidden recipes.
+                selection.formIntersection(filtered.map { $0.id })
+            }
+            .onChange(of: selectedCategory) {
+                selection.formIntersection(filtered.map { $0.id })
+            }
+            .alert("New cookbook", isPresented: $showNewCookbook) {
+                TextField("Name", text: $newCookbookName)
+                Button("Create", action: createCookbook)
+                Button("Cancel", role: .cancel) { newCookbookName = "" }
+            }
+            .navigationDestination(item: $addDestination) { dest in
+                switch dest {
+                case .clip: ClipView()
+                case .ocr: OCRScanView()
+                case .caption: CaptionsImportView()
+                case .duplicates: DuplicateReviewView(recipes: Array(recipes))
+                }
+            }
+            .navigationDestination(isPresented: Binding(
+                get: { createdRecipe != nil },
+                set: { if !$0 { createdRecipe = nil } }
+            )) {
+                if let createdRecipe { RecipeDetailView(recipe: createdRecipe) }
+            }
         }
+    }
+
+    // MARK: - Rows
+
+    private func rowContent(for recipe: Recipe, showCheck: Bool) -> some View {
+        HStack(spacing: 12) {
+            if showCheck {
+                Image(systemName: selection.contains(recipe.id)
+                    ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(selection.contains(recipe.id) ? Color.accentColor : .secondary)
+                    .frame(minWidth: 44, minHeight: 44)
+            }
+            recipeThumb(for: recipe)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(recipe.title).font(.headline)
+                Text(librarySubtitle(for: recipe))
+                    .font(.caption).foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    // MARK: - Bottom pill bar (normal mode)
+
+    private var bottomBar: some View {
+        HStack(spacing: 8) {
+            if section != .trash {
+                Button("Edit") { enterSelection() }
+                    .font(.subheadline.weight(.semibold))
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("edit-button")
+            }
+            HStack(spacing: 4) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("Search", text: $searchText)
+                    .accessibilityIdentifier("library-search-field")
+                    .submitLabel(.search)
+            }
+            .padding(.horizontal, 12)
+            .frame(minHeight: 44)
+            .background(Color(.secondarySystemBackground))
+            .clipShape(Capsule())
+            SwiftUI.Menu {
+                Picker("Sort", selection: $sort) {
+                    ForEach(LibrarySort.allCases, id: \.self) { s in
+                        Label(s.title, systemImage: s.icon).tag(s)
+                    }
+                }
+                Button {
+                    addDestination = .duplicates
+                } label: {
+                    Label("Review duplicates", systemImage: "square.stack.3d.up")
+                }
+                Button {
+                    newCookbookName = ""
+                    showNewCookbook = true
+                } label: {
+                    Label("New cookbook", systemImage: "book.closed")
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle.fill")
+                    .font(.title2)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .accessibilityIdentifier("more-button")
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
+        .shadow(color: .black.opacity(0.15), radius: 8, y: 2)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+        .accessibilityIdentifier("bottom-bar")
+    }
+
+    // MARK: - Selection toolbar
+
+    private var allVisibleSelected: Bool {
+        let visibleIds = Set(filtered.map { $0.id })
+        return !visibleIds.isEmpty && selection == visibleIds
+    }
+
+    private var selectionBar: some View {
+        VStack(spacing: 0) {
+            Text("\(selection.count) selected")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 2)
+            HStack(spacing: 4) {
+                Button {
+                    if allVisibleSelected {
+                        selection = []
+                    } else {
+                        selection = Set(filtered.map { $0.id })
+                    }
+                } label: {
+                    Image(systemName: allVisibleSelected
+                        ? "checkmark.square.fill" : "square")
+                        .font(.title3)
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .accessibilityIdentifier("select-all-button")
+                Button {
+                    pendingCats = []
+                    newCategoryText = ""
+                    showCategorize = true
+                } label: {
+                    Image(systemName: "tag")
+                        .font(.title3)
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .disabled(selection.isEmpty)
+                .accessibilityIdentifier("categorize-button")
+                Button {
+                    addSelectedToShoppingList()
+                } label: {
+                    Image(systemName: "cart.badge.plus")
+                        .font(.title3)
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .disabled(selection.isEmpty)
+                .accessibilityIdentifier("bulk-add-to-list-button")
+                SwiftUI.Menu {
+                    Button {
+                        showCookbookPicker = true
+                    } label: {
+                        Label("Change cookbook", systemImage: "book.closed")
+                    }
+                    .disabled(selection.isEmpty)
+                    Button {
+                        addSelectedToPlanner()
+                    } label: {
+                        Label("Add to meal planner", systemImage: "calendar.badge.plus")
+                    }
+                    .disabled(selection.isEmpty)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.title3)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .accessibilityIdentifier("bulk-more-button")
+                }
+                Button(role: .destructive) {
+                    deleteSelected()
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.title3)
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .disabled(selection.isEmpty)
+                .accessibilityIdentifier("bulk-delete-button")
+                Spacer(minLength: 0)
+                Button("Cancel") { exitSelection() }
+                    .font(.subheadline.weight(.semibold))
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("selection-cancel-button")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+            .background(.ultraThinMaterial)
+            .clipShape(Capsule())
+            .shadow(color: .black.opacity(0.15), radius: 8, y: 2)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+        }
+        .accessibilityIdentifier("selection-bar")
+    }
+
+    // MARK: - Filter sheet
+
+    private var filterSheet: some View {
+        NavigationStack {
+            List {
+                ForEach(LibrarySection.allCases, id: \.self) { target in
+                    Button {
+                        section = target
+                        // Sections with an intrinsic order adopt it as the sort.
+                        if target == .recent { sort = .recent }
+                        else if target == .topRated { sort = .rating }
+                        else if sort == .recent || sort == .rating { sort = .title }
+                        if target != .trash { /* keep chips */ } else { selectedCategory = nil }
+                        showFilterSheet = false
+                    } label: {
+                        HStack {
+                            Image(systemName: target.icon)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 28)
+                            Text(target.title)
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Text("\(count(for: target))")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            if target == section {
+                                Image(systemName: "checkmark")
+                                    .font(.subheadline.weight(.semibold))
+                            }
+                        }
+                        .frame(minHeight: 44)
+                    }
+                    .accessibilityIdentifier("filter-row-\(target.rawValue)")
+                }
+            }
+            .navigationTitle("Filter")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showFilterSheet = false }
+                        .frame(minHeight: 44)
+                }
+            }
+            .presentationDetents([.medium])
+        }
+    }
+
+    // MARK: - Categorize sheet (bulk)
+
+    private var categorizeSheet: some View {
+        NavigationStack {
+            List {
+                Section("Apply to \(selection.count) recipes") {
+                    ForEach(allCategories, id: \.self) { cat in
+                        Button {
+                            if pendingCats.contains(cat) { pendingCats.remove(cat) }
+                            else { pendingCats.insert(cat) }
+                        } label: {
+                            HStack {
+                                Text(cat).foregroundStyle(.primary)
+                                Spacer()
+                                if pendingCats.contains(cat) {
+                                    Image(systemName: "checkmark")
+                                        .font(.subheadline.weight(.semibold))
+                                }
+                            }
+                        }
+                        .frame(minHeight: 44)
+                    }
+                }
+                Section("New category") {
+                    HStack {
+                        TextField("Category name", text: $newCategoryText)
+                            .submitLabel(.done)
+                        Button("Add") { applyCategorize() }
+                            .disabled(pendingCats.isEmpty
+                                && newCategoryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+            }
+            .navigationTitle("Categorize")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showCategorize = false }
+                        .frame(minHeight: 44)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Apply", action: applyCategorize)
+                        .frame(minHeight: 44)
+                        .disabled(pendingCats.isEmpty
+                            && newCategoryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .presentationDetents([.medium])
+        }
+    }
+
+    // MARK: - Cookbook picker sheet (bulk)
+
+    private var cookbookSheet: some View {
+        NavigationStack {
+            List {
+                if cookbooks.filter({ !$0.deleted }).isEmpty {
+                    Text("No cookbooks yet — create one below.")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(cookbooks.filter { !$0.deleted }, id: \.id) { book in
+                    Button {
+                        toggleCookbookMembership(book)
+                    } label: {
+                        HStack {
+                            Text(book.name).foregroundStyle(.primary)
+                            Spacer()
+                            Text("\(book.recipeIds.count)")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                            if selection.allSatisfy({ book.recipeIds.contains($0) }) && !selection.isEmpty {
+                                Image(systemName: "checkmark")
+                                    .font(.subheadline.weight(.semibold))
+                            }
+                        }
+                    }
+                    .frame(minHeight: 44)
+                }
+                Section("New cookbook") {
+                    HStack {
+                        TextField("Name", text: $newCookbookName)
+                            .submitLabel(.done)
+                        Button("Create & add") {
+                            let book = Cookbook(householdId: "hh-demo", name: newCookbookName
+                                .trimmingCharacters(in: .whitespacesAndNewlines),
+                                deviceId: currentDeviceId())
+                            context.insert(book)
+                            try? context.save()
+                            for id in selection {
+                                var ids = book.recipeIds
+                                if !ids.contains(id) { ids.append(id) }
+                                book.recipeIds = ids
+                            }
+                            book.updatedAt = Date()
+                            try? context.save()
+                            newCookbookName = ""
+                            flash("Added \(selection.count) to \(book.name)")
+                        }
+                        .disabled(newCookbookName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+            }
+            .navigationTitle("Change cookbook")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showCookbookPicker = false }
+                        .frame(minHeight: 44)
+                }
+            }
+            .presentationDetents([.medium])
+        }
+    }
+
+    // MARK: - Selection + bulk actions
+
+    private func enterSelection() {
+        selection = []
+        isSelecting = true
+    }
+
+    private func exitSelection() {
+        selection = []
+        isSelecting = false
+    }
+
+    private func toggleSelection(_ recipe: Recipe) {
+        if selection.contains(recipe.id) { selection.remove(recipe.id) }
+        else { selection.insert(recipe.id) }
+    }
+
+    private func flash(_ message: String) {
+        notice = message
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2.5))
+            if notice == message { notice = nil }
+        }
+    }
+
+    private func createNew() {
+        let recipe = Recipe(householdId: "hh-demo", title: "Untitled Recipe",
+            deviceId: currentDeviceId())
+        context.insert(recipe)
+        try? context.save()
+        createdRecipe = recipe
+    }
+
+    private func restore(_ recipe: Recipe) {
+        recipe.deleted = false
+        recipe.updatedAt = Date()
+        try? context.save()
+    }
+
+    private func createCookbook() {
+        let name = newCookbookName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        context.insert(Cookbook(householdId: "hh-demo", name: name,
+            deviceId: currentDeviceId()))
+        try? context.save()
+        newCookbookName = ""
+        flash("Created \(name)")
+    }
+
+    private func applyCategorize() {
+        var cats = pendingCats
+        let typed = newCategoryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !typed.isEmpty { cats.insert(typed) }
+        guard !cats.isEmpty else { return }
+        var count = 0
+        let byId = recipesById
+        for id in selection {
+            guard let recipe = byId[id], !recipe.deleted else { continue }
+            var existing = recipe.categories
+            for cat in cats where !existing.contains(where: { $0.lowercased() == cat.lowercased() }) {
+                existing.append(cat)
+            }
+            recipe.categories = existing
+            recipe.updatedAt = Date()
+            count += 1
+        }
+        try? context.save()
+        pendingCats = []
+        newCategoryText = ""
+        showCategorize = false
+        flash("Categorized \(count) recipes")
+    }
+
+    private func toggleCookbookMembership(_ book: Cookbook) {
+        let ids = Array(selection)
+        var members = book.recipeIds
+        if ids.allSatisfy({ members.contains($0) }) {
+            members.removeAll(where: { selection.contains($0) })
+        } else {
+            for id in ids where !members.contains(id) { members.append(id) }
+        }
+        book.recipeIds = members
+        book.updatedAt = Date()
+        try? context.save()
+    }
+
+    /// Aggregates the selected recipes' ingredients into the "Shopping" list
+    /// (same aisle-guess + scale pipeline as plan-to-list).
+    private func addSelectedToShoppingList() {
+        let deviceId = currentDeviceId()
+        let byId = recipesById
+        let inputs = selection.compactMap { byId[$0] }.flatMap { recipe in
+            recipe.ingredients.map { ing in
+                PlanGroceryInput(name: ing.name, quantity: ing.quantity, unit: ing.unit,
+                    baseServings: recipe.servings, targetServings: recipe.servings,
+                    recipeId: recipe.id)
+            }
+        }
+        let lines = aggregateWeekToList(inputs)
+        let list: ShoppingList
+        if let existing = (try? context.fetch(FetchDescriptor<ShoppingList>()))?.first(where: {
+            $0.name == "Shopping" && !$0.deleted
+        }) {
+            list = existing
+        } else {
+            list = ShoppingList(householdId: "hh-demo", name: "Shopping", deviceId: deviceId)
+            context.insert(list)
+        }
+        for line in lines {
+            // Same pipeline as plan-to-list: fraction display with unit, and
+            // the relationship set so ListsTabView (which renders list.items)
+            // shows the rows.
+            let qty = line.totalQuantity.map { scaledDisplay(name: "", quantity: $0, unit: line.unit, factor: 1).trimmingCharacters(in: .whitespaces) } ?? ""
+            let item = ListItem(listId: list.id, name: line.name, quantity: qty,
+                aisle: guessAisle(for: line.name),
+                recipeId: line.recipeIds.first, deviceId: deviceId)
+            item.shoppingList = list
+            context.insert(item)
+        }
+        try? context.save()
+        flash("Added \(lines.count) items to Shopping")
+    }
+
+    /// Plans each selected recipe as dinner today.
+    private func addSelectedToPlanner() {
+        let deviceId = currentDeviceId()
+        let today = Calendar.current.startOfDay(for: Date())
+        var count = 0
+        let byId = recipesById
+        for id in selection {
+            guard let recipe = byId[id], !recipe.deleted else { continue }
+            context.insert(Plan(householdId: "hh-demo", date: today, meal: .dinner,
+                recipeId: recipe.id, servings: recipe.servings, deviceId: deviceId))
+            count += 1
+        }
+        try? context.save()
+        flash("Planned \(count) meals for today")
+    }
+
+    private func deleteSelected() {
+        let byId = recipesById
+        for id in selection {
+            guard let recipe = byId[id] else { continue }
+            recipe.deleted = true
+            recipe.updatedAt = Date()
+        }
+        try? context.save()
+        exitSelection()
     }
 
     private func categoryChip(title: String, selected: Bool, action: @escaping () -> Void) -> some View {
@@ -250,6 +942,19 @@ struct RecipeDetailView: View {
     @State private var addedMessage: String?
     @State private var checked: Set<String> = []
     @State private var servings: Double
+    @State private var pane: DetailPane = .ingredients
+
+    /// Paprika-style segmented pane (custom capsule toggle, no copy).
+    private enum DetailPane: String, CaseIterable {
+        case ingredients
+        case directions
+        var title: String {
+            switch self {
+            case .ingredients: return "Ingredients"
+            case .directions: return "Directions"
+            }
+        }
+    }
 
     init(recipe: Recipe) {
         self.recipe = recipe
@@ -275,137 +980,57 @@ struct RecipeDetailView: View {
     }
 
     var body: some View {
-        List {
-            // Photo hero
-            Section {
-                heroHeader
-            }
-            .listRowInsets(EdgeInsets())
-            // Meta row — Serves label never compresses: fixedSize + layoutPriority
-            // keep "Serves 4" on one line; time/rating hug trailing edge.
-            Section {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 8) {
-                        Text("Serves \(servingsDisplay)")
-                            .font(.subheadline)
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
-                            .layoutPriority(2)
-                            .accessibilityLabel("Serves \(servingsDisplay)")
-                        Stepper("", value: $servings, in: 1...24, step: 1)
-                            .labelsHidden()
-                            .fixedSize()
-                            .layoutPriority(1)
-                            .accessibilityLabel("Servings")
-                        Spacer(minLength: 8)
-                        if let total = totalMinutes {
-                            Label("\(total) min", systemImage: "clock")
-                                .font(.subheadline).foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .fixedSize(horizontal: true, vertical: false)
-                                .layoutPriority(1)
+        ZStack(alignment: .bottomTrailing) {
+            ScrollView {
+                VStack(spacing: 0) {
+                    heroHeader
+                    VStack(alignment: .leading, spacing: 14) {
+                        titleBlock
+                        metaRow
+                        if let addedMessage {
+                            confirmRow(addedMessage)
                         }
-                        if let rating = recipe.rating {
-                            Label(String(format: "%.1f", rating), systemImage: "star.fill")
-                                .font(.subheadline).foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .fixedSize(horizontal: true, vertical: false)
-                                .layoutPriority(1)
+                        paneToggle
+                        if pane == .ingredients {
+                            ingredientsPane
+                        } else {
+                            directionsPane
                         }
                     }
-                    if !recipe.categories.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack {
-                                ForEach(recipe.categories, id: \.self) { cat in
-                                    Text(cat).font(.caption)
-                                        .padding(.horizontal, 8).padding(.vertical, 4)
-                                        .background(Color(.secondarySystemBackground))
-                                        .clipShape(Capsule())
-                                }
-                            }
-                        }
-                    }
+                    .padding(.horizontal)
+                    .padding(.top, 12)
+                    // Clearance so the floating action cluster never
+                    // covers the last step / ingredient.
+                    .padding(.bottom, 110)
                 }
             }
-            Section("Ingredients (\(sortedIngredients.count))") {
-                ForEach(sortedIngredients) { ing in
-                    Button {
-                        if checked.contains(ing.id) { checked.remove(ing.id) }
-                        else { checked.insert(ing.id) }
-                    } label: {
-                        HStack {
-                            Image(systemName: checked.contains(ing.id)
-                                ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(checked.contains(ing.id) ? .green : .secondary)
-                            Text(ing.display.isEmpty ? ing.name : ing.display)
-                                .strikethrough(checked.contains(ing.id))
-                                .foregroundStyle(checked.contains(ing.id) ? .secondary : .primary)
-                                .multilineTextAlignment(.leading)
-                            Spacer()
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            Section("Steps (\(sortedSteps.count))") {
-                ForEach(Array(sortedSteps.enumerated()), id: \.element.id) { idx, step in
-                    HStack(alignment: .top, spacing: 10) {
-                        Text("\(idx + 1)")
-                            .font(.caption.weight(.bold))
-                            .frame(width: 24, height: 24)
-                            .background(Color.accentColor.opacity(0.15))
-                            .foregroundStyle(Color.accentColor)
-                            .clipShape(Circle())
-                        Text(step.text)
-                    }
-                    .padding(.vertical, 2)
-                }
-            }
-            Section {
-                NavigationLink {
-                    CookModeView(
-                        title: recipe.title,
-                        baseServings: recipe.servings,
-                        ingredients: recipe.ingredients.map {
-                            CookModeView.IngredientSnapshot(id: $0.id, name: $0.name,
-                                quantity: $0.quantity, unit: $0.unit)
-                        },
-                        steps: recipe.steps.map {
-                            CookModeView.StepSnapshot(id: $0.id, position: $0.position, text: $0.text)
-                        },
-                        initialServings: servings)
-                } label: {
-                    Label("Cook", systemImage: "frying.pan")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .accessibilityIdentifier("cook-button")
-                Button {
-                    addToList()
-                } label: {
-                    Label("Add to shopping list", systemImage: "cart.badge.plus")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("add-to-list-button")
-            }
-            // Confirmation sits directly under the button that triggers it.
-            if let addedMessage {
-                Section {
-                    HStack {
-                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                        Text(addedMessage).foregroundStyle(.primary)
-                    }
-                    .padding(.vertical, 4)
-                    .accessibilityIdentifier("added-confirm")
-                }
-            }
+            floatingActions
         }
         .navigationTitle(recipe.title)
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("recipe-detail-title")
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { addToList() } label: {
+                    Image(systemName: "cart.badge.plus")
+                }
+                .accessibilityIdentifier("add-to-list-button")
+                .accessibilityLabel("Add to shopping list")
+                Button { addToPlan() } label: {
+                    Image(systemName: "calendar.badge.plus")
+                }
+                .accessibilityLabel("Add to tonight's plan")
+                Button { toggleFavorite() } label: {
+                    Image(systemName: isFavorite ? "heart.fill" : "heart")
+                        .foregroundStyle(isFavorite ? .red : .primary)
+                }
+                .accessibilityLabel(isFavorite ? "Remove from favorites" : "Add to favorites")
+                ShareLink(item: shareText) {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .accessibilityLabel("Share recipe")
+            }
+        }
     }
 
     private var servingsDisplay: String {
@@ -419,7 +1044,7 @@ struct RecipeDetailView: View {
                 switch phase {
                 case .success(let img):
                     img.resizable().scaledToFill()
-                        .frame(height: 220).clipped()
+                        .frame(height: 180).clipped()
                 default:
                     placeholderHero
                 }
@@ -432,11 +1057,285 @@ struct RecipeDetailView: View {
     private var placeholderHero: some View {
         ZStack {
             LinearGradient(colors: [.orange, .red.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                .frame(height: 140)
+                .frame(height: 180)
             Image(systemName: "fork.knife.circle.fill")
                 .font(.system(size: 48))
                 .foregroundStyle(.white.opacity(0.9))
         }
+    }
+
+    // MARK: - Revamp: header / panes / floating actions
+
+    private var isFavorite: Bool { recipe.isFavorite }
+
+    private var shareText: String {
+        [recipe.title, recipe.recipeDescription]
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .joined(separator: "\n\n")
+    }
+
+    private var breadcrumb: String {
+        "My Cookbook › \(recipe.categories.first ?? "Uncategorized")"
+    }
+
+    private var cookDestination: some View {
+        CookModeView(
+            title: recipe.title,
+            baseServings: recipe.servings,
+            ingredients: recipe.ingredients.map {
+                CookModeView.IngredientSnapshot(id: $0.id, name: $0.name,
+                    quantity: $0.quantity, unit: $0.unit)
+            },
+            steps: recipe.steps.map {
+                CookModeView.StepSnapshot(id: $0.id, position: $0.position, text: $0.text)
+            },
+            initialServings: servings)
+    }
+
+    /// Title + tappable 1–5 star rating + source link + breadcrumb.
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(recipe.title)
+                .font(.title2.weight(.bold))
+            HStack(spacing: 0) {
+                ForEach(1...5, id: \.self) { star in
+                    let filled = Double(star) <= (recipe.rating ?? 0)
+                    Button { setRating(star) } label: {
+                        Image(systemName: filled ? "star.fill" : "star")
+                            .font(.title3)
+                            .foregroundStyle(filled ? .yellow : .secondary)
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Rate \(star) star\(star == 1 ? "" : "s")")
+                }
+            }
+            .padding(.leading, -12)
+            if !recipe.sourceUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               let url = URL(string: recipe.sourceUrl),
+               url.scheme != nil {
+                Link(destination: url) {
+                    Label(recipe.source.isEmpty ? (url.host ?? "Source") : recipe.source,
+                        systemImage: "arrow.up.right.square")
+                        .font(.subheadline)
+                }
+            }
+            Text(breadcrumb)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// Prep / total / servings meta row with icons.
+    private var metaRow: some View {
+        HStack(spacing: 16) {
+            if let prep = recipe.prepMinutes {
+                Label("\(prep) min prep", systemImage: "clock")
+            }
+            if let total = totalMinutes {
+                Label("\(total) min total", systemImage: "timer")
+            }
+            Label("Serves \(servingsDisplay)", systemImage: "person.2.fill")
+                .accessibilityLabel("Serves \(servingsDisplay)")
+        }
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+    }
+
+    private func confirmRow(_ message: String) -> some View {
+        HStack {
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+            Text(message).foregroundStyle(.primary)
+        }
+        .padding(.vertical, 4)
+        .accessibilityIdentifier("added-confirm")
+    }
+
+    /// Custom capsule Ingredients|Directions toggle (44pt targets).
+    private var paneToggle: some View {
+        HStack(spacing: 0) {
+            ForEach(DetailPane.allCases, id: \.self) { item in
+                Button { pane = item } label: {
+                    Text(item.title)
+                        .font(.subheadline.weight(item == pane ? .semibold : .regular))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(item == pane ? .isSelected : [])
+                .background(item == pane ? Color(.systemBackground) : Color.clear)
+                .clipShape(Capsule())
+                .foregroundStyle(item == pane ? .primary : .secondary)
+            }
+        }
+        .padding(4)
+        .background(Color(.secondarySystemBackground))
+        .clipShape(Capsule())
+    }
+
+    private var ingredientsPane: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Button("Reset servings") { servings = recipe.servings }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.blue)
+                Spacer()
+                Text("Serves \(servingsDisplay)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Stepper("", value: $servings, in: 1...24, step: 1)
+                    .labelsHidden()
+                    .accessibilityLabel("Servings")
+            }
+            .padding(.vertical, 4)
+            ForEach(sortedIngredients) { ing in
+                Button {
+                    if checked.contains(ing.id) { checked.remove(ing.id) }
+                    else { checked.insert(ing.id) }
+                } label: {
+                    HStack {
+                        Image(systemName: checked.contains(ing.id)
+                            ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(checked.contains(ing.id) ? .green : .secondary)
+                        Text(ing.display.isEmpty ? ing.name : ing.display)
+                            .strikethrough(checked.contains(ing.id))
+                            .foregroundStyle(checked.contains(ing.id) ? .secondary : .primary)
+                            .multilineTextAlignment(.leading)
+                        Spacer()
+                    }
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Divider()
+            }
+        }
+    }
+
+    private var directionsPane: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("DESCRIPTION")
+            Text(recipe.recipeDescription.isEmpty
+                ? "No description yet." : recipe.recipeDescription)
+                .font(.body)
+                .foregroundStyle(recipe.recipeDescription.isEmpty ? .secondary : .primary)
+            sectionHeader("DIRECTIONS")
+            NavigationLink { cookDestination } label: {
+                Label("Start Cooking", systemImage: "play.fill")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, minHeight: 50)
+            }
+            .buttonStyle(.borderedProminent)
+            .clipShape(Capsule())
+            .controlSize(.large)
+            .accessibilityIdentifier("cook-button")
+            ForEach(Array(sortedSteps.enumerated()), id: \.element.id) { idx, step in
+                HStack(alignment: .top, spacing: 12) {
+                    Text("\(idx + 1)")
+                        .font(.headline)
+                        .frame(width: 32, height: 32)
+                        .background(Color.accentColor.opacity(0.15))
+                        .foregroundStyle(Color.accentColor)
+                        .clipShape(Circle())
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(step.text)
+                            .font(.body)
+                        if let hint = timerHint(for: step.text) {
+                            Label(hint, systemImage: "timer")
+                                .font(.caption)
+                                .foregroundStyle(.blue)
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+        }
+    }
+
+    /// Bottom-right floating cluster: cook-mode timer + pin/favorite.
+    /// Overlay only spans its own buttons, so scrolling stays unblocked.
+    private var floatingActions: some View {
+        VStack(spacing: 12) {
+            NavigationLink { cookDestination } label: {
+                Image(systemName: "timer")
+                    .font(.title2)
+                    .frame(width: 56, height: 56)
+                    .background(Color(.systemBackground))
+                    .foregroundStyle(Color.accentColor)
+                    .clipShape(Circle())
+                    .shadow(radius: 4)
+            }
+            .accessibilityLabel("Open cook mode")
+            .accessibilityIdentifier("floating-timer-button")
+            Button { toggleFavorite() } label: {
+                Image(systemName: isFavorite ? "pin.fill" : "pin")
+                    .font(.title2)
+                    .frame(width: 56, height: 56)
+                    .background(Color(.systemBackground))
+                    .foregroundStyle(isFavorite ? .red : .secondary)
+                    .clipShape(Circle())
+                    .shadow(radius: 4)
+            }
+            .accessibilityLabel(isFavorite ? "Unpin favorite" : "Pin favorite")
+        }
+        .padding(.trailing, 16)
+        .padding(.bottom, 24)
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+    }
+
+    /// Detects "N min/minutes" or "N hour(s)" in step text; label only.
+    private func timerHint(for text: String) -> String? {
+        let pattern = "(\\d+)\\s*(hours?|hrs?|minutes?|mins?)"
+        guard let rx = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return nil }
+        let ns = text as NSString
+        guard let match = rx.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)) else { return nil }
+        let num = ns.substring(with: match.range(at: 1))
+        let unit = ns.substring(with: match.range(at: 2)).lowercased()
+        let short = (unit.hasPrefix("hour") || unit.hasPrefix("hr")) ? "hr" : "min"
+        return "~\(num) \(short)"
+    }
+
+    private func setRating(_ stars: Int) {
+        if recipe.rating == Double(stars) {
+            recipe.rating = nil
+        } else {
+            recipe.rating = Double(stars)
+        }
+        recipe.updatedAt = Date()
+        try? context.save()
+    }
+
+    private func toggleFavorite() {
+        recipe.isFavorite.toggle()
+        recipe.updatedAt = Date()
+        try? context.save()
+    }
+
+    /// Real SwiftData insert: this recipe planned for tonight's dinner.
+    /// Skips the insert when a matching non-deleted plan already exists,
+    /// so a double tap can't double that recipe's grocery quantities
+    /// (addWeekToList aggregates every plan entry).
+    private func addToPlan() {
+        let tonight = Calendar.current.startOfDay(for: Date())
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: tonight) ?? tonight
+        let householdId = recipe.householdId
+        let recipeId = recipe.id
+        let mealRaw = MealSlot.dinner.rawValue
+        let dup = (try? context.fetch(FetchDescriptor<Plan>(predicate: #Predicate<Plan> {
+            !$0.deleted && $0.householdId == householdId
+                && $0.date >= tonight && $0.date < tomorrow && $0.mealRaw == mealRaw
+        })))?.contains(where: { $0.recipeId == recipeId }) ?? false
+        if !dup {
+            context.insert(Plan(householdId: recipe.householdId, date: tonight,
+                meal: .dinner, recipeId: recipe.id,
+                servings: servings, deviceId: currentDeviceId()))
+            try? context.save()
+        }
+        addedMessage = "Planned \(recipe.title) for tonight"
     }
 
     private func addToList() {
@@ -456,9 +1355,12 @@ struct RecipeDetailView: View {
             context.insert(list)
         }
         for line in lines {
-            context.insert(ListItem(listId: list.id, name: line.name,
-                quantity: line.totalQuantity.map { String(format: "%.2g", $0) } ?? "",
-                aisle: guessAisle(for: line.name), deviceId: deviceId))
+            let qty = line.totalQuantity.map { scaledDisplay(name: "", quantity: $0, unit: line.unit, factor: 1).trimmingCharacters(in: .whitespaces) } ?? ""
+            let item = ListItem(listId: list.id, name: line.name, quantity: qty,
+                aisle: guessAisle(for: line.name),
+                recipeId: line.recipeIds.first, deviceId: deviceId)
+            item.shoppingList = list
+            context.insert(item)
         }
         try? context.save()
         addedMessage = "Added \(lines.count) items to Shopping"

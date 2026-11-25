@@ -93,6 +93,8 @@ public final class Recipe {
     public var prepMinutes: Int?
     public var cookMinutes: Int?
     public var rating: Double?
+    /// Pin/favorite flag, independent of the 1–5 star `rating`.
+    public var isFavorite: Bool = false
     public var source: String
     public var sourceUrl: String
     public var categoriesJSON: String // [String] encoded — schema.sql categories TEXT DEFAULT '[]'
@@ -117,6 +119,7 @@ public final class Recipe {
         prepMinutes: Int? = nil,
         cookMinutes: Int? = nil,
         rating: Double? = nil,
+        isFavorite: Bool = false,
         source: String = "",
         sourceUrl: String = "",
         categories: [String] = [],
@@ -135,6 +138,7 @@ public final class Recipe {
         self.prepMinutes = prepMinutes
         self.cookMinutes = cookMinutes
         self.rating = rating
+        self.isFavorite = isFavorite
         self.source = source
         self.sourceUrl = sourceUrl
         self.categoriesJSON = encodeJSONArray(categories)

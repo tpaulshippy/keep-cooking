@@ -66,22 +66,11 @@ struct AdaptiveShell: View {
     }
 }
 
-// MARK: - iPhone: TabView
+// MARK: - iPhone: Paprika-inspired drawer + pill shell (Lane A)
 
 struct PhoneTabView: View {
     var body: some View {
-        TabView {
-            RecipeLibraryView()
-                .tabItem { Label("Recipes", systemImage: "book.pages") }
-            PlanTabView()
-                .tabItem { Label("Plan", systemImage: "calendar") }
-            ListsTabView()
-                .tabItem { Label("Lists", systemImage: "cart") }
-            LibraryHomeView()
-                .tabItem { Label("Library", systemImage: "square.stack.3d.up") }
-            MoreTabView()
-                .tabItem { Label("More", systemImage: "ellipsis.circle") }
-        }
+        DrawerShellView()
     }
 }
 
@@ -474,6 +463,7 @@ extension SyncCoordinator {
         if let v = r.prepMinutes { payload["prepMinutes"] = .int(v) }
         if let v = r.cookMinutes { payload["cookMinutes"] = .int(v) }
         if let v = r.rating { payload["rating"] = .double(v) }
+        payload["isFavorite"] = .bool(r.isFavorite)
         payload["ingredients"] = .array(r.ingredients.map { ing in
             .object([
                 "id": .string(ing.id),
@@ -587,6 +577,7 @@ extension SyncCoordinator {
             if let v = p["prepMinutes"]?.intValue { r.prepMinutes = v }
             if let v = p["cookMinutes"]?.intValue { r.cookMinutes = v }
             if let v = p["rating"]?.doubleValue { r.rating = v }
+            if let v = p["isFavorite"]?.boolValue { r.isFavorite = v }
             if let v = str("source") { r.source = v }
             if let v = str("sourceUrl") { r.sourceUrl = v }
             if let v = p["categories"]?.arrayValue { r.categories = v.compactMap { $0.stringValue } }
@@ -638,6 +629,7 @@ extension SyncCoordinator {
                 prepMinutes: p["prepMinutes"]?.intValue,
                 cookMinutes: p["cookMinutes"]?.intValue,
                 rating: p["rating"]?.doubleValue,
+                isFavorite: p["isFavorite"]?.boolValue ?? false,
                 source: str("source") ?? "", sourceUrl: str("sourceUrl") ?? "",
                 categories: p["categories"]?.arrayValue?.compactMap { $0.stringValue } ?? [],
                 photoOriginal: p["photoKeys"]?.objectValue?["original"]?.stringValue,
@@ -784,5 +776,459 @@ extension SyncCoordinator {
                 name: p["name"]?.stringValue ?? "Menu", entries: entries,
                 updatedAt: env.updatedAt, deviceId: env.deviceId, deleted: env.deleted))
         }
+    }
+}
+// MARK: - Drawer destinations (phone)
+
+enum DrawerSection: String, CaseIterable, Identifiable {
+    case recipes
+    case plan
+    case menus
+    case lists
+    case pantry
+    case library
+    case settings
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .recipes: return "Recipes"
+        case .plan: return "Plan"
+        case .menus: return "Menus"
+        case .lists: return "Shopping"
+        case .pantry: return "Pantry"
+        case .library: return "Library"
+        case .settings: return "Settings"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .recipes: return "book.pages"
+        case .plan: return "calendar"
+        case .menus: return "list.bullet.rectangle"
+        case .lists: return "cart"
+        case .pantry: return "refrigerator"
+        case .library: return "square.stack.3d.up"
+        case .settings: return "gear"
+        }
+    }
+
+    /// Group label shown in the drawer above this row.
+    var group: String? {
+        switch self {
+        case .recipes: return nil
+        case .plan, .menus: return "Planner"
+        case .lists, .pantry: return "Shopping"
+        case .library: return "Organize"
+        case .settings: return nil
+        }
+    }
+}
+
+enum QuickAddKind: String, Identifiable {
+    case clip
+    case scan
+    case caption
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .clip: return "Clip recipe URL"
+        case .scan: return "Scan cookbook"
+        case .caption: return "Import caption"
+        }
+    }
+}
+
+// MARK: - Phone drawer shell
+
+struct DrawerShellView: View {
+    @State private var selection: DrawerSection = .recipes
+    @State private var drawerOpen = false
+    @State private var quickAdd: QuickAddKind? = nil
+
+    @Query(filter: #Predicate<Recipe> { !$0.deleted })
+    private var recipes: [Recipe]
+    @Query(filter: #Predicate<Plan> { !$0.deleted })
+    private var plans: [Plan]
+    @Query(filter: #Predicate<ShoppingList> { !$0.deleted })
+    private var lists: [ShoppingList]
+    @Query(filter: #Predicate<PantryItem> { !$0.deleted })
+    private var pantry: [PantryItem]
+    @Query(filter: #Predicate<Cookbook> { !$0.deleted })
+    private var cookbooks: [Cookbook]
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            VStack(spacing: 0) {
+                topBar
+                Divider()
+                content
+            }
+            .background(Color(.systemBackground))
+            // Swipe right from the leading edge opens the drawer;
+            // swipe left on open drawer dismisses it.
+            .gesture(drawerOpen ? nil : edgeOpenGesture)
+            .safeAreaInset(edge: .bottom) { bottomBar }
+            // While the drawer is open VoiceOver must not reach the
+            // content dimmed behind the backdrop.
+            .accessibilityHidden(drawerOpen)
+
+            if drawerOpen {
+                // Dimmed backdrop — tap to dismiss.
+                Color.black.opacity(0.35)
+                    .ignoresSafeArea()
+                    .onTapGesture { closeDrawer() }
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityLabel("Dismiss navigation menu")
+                drawerPanel
+                    .transition(.move(edge: .leading))
+                    .gesture(swipeToDismiss)
+            }
+        }
+        .animation(.easeInOut(duration: 0.22), value: drawerOpen)
+        // Each quick-add destination owns its own NavigationStack —
+        // no outer stack here (avoids nested navigation chrome).
+        .sheet(item: $quickAdd) { kind in
+            switch kind {
+            case .clip: ClipView()
+            case .scan: OCRScanView()
+            case .caption: CaptionsImportView()
+            }
+        }
+    }
+
+    // MARK: Top bar — hamburger | pill | quick-add
+
+    private var topBar: some View {
+        HStack(spacing: 8) {
+            Button {
+                withAnimation { drawerOpen = true }
+            } label: {
+                Image(systemName: "line.3.horizontal")
+                    .font(.body.weight(.semibold))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Open navigation menu")
+            .accessibilityIdentifier("drawer-hamburger")
+
+            Spacer(minLength: 0)
+
+            // Center pill: current section + count, chevron opens section switcher.
+            SwiftUI.Menu {
+                ForEach(DrawerSection.allCases) { section in
+                    Button {
+                        selection = section
+                    } label: {
+                        Label(section.title, systemImage: section.icon)
+                    }
+                }
+            } label: {
+                VStack(spacing: 1) {
+                    HStack(spacing: 4) {
+                        Text(selection.title)
+                            .font(.headline)
+                            .lineLimit(1)
+                        Image(systemName: "chevron.down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(pillSubtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 8)
+                .background(Color(.secondarySystemBackground))
+                .clipShape(Capsule())
+                .contentShape(Capsule())
+                .frame(minWidth: 44, minHeight: 44)
+            }
+            .accessibilityLabel("Current section: \(selection.title), \(pillSubtitle). Activate to switch section.")
+            .accessibilityIdentifier("section-pill")
+
+            Spacer(minLength: 0)
+
+            SwiftUI.Menu {
+                Button {
+                    quickAdd = .clip
+                } label: {
+                    Label("Clip URL", systemImage: "link")
+                }
+                Button {
+                    quickAdd = .scan
+                } label: {
+                    Label("Scan cookbook", systemImage: "text.viewfinder")
+                }
+                Button {
+                    quickAdd = .caption
+                } label: {
+                    Label("Import caption", systemImage: "captions.bubble")
+                }
+            } label: {
+                Image(systemName: "plus")
+                    .font(.body.weight(.semibold))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Quick add recipe")
+            .accessibilityIdentifier("quick-add-button")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color(.systemBackground))
+    }
+
+    private var pillSubtitle: String {
+        switch selection {
+        case .recipes:
+            return recipes.isEmpty ? "No recipes" : "\(recipes.count) recipes"
+        case .plan:
+            return plans.isEmpty ? "No meals planned" : "\(plans.count) meals"
+        case .menus:
+            return "Weekly menus"
+        case .lists:
+            return lists.isEmpty ? "No lists" : "\(lists.count) lists"
+        case .pantry:
+            return pantry.isEmpty ? "Pantry empty" : "\(pantry.count) items"
+        case .library:
+            return cookbooks.isEmpty ? "Search & categories" : "\(cookbooks.count) cookbooks"
+        case .settings:
+            return "Device & sync"
+        }
+    }
+
+    // MARK: Content — existing feature views, unchanged behavior
+
+    @ViewBuilder
+    private var content: some View {
+        Group {
+            switch selection {
+            case .recipes:
+                RecipeLibraryView()
+            case .plan:
+                PlanTabView()
+            case .menus:
+                MenusTabView()
+            case .lists:
+                ListsTabView()
+            case .pantry:
+                PantryTabView()
+            case .library:
+                LibraryHomeView()
+            case .settings:
+                SettingsView()
+            }
+        }
+        // Content views own their own NavigationStacks; this id helps
+        // SwiftUI reset scroll/search state on section switch.
+        .id(selection)
+    }
+
+    // MARK: Bottom bar — slim contextual pill
+
+    private var bottomBar: some View {
+        HStack {
+            Spacer()
+            HStack(spacing: 4) {
+                bottomButton(section: .recipes)
+                bottomButton(section: .plan)
+                Button {
+                    quickAdd = .clip
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title2)
+                        .frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("Add recipe")
+                bottomButton(section: .lists)
+                Button {
+                    withAnimation { drawerOpen = true }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.body.weight(.semibold))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("More sections")
+                .accessibilityIdentifier("bottom-more-button")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay {
+                Capsule()
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
+            Spacer()
+        }
+        .padding(.vertical, 8)
+        .background(Color(.systemBackground).opacity(0.001))
+    }
+
+    @ViewBuilder
+    private func bottomButton(section: DrawerSection) -> some View {
+        let active = selection == section
+        Button {
+            selection = section
+        } label: {
+            VStack(spacing: 2) {
+                Image(systemName: section.icon)
+                    .font(.body)
+                Text(section.title)
+                    .font(.caption2)
+                    .lineLimit(1)
+            }
+            .foregroundStyle(active ? Color.accentColor : Color.secondary)
+            .frame(minWidth: 56, minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .accessibilityLabel("\(section.title) tab")
+        .accessibilityAddTraits(active ? .isSelected : [])
+    }
+
+    // MARK: Drawer panel
+
+    private var drawerPanel: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // App mark.
+            HStack(spacing: 10) {
+                Image(systemName: "fork.knife.circle.fill")
+                    .font(.title)
+                    .foregroundStyle(.orange)
+                    .accessibilityHidden(true)
+                Text("Keep Cooking")
+                    .font(.title3.weight(.bold))
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 12)
+            .safeAreaPadding(.top, 8)
+            .accessibilityAddTraits(.isHeader)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 2) {
+                    drawerRow(.recipes)
+                    drawerGroupHeader("Planner")
+                    drawerRow(.plan)
+                    drawerRow(.menus)
+                    drawerGroupHeader("Shopping")
+                    drawerRow(.lists)
+                    drawerRow(.pantry)
+                    drawerGroupHeader("Organize")
+                    drawerRow(.library)
+                    Divider().padding(.vertical, 8)
+                    drawerRow(.settings)
+                }
+                .padding(.horizontal, 12)
+            }
+
+            Divider()
+            // Sync status row at the bottom.
+            SyncStatusRow()
+                .font(.footnote)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+        }
+        .frame(width: min(320, UIScreen.main.bounds.width * 0.84))
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 0))
+        .overlay(alignment: .trailing) {
+            // Vertical edge rule. NOTE: a bare Divider() here would be a
+            // *horizontal* line vertically centered in the panel (Divider's
+            // long axis is horizontal; `trailing` only pins the x-axis) —
+            // that was the stray hairline across the Library row.
+            Rectangle()
+                .fill(Color(.separator))
+                .frame(width: 1)
+        }
+        .ignoresSafeArea(edges: .bottom)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Navigation menu")
+    }
+
+    private func drawerGroupHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .textCase(.uppercase)
+            .padding(.horizontal, 12)
+            .padding(.top, 12)
+            .padding(.bottom, 4)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    @ViewBuilder
+    private func drawerRow(_ section: DrawerSection) -> some View {
+        let active = selection == section
+        Button {
+            selection = section
+            closeDrawer()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: section.icon)
+                    .font(.body)
+                    .frame(width: 24)
+                    .accessibilityHidden(true)
+                Text(section.title)
+                    .font(.body)
+                    .fontWeight(active ? .semibold : .regular)
+                Spacer(minLength: 4)
+                if active {
+                    Image(systemName: "checkmark")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Color.accentColor)
+                        .accessibilityHidden(true)
+                }
+            }
+            .foregroundStyle(active ? Color.primary : Color.primary)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 44)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .background(
+                active
+                    ? Color.accentColor.opacity(0.15)
+                    : Color.clear,
+                in: RoundedRectangle(cornerRadius: 12)
+            )
+        }
+        .accessibilityLabel("\(section.title) section")
+        .accessibilityAddTraits(active ? .isSelected : [])
+        .accessibilityIdentifier("drawer-\(section.rawValue)")
+    }
+
+    // MARK: Gestures
+
+    private var edgeOpenGesture: some Gesture {
+        DragGesture(minimumDistance: 20, coordinateSpace: .local)
+            .onEnded { value in
+                // Rightward swipe starting near the leading edge opens.
+                if value.startLocation.x < 24,
+                   value.translation.width > 60,
+                   abs(value.translation.height) < 60 {
+                    withAnimation { drawerOpen = true }
+                }
+            }
+    }
+
+    private var swipeToDismiss: some Gesture {
+        DragGesture(minimumDistance: 24, coordinateSpace: .local)
+            .onEnded { value in
+                if value.translation.width < -60,
+                   abs(value.translation.height) < 80 {
+                    closeDrawer()
+                }
+            }
+    }
+
+    private func closeDrawer() {
+        withAnimation { drawerOpen = false }
     }
 }
