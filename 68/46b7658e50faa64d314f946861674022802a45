@@ -1,0 +1,16 @@
+apps/ios/App/DemoFlows.swift
+  h_6bbd00fe0a456a 253-265,291-299,301-305,308-312,315-323,325-328,330-333,335-337,339,355,368,375-634
+apps/ios/UITests/DemoFlowsUITests.swift
+  h_6bbd00fe0a456a 121-125
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6846b7658e50faa64d314f946861674022802a45",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
