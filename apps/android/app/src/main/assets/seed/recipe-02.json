@@ -1,0 +1,126 @@
+{
+  "id": "0190c8a1-7a2e-7b3c-9d1e-000000000002",
+  "updatedAt": "2026-11-20T12:00:00Z",
+  "deviceId": "seed",
+  "deleted": false,
+  "entity": "recipe",
+  "title": "Margherita Pizza",
+  "description": "Seed Margherita Pizza.",
+  "servings": 4,
+  "prepMinutes": 10,
+  "cookMinutes": 20,
+  "rating": 4.0,
+  "source": "Seed",
+  "sourceUrl": "https://example.com/r2",
+  "categories": [
+    "dinner",
+    "italian"
+  ],
+  "householdId": "hh-demo",
+  "photoKeys": {
+    "original": "photos/0190c8a1-7a2e-7b3c-9d1e-000000000002/original.jpg",
+    "large1024": "photos/0190c8a1-7a2e-7b3c-9d1e-000000000002/1024.jpg",
+    "thumb": "photos/0190c8a1-7a2e-7b3c-9d1e-000000000002/thumb.jpg"
+  },
+  "ingredients": [
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000002-ing1",
+      "name": "pizza dough",
+      "quantity": 1,
+      "unit": "ball",
+      "display": "1 ball",
+      "position": 0,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000002"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000002-ing2",
+      "name": "crushed tomatoes",
+      "quantity": 0.5,
+      "unit": "cup",
+      "display": "1/2 cup",
+      "position": 1,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000002"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000002-ing3",
+      "name": "fresh mozzarella",
+      "quantity": 8,
+      "unit": "oz",
+      "display": "8 oz",
+      "position": 2,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000002"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000002-ing4",
+      "name": "fresh basil",
+      "quantity": 0.25,
+      "unit": "cup",
+      "display": "1/4 cup",
+      "position": 3,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000002"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000002-ing5",
+      "name": "salt",
+      "quantity": 0.5,
+      "unit": "tsp",
+      "display": "1/2 tsp",
+      "position": 4,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000002"
+    }
+  ],
+  "steps": [
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000002-st1",
+      "position": 0,
+      "text": "Place a pizza stone in the oven and preheat to 500 degrees for 30 minutes.",
+      "timers": [
+        {
+          "seconds": 1800,
+          "label": "preheat"
+        }
+      ],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000002"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000002-st2",
+      "position": 1,
+      "text": "Stretch the pizza dough into a 12-inch round on a floured peel.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000002"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000002-st3",
+      "position": 2,
+      "text": "Spread with crushed tomatoes, leaving a 1-inch border. Sprinkle with salt.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000002"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000002-st4",
+      "position": 3,
+      "text": "Tear over the fresh mozzarella.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000002"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000002-st5",
+      "position": 4,
+      "text": "Bake for 10 minutes until puffed and spotted brown.",
+      "timers": [
+        {
+          "seconds": 600,
+          "label": "bake"
+        }
+      ],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000002"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000002-st6",
+      "position": 5,
+      "text": "Top with fresh basil, slice, and serve hot.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000002"
+    }
+  ]
+}

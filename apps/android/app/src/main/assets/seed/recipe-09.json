@@ -1,0 +1,131 @@
+{
+  "id": "0190c8a1-7a2e-7b3c-9d1e-000000000009",
+  "updatedAt": "2026-11-20T12:00:00Z",
+  "deviceId": "seed",
+  "deleted": false,
+  "entity": "recipe",
+  "title": "Chocolate Chip Cookies",
+  "description": "Seed Chocolate Chip Cookies.",
+  "servings": 4,
+  "prepMinutes": 10,
+  "cookMinutes": 20,
+  "rating": 4.0,
+  "source": "Seed",
+  "sourceUrl": "https://example.com/r9",
+  "categories": [
+    "dessert",
+    "baking"
+  ],
+  "householdId": "hh-demo",
+  "photoKeys": {
+    "original": "photos/0190c8a1-7a2e-7b3c-9d1e-000000000009/original.jpg",
+    "large1024": "photos/0190c8a1-7a2e-7b3c-9d1e-000000000009/1024.jpg",
+    "thumb": "photos/0190c8a1-7a2e-7b3c-9d1e-000000000009/thumb.jpg"
+  },
+  "ingredients": [
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000009-ing1",
+      "name": "all-purpose flour",
+      "quantity": 2.25,
+      "unit": "cup",
+      "display": "2 1/4 cups",
+      "position": 0,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000009"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000009-ing2",
+      "name": "chocolate chips",
+      "quantity": 2,
+      "unit": "cup",
+      "display": "2 cups",
+      "position": 1,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000009"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000009-ing3",
+      "name": "butter",
+      "quantity": 1,
+      "unit": "cup",
+      "display": "1 cup, softened",
+      "position": 2,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000009"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000009-ing4",
+      "name": "brown sugar",
+      "quantity": 0.75,
+      "unit": "cup",
+      "display": "3/4 cup",
+      "position": 3,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000009"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000009-ing5",
+      "name": "salt",
+      "quantity": 1,
+      "unit": "tsp",
+      "display": "1 tsp",
+      "position": 4,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000009"
+    }
+  ],
+  "steps": [
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000009-st1",
+      "position": 0,
+      "text": "Heat the oven to 375 degrees. Line two sheet pans.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000009"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000009-st2",
+      "position": 1,
+      "text": "Cream the butter and brown sugar until fluffy, about 3 minutes.",
+      "timers": [
+        {
+          "seconds": 180,
+          "label": "cream"
+        }
+      ],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000009"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000009-st3",
+      "position": 2,
+      "text": "Beat in eggs and vanilla, then sprinkle over the salt.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000009"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000009-st4",
+      "position": 3,
+      "text": "Fold in the all-purpose flour, then the chocolate chips.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000009"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000009-st5",
+      "position": 4,
+      "text": "Scoop 2-tablespoon balls and bake for 11 minutes.",
+      "timers": [
+        {
+          "seconds": 660,
+          "label": "bake"
+        }
+      ],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000009"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000009-st6",
+      "position": 5,
+      "text": "Cool 5 minutes on the pan so the centers set.",
+      "timers": [
+        {
+          "seconds": 300,
+          "label": "cool"
+        }
+      ],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000009"
+    }
+  ]
+}

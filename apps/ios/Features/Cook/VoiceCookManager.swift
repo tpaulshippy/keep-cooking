@@ -22,6 +22,15 @@
 //   - Permission-then-start: `requestPermissions(completion:)` /
 //     `requestPermissionsThenStart(_:)` join mic + speech results; the legacy
 //     `requestPermissions()` calls through.
+//   - `stopListening` clears persisted `listeningEnabled` and cancels any
+//     pending permission completion, so a late auth result can never start
+//     the mic after the view disappeared; `startListening` also guards on
+//     the flag. Simulator-only mock fallback: on device a missing
+//     recognizer reports a failed start instead of fake "listening".
+//   - Ambiguity: ties use `isFuzzyVoiceMatchAmbiguous` ("Which <name>?");
+//     `fuzzyVoiceMatch` nil alone means "I don't see ...".
+//   - Voice-started timer ids are retained in `scheduledTimerIds` for
+//     CookModeView.onDisappear cancellation.
 //   - Shared handoff: `consumePendingCommand(session:ingredients:steps:)`
 //     reads + clears the exact UserDefaults key "cook.pendingCommand".
 
@@ -300,6 +309,12 @@ public final class VoiceCookManager {
     private let synthesizer = AVSpeechSynthesizer()
     private var audioInput: VoiceAudioInput?
 
+    /// Notification ids scheduled by voice-started timers (`handle`
+    /// `.startTimer`). Retained so CookModeView.onDisappear can cancel them
+    /// alongside its own `scheduledIds` (the schedule call's return used to
+    /// be discarded, leaking voice timers past Cook mode).
+    public private(set) var scheduledTimerIds: [String] = []
+
     // Single-flight permission join state: mic + speech results are tracked
     // separately so neither callback can clobber the other (denial race).
     private var pendingSpeechGranted: Bool?
@@ -422,8 +437,10 @@ public final class VoiceCookManager {
     // MARK: Listening
 
     /// Starts continuous listening. Pass a mock via `input` in tests; with
-    /// nil the manager uses on-device recognition, falling back to the mock
-    /// (and setting `micDenied`) when the mic is unavailable.
+    /// nil the manager uses on-device recognition. On the simulator it falls
+    /// back to the mock (flagging `micDenied`); on device a missing
+    /// recognizer reports a failed start instead of a mock that claims
+    /// "listening" but never delivers transcripts.
     /// `isListening` honestly reflects `audioInput?.isRunning` after the
     /// start attempt; on failure it stays false with a retry prompt in
     /// `lastReply`.
@@ -436,7 +453,14 @@ public final class VoiceCookManager {
             audioInput = live
         } else {
             micDenied = true
+            #if targetEnvironment(simulator)
             audioInput = MockVoiceInput()
+            #else
+            // Device with no usable recognizer: no mock — a mock would set
+            // `isListening` with zero transcripts. Fall through with nil
+            // input so the failure reply below fires honestly.
+            audioInput = nil
+            #endif
         }
         audioInput?.start(onTranscript: onTranscript)
         let running = audioInput?.isRunning ?? false
@@ -453,7 +477,17 @@ public final class VoiceCookManager {
         }
     }
 
+    /// Tears down listening AND clears the persisted `listeningEnabled` flag,
+    /// so a late permission completion (see `requestPermissionsThenStart`)
+    /// can never start the mic after the view has disappeared:
+    /// `startListening` guards on the flag, and the pending completion is
+    /// cancelled here. CookModeView.onDisappear relies on this (it must not
+    /// leave a stale "on").
     public func stopListening() {
+        pendingPermissionCompletion = nil
+        pendingSpeechGranted = nil
+        pendingMicGranted = nil
+        listeningEnabled = false
         audioInput?.stop()
         isListening = false
     }
@@ -498,7 +532,7 @@ public final class VoiceCookManager {
                 if let id = ingredientId(matching: name, in: tuples) {
                     session.crossedOffIngredients.insert(id)
                     reply("Crossed off \(name).")
-                } else if fuzzyVoiceMatch(name, candidates: ingredients.map { $0.name }) != nil {
+                } else if isFuzzyVoiceMatchAmbiguous(name, candidates: ingredients.map { $0.name }) {
                     reply("Which \(name)? I see more than one matching ingredient.")
                 } else {
                     reply("I don't see \(name) in the ingredients.")
@@ -582,7 +616,7 @@ public final class VoiceCookManager {
             if let id = ingredientId(matching: name, in: tuples),
                let found = ingredients.first(where: { $0.id == id }) {
                 reply("You need \(scaledDisplay(name: found.name, quantity: found.quantity, unit: found.unit, factor: session.scale)).")
-            } else if fuzzyVoiceMatch(name, candidates: ingredients.map { $0.name }) != nil {
+            } else if isFuzzyVoiceMatchAmbiguous(name, candidates: ingredients.map { $0.name }) {
                 reply("Which \(name)? I see more than one matching ingredient.")
             } else {
                 reply("I don't see \(name) in the ingredients.")
@@ -591,7 +625,7 @@ public final class VoiceCookManager {
             if let id = ingredientId(matching: name, in: tuples) {
                 session.crossedOffIngredients.insert(id)
                 reply("Crossed off \(name).")
-            } else if fuzzyVoiceMatch(name, candidates: ingredients.map { $0.name }) != nil {
+            } else if isFuzzyVoiceMatchAmbiguous(name, candidates: ingredients.map { $0.name }) {
                 reply("Which \(name)? I see more than one matching ingredient.")
             } else {
                 reply("I don't see \(name) in the ingredients.")
@@ -600,7 +634,7 @@ public final class VoiceCookManager {
             if let id = ingredientId(matching: name, in: tuples) {
                 session.crossedOffIngredients.remove(id)
                 reply("Put back \(name).")
-            } else if fuzzyVoiceMatch(name, candidates: ingredients.map { $0.name }) != nil {
+            } else if isFuzzyVoiceMatchAmbiguous(name, candidates: ingredients.map { $0.name }) {
                 reply("Which \(name)? I see more than one matching ingredient.")
             } else {
                 reply("I don't see \(name) in the ingredients.")
@@ -645,7 +679,8 @@ public final class VoiceCookManager {
                 timer = nil
             }
             if let timer {
-                CookActivityStub.schedule(timers: [timer])
+                let ids = CookActivityStub.schedule(timers: [timer])
+                scheduledTimerIds.append(contentsOf: ids)
                 onTimerCommand?(timer)
                 reply("Timer started for \(timer.label), \(voiceDurationString(timer.seconds)).")
             } else {
