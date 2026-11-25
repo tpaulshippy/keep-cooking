@@ -1,0 +1,262 @@
+.gitignore
+  h_6bbd00fe0a456a 5-13
+api/drizzle/seed.sql
+  h_6bbd00fe0a456a 7-8,10-11,13-14,16-17,19-20,22-23,25-26,28-29,31-32,34-35,37-38,40-41
+apps/android/README.md
+  h_6bbd00fe0a456a 1-68
+apps/android/app/build.gradle.kts
+  h_6bbd00fe0a456a 1-90
+apps/android/app/proguard-rules.pro
+  h_6bbd00fe0a456a 1
+apps/android/app/src/androidTest/java/com/keepcooking/app/LibraryScreenTest.kt
+  h_6bbd00fe0a456a 1-23
+apps/android/app/src/main/AndroidManifest.xml
+  h_6bbd00fe0a456a 1-93
+apps/android/app/src/main/assets/seed/recipe-01.json
+  h_6bbd00fe0a456a 1-45
+apps/android/app/src/main/assets/seed/recipe-02.json
+  h_6bbd00fe0a456a 1-45
+apps/android/app/src/main/assets/seed/recipe-03.json
+  h_6bbd00fe0a456a 1-45
+apps/android/app/src/main/assets/seed/recipe-04.json
+  h_6bbd00fe0a456a 1-45
+apps/android/app/src/main/assets/seed/recipe-05.json
+  h_6bbd00fe0a456a 1-45
+apps/android/app/src/main/assets/seed/recipe-06.json
+  h_6bbd00fe0a456a 1-45
+apps/android/app/src/main/assets/seed/recipe-07.json
+  h_6bbd00fe0a456a 1-45
+apps/android/app/src/main/assets/seed/recipe-08.json
+  h_6bbd00fe0a456a 1-45
+apps/android/app/src/main/assets/seed/recipe-09.json
+  h_6bbd00fe0a456a 1-45
+apps/android/app/src/main/assets/seed/recipe-10.json
+  h_6bbd00fe0a456a 1-45
+apps/android/app/src/main/assets/seed/recipe-11.json
+  h_6bbd00fe0a456a 1-45
+apps/android/app/src/main/assets/seed/recipe-12.json
+  h_6bbd00fe0a456a 1-45
+apps/android/app/src/main/assets/seed/recipe-13-dupe.json
+  h_6bbd00fe0a456a 1-44
+apps/android/app/src/main/assets/seed/recipe-14-dupe.json
+  h_6bbd00fe0a456a 1-44
+apps/android/app/src/main/assets/seed/recipe-15-dupe.json
+  h_6bbd00fe0a456a 1-44
+apps/android/app/src/main/java/com/keepcooking/app/AppContainer.kt
+  h_6bbd00fe0a456a 1-65
+apps/android/app/src/main/java/com/keepcooking/app/KeepCookingApp.kt
+  h_6bbd00fe0a456a 1-21
+apps/android/app/src/main/java/com/keepcooking/app/MainActivity.kt
+  h_6bbd00fe0a456a 1-100
+apps/android/app/src/main/java/com/keepcooking/app/cook/CookSession.kt
+  h_6bbd00fe0a456a 1-313
+apps/android/app/src/main/java/com/keepcooking/app/cook/RecipeScaler.kt
+  h_6bbd00fe0a456a 1-80
+apps/android/app/src/main/java/com/keepcooking/app/cook/StepTimerParser.kt
+  h_6bbd00fe0a456a 1-102
+apps/android/app/src/main/java/com/keepcooking/app/cook/VoiceCommandParser.kt
+  h_6bbd00fe0a456a 1-431
+apps/android/app/src/main/java/com/keepcooking/app/data/AppDatabase.kt
+  h_6bbd00fe0a456a 1-32
+apps/android/app/src/main/java/com/keepcooking/app/data/Daos.kt
+  h_6bbd00fe0a456a 1-135
+apps/android/app/src/main/java/com/keepcooking/app/data/Models.kt
+  h_6bbd00fe0a456a 1-231
+apps/android/app/src/main/java/com/keepcooking/app/data/SeedLoader.kt
+  h_6bbd00fe0a456a 1-166
+apps/android/app/src/main/java/com/keepcooking/app/export/RecipeExporter.kt
+  h_6bbd00fe0a456a 1-196
+apps/android/app/src/main/java/com/keepcooking/app/ingest/ClipClient.kt
+  h_6bbd00fe0a456a 1-69
+apps/android/app/src/main/java/com/keepcooking/app/ingest/ClipModels.kt
+  h_6bbd00fe0a456a 1-99
+apps/android/app/src/main/java/com/keepcooking/app/ingest/ClipboardDetector.kt
+  h_6bbd00fe0a456a 1-24
+apps/android/app/src/main/java/com/keepcooking/app/ingest/IngredientParser.kt
+  h_6bbd00fe0a456a 1-189
+apps/android/app/src/main/java/com/keepcooking/app/ingest/OcrSplitter.kt
+  h_6bbd00fe0a456a 1-30
+apps/android/app/src/main/java/com/keepcooking/app/library/DuplicateFinder.kt
+  h_6bbd00fe0a456a 1-257
+apps/android/app/src/main/java/com/keepcooking/app/library/LibraryModels.kt
+  h_6bbd00fe0a456a 1-85
+apps/android/app/src/main/java/com/keepcooking/app/library/LibrarySearch.kt
+  h_6bbd00fe0a456a 1-128
+apps/android/app/src/main/java/com/keepcooking/app/library/ShareApiClient.kt
+  h_6bbd00fe0a456a 1-63
+apps/android/app/src/main/java/com/keepcooking/app/navigation/NavGraph.kt
+  h_6bbd00fe0a456a 1-454
+apps/android/app/src/main/java/com/keepcooking/app/navigation/Routes.kt
+  h_6bbd00fe0a456a 1-35
+apps/android/app/src/main/java/com/keepcooking/app/network/ApiService.kt
+  h_6bbd00fe0a456a 1-128
+apps/android/app/src/main/java/com/keepcooking/app/plan/PlanAggregation.kt
+  h_6bbd00fe0a456a 1-129
+apps/android/app/src/main/java/com/keepcooking/app/share/ShareHandler.kt
+  h_6bbd00fe0a456a 1-91
+apps/android/app/src/main/java/com/keepcooking/app/shop/ShopHelpers.kt
+  h_6bbd00fe0a456a 1-92
+apps/android/app/src/main/java/com/keepcooking/app/shortcuts/AppShortcuts.kt
+  h_6bbd00fe0a456a 1-306
+apps/android/app/src/main/java/com/keepcooking/app/sync/SyncCrypto.kt
+  h_6bbd00fe0a456a 1-397
+apps/android/app/src/main/java/com/keepcooking/app/sync/SyncEngine.kt
+  h_6bbd00fe0a456a 1-956
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/CookScreen.kt
+  h_6bbd00fe0a456a 1-555
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/ExportScreen.kt
+  h_6bbd00fe0a456a 1-169
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/IngestScreen.kt
+  h_6bbd00fe0a456a 1-377
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/LibraryScreen.kt
+  h_6bbd00fe0a456a 1-526
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/MoreScreen.kt
+  h_6bbd00fe0a456a 1-55
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/PlanScreen.kt
+  h_6bbd00fe0a456a 1-489
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/RecipesScreen.kt
+  h_6bbd00fe0a456a 1-130
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/ShareScreen.kt
+  h_6bbd00fe0a456a 1-193
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/ShopScreen.kt
+  h_6bbd00fe0a456a 1-633
+apps/android/app/src/main/java/com/keepcooking/app/ui/theme/Color.kt
+  h_6bbd00fe0a456a 1-34
+apps/android/app/src/main/java/com/keepcooking/app/ui/theme/Theme.kt
+  h_6bbd00fe0a456a 1-18
+apps/android/app/src/main/java/com/keepcooking/app/ui/theme/Type.kt
+  h_6bbd00fe0a456a 1-28
+apps/android/app/src/main/java/com/keepcooking/app/wear/NowCookingScreens.kt
+  h_6bbd00fe0a456a 1-207
+apps/android/app/src/main/java/com/keepcooking/app/wear/WatchStore.kt
+  h_6bbd00fe0a456a 1-79
+apps/android/app/src/main/java/com/keepcooking/app/widgets/SnapshotWriter.kt
+  h_6bbd00fe0a456a 1-57
+apps/android/app/src/main/java/com/keepcooking/app/widgets/WidgetSnapshot.kt
+  h_6bbd00fe0a456a 1-86
+apps/android/app/src/main/java/com/keepcooking/app/widgets/Widgets.kt
+  h_6bbd00fe0a456a 1-61
+apps/android/app/src/main/res/drawable/ic_launcher_foreground.xml
+  h_6bbd00fe0a456a 1-12
+apps/android/app/src/main/res/layout/widget_list_progress.xml
+  h_6bbd00fe0a456a 1-25
+apps/android/app/src/main/res/layout/widget_today_plan.xml
+  h_6bbd00fe0a456a 1-18
+apps/android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+  h_6bbd00fe0a456a 1-5
+apps/android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
+  h_6bbd00fe0a456a 1-5
+apps/android/app/src/main/res/values/colors.xml
+  h_6bbd00fe0a456a 1-4
+apps/android/app/src/main/res/values/strings.xml
+  h_6bbd00fe0a456a 1-11
+apps/android/app/src/main/res/values/themes.xml
+  h_6bbd00fe0a456a 1-10
+apps/android/app/src/main/res/xml/filepaths.xml
+  h_6bbd00fe0a456a 1-4
+apps/android/app/src/main/res/xml/shortcuts.xml
+  h_6bbd00fe0a456a 1-59
+apps/android/app/src/main/res/xml/widget_list_progress.xml
+  h_6bbd00fe0a456a 1-10
+apps/android/app/src/main/res/xml/widget_today_plan.xml
+  h_6bbd00fe0a456a 1-10
+apps/android/app/src/test/java/com/keepcooking/app/CookLogicTest.kt
+  h_6bbd00fe0a456a 1-487
+apps/android/app/src/test/java/com/keepcooking/app/DuplicateFinderTest.kt
+  h_6bbd00fe0a456a 1-116
+apps/android/app/src/test/java/com/keepcooking/app/IngredientParserTest.kt
+  h_6bbd00fe0a456a 1-109
+apps/android/app/src/test/java/com/keepcooking/app/LibrarySearchTest.kt
+  h_6bbd00fe0a456a 1-77
+apps/android/app/src/test/java/com/keepcooking/app/PlanAggregationTest.kt
+  h_6bbd00fe0a456a 1-148
+apps/android/app/src/test/java/com/keepcooking/app/SyncMergeTest.kt
+  h_6bbd00fe0a456a 1-33
+apps/android/app/src/test/java/com/keepcooking/app/SyncParityFixesTest.kt
+  h_6bbd00fe0a456a 1-370
+apps/android/app/src/test/java/com/keepcooking/app/TombstoneDaoTest.kt
+  h_6bbd00fe0a456a 1-64
+apps/android/app/src/test/java/com/keepcooking/app/ingest/ClipModelsTest.kt
+  h_6bbd00fe0a456a 1-55
+apps/android/build.gradle.kts
+  h_6bbd00fe0a456a 1-7
+apps/android/gradle.properties
+  h_6bbd00fe0a456a 1-4
+apps/android/gradle/wrapper/gradle-wrapper.properties
+  h_6bbd00fe0a456a 1-7
+apps/android/gradlew
+  h_6bbd00fe0a456a 1-12
+apps/android/settings.gradle.kts
+  h_6bbd00fe0a456a 1-16
+apps/ios/Features/Cook/CookModeView.swift
+  h_6bbd00fe0a456a 13-19,124-128,147-150,160-165,658-661
+apps/ios/Features/Cook/CookTests.swift
+  h_6bbd00fe0a456a 206-210,246,251-256,332-333,336-337,523-572
+apps/ios/Features/Cook/VoiceCommandParser.swift
+  h_6bbd00fe0a456a 9,65,68,170-212,290-295,298-302,305-306,308-323,327-329,333,345,348-351,354-358,360-361,370,425-426
+apps/ios/Features/Cook/VoiceCookManager.swift
+  h_6bbd00fe0a456a 25-33,312-317,440-443,456,458-463,480-485,487-490,535,619,628,637,682-683
+apps/ios/Intents/KeepCookingIntents.swift
+  h_6bbd00fe0a456a 25-31,35-40,42-50,208-211,214-216,228,242,257,281,313-317,358-391
+apps/ios/Intents/README.md
+  h_6bbd00fe0a456a 10-14
+apps/ios/Seed/recipe-01.json
+  h_6bbd00fe0a456a 28,32,40,45
+apps/ios/Seed/recipe-02.json
+  h_6bbd00fe0a456a 29,31-32,40,45
+apps/ios/Seed/recipe-03.json
+  h_6bbd00fe0a456a 32,40,45
+apps/ios/Seed/recipe-04.json
+  h_6bbd00fe0a456a 29,31-32,40,45
+apps/ios/Seed/recipe-05.json
+  h_6bbd00fe0a456a 29,31-32,40,45
+apps/ios/Seed/recipe-06.json
+  h_6bbd00fe0a456a 29,31-32,40,45
+apps/ios/Seed/recipe-07.json
+  h_6bbd00fe0a456a 29,31-32,40,45
+apps/ios/Seed/recipe-08.json
+  h_6bbd00fe0a456a 32,40,45
+apps/ios/Seed/recipe-09.json
+  h_6bbd00fe0a456a 32,40,45
+apps/ios/Seed/recipe-10.json
+  h_6bbd00fe0a456a 29,31-32,40,45
+apps/ios/Seed/recipe-11.json
+  h_6bbd00fe0a456a 31-32,40,45
+apps/ios/Seed/recipe-12.json
+  h_6bbd00fe0a456a 29,31-32,40,45
+packages/contracts/seed/recipe-01.json
+  h_6bbd00fe0a456a 28,32,40,45
+packages/contracts/seed/recipe-02.json
+  h_6bbd00fe0a456a 29,31-32,40,45
+packages/contracts/seed/recipe-03.json
+  h_6bbd00fe0a456a 32,40,45
+packages/contracts/seed/recipe-04.json
+  h_6bbd00fe0a456a 29,31-32,40,45
+packages/contracts/seed/recipe-05.json
+  h_6bbd00fe0a456a 29,31-32,40,45
+packages/contracts/seed/recipe-06.json
+  h_6bbd00fe0a456a 29,31-32,40,45
+packages/contracts/seed/recipe-07.json
+  h_6bbd00fe0a456a 29,31-32,40,45
+packages/contracts/seed/recipe-08.json
+  h_6bbd00fe0a456a 32,40,45
+packages/contracts/seed/recipe-09.json
+  h_6bbd00fe0a456a 32,40,45
+packages/contracts/seed/recipe-10.json
+  h_6bbd00fe0a456a 29,31-32,40,45
+packages/contracts/seed/recipe-11.json
+  h_6bbd00fe0a456a 31-32,40,45
+packages/contracts/seed/recipe-12.json
+  h_6bbd00fe0a456a 29,31-32,40,45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5cf52493d42afd732e3e692b25481f17fbc5f41a",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
