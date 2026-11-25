@@ -124,6 +124,12 @@ struct RecipeLibraryView: View {
     /// the single + menu, so blank-recipe creation is requested through
     /// this binding and consumed here (insert + navigate to detail).
     @Binding var requestBlankRecipe: Bool
+    /// Filter state hoisted to the shell: the top-bar center slot is the
+    /// filter pill on Recipes, so section + sheet trigger live above.
+    /// `visibleRecipeCount` reports the filtered count back up for the pill.
+    @Binding var section: LibrarySection
+    @Binding var showFilterSheet: Bool
+    @Binding var visibleRecipeCount: Int
     @Query(filter: #Predicate<Recipe> { !$0.deleted },
            sort: [SortDescriptor(\Recipe.title)])
     private var recipes: [Recipe]
@@ -134,9 +140,7 @@ struct RecipeLibraryView: View {
     private var cookbooks: [Cookbook]
     @State private var searchText = ""
     @State private var selectedCategory: String? = nil
-    @State private var section: LibrarySection = .all
     @State private var sort: LibrarySort = .title
-    @State private var showFilterSheet = false
     @State private var showCategorize = false
     @State private var showCookbookPicker = false
     @State private var showNewCookbook = false
@@ -212,29 +216,8 @@ struct RecipeLibraryView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Top section pill: "<Filter> / N recipes" opens the filter sheet.
-                Button {
-                    showFilterSheet = true
-                } label: {
-                    HStack(spacing: 6) {
-                        Text(section.title)
-                            .font(.headline)
-                        Text("\(filtered.count) recipes")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        Image(systemName: "chevron.down")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(Color(.secondarySystemBackground))
-                    .clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .frame(minHeight: 44)
-                .padding(.top, 8)
-                .accessibilityIdentifier("filter-pill")
+                // Category chips stay in content; the filter pill itself
+                // lives in the shell top bar (single header).
                 if !allCategories.isEmpty && section != .trash {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
@@ -310,7 +293,9 @@ struct RecipeLibraryView: View {
                     }
                 }
             }
-            .navigationTitle("Recipes")
+            // Shell top bar is the only header: hide this stack's root bar.
+            // Pushed detail/cook views bring their own bars + back button.
+            .toolbar(.hidden, for: .navigationBar)
             .overlay(alignment: .bottom) {
                 if isSelecting { selectionBar } else { bottomBar }
             }
@@ -319,6 +304,10 @@ struct RecipeLibraryView: View {
             // was just switched to (onAppear, same update as the trigger).
             .onAppear {
                 if requestBlankRecipe { consumeBlankRequest() }
+                visibleRecipeCount = filtered.count
+            }
+            .onChange(of: filtered.count) {
+                visibleRecipeCount = filtered.count
             }
             .onChange(of: requestBlankRecipe) {
                 if requestBlankRecipe { consumeBlankRequest() }
@@ -1378,6 +1367,7 @@ struct PlanTabView: View {
                 PlanView(entries: entries, menus: menuSnapshots, onAddWeekToList: addWeekToList,
                     onAddDay: addDay)
                     .accessibilityIdentifier("plan-view")
+                    .toolbar(.hidden, for: .navigationBar)
             }
         }
     }
@@ -1468,6 +1458,9 @@ struct ListsTabView: View {
                 }
             }
         }
+        // Stack-level so BOTH branches (empty + populated) hide the root
+        // bar — same pattern as the library root. Pushed views unaffected.
+        .toolbar(.hidden, for: .navigationBar)
     }
 
     private var snapshots: [ShoppingListSnapshot] {

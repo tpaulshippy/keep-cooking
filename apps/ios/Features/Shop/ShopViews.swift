@@ -123,7 +123,6 @@ public struct ShopListsView: View {
                 .contentMargins(.bottom, 48, for: .scrollContent)
             }
         }
-        .navigationTitle("Shopping lists")
         .safeAreaPadding(.bottom, 8)
     }
 
@@ -252,6 +251,16 @@ public struct PantryView: View {
 
     public var body: some View {
         List {
+            // Scan lived in nav-bar chrome that section roots no longer show
+            // (Pantry has no NavigationStack), so it lives in content now.
+            Section {
+                Button {
+                    showScanner = true
+                } label: {
+                    Label("Scan barcode", systemImage: "barcode.viewfinder")
+                }
+                .accessibilityIdentifier("pantry-scan-button")
+            }
             Section("Needs attention") {
                 ForEach(flaggedItems) { item in
                     pantryRow(item)
@@ -263,14 +272,6 @@ public struct PantryView: View {
             Section("All") {
                 ForEach(sortedRest) { item in
                     pantryRow(item)
-                }
-            }
-        }
-        .navigationTitle("Pantry")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button { showScanner = true } label: {
-                    Label("Scan", systemImage: "barcode.viewfinder")
                 }
             }
         }
