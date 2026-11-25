@@ -25,11 +25,47 @@
   "ingredients": [
     {
       "id": "0190c8a1-7a2e-7b3c-9d1e-000000000012-ing1",
-      "name": "salt",
-      "quantity": 1,
-      "unit": "tsp",
-      "display": "1 tsp",
+      "name": "cooked quinoa",
+      "quantity": 2,
+      "unit": "cup",
+      "display": "2 cups",
       "position": 0,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000012"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000012-ing2",
+      "name": "cucumber",
+      "quantity": 1,
+      "unit": "",
+      "display": "1, chopped",
+      "position": 1,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000012"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000012-ing3",
+      "name": "cherry tomatoes",
+      "quantity": 1,
+      "unit": "pint",
+      "display": "1 pint, halved",
+      "position": 2,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000012"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000012-ing4",
+      "name": "feta",
+      "quantity": 0.5,
+      "unit": "cup",
+      "display": "1/2 cup",
+      "position": 3,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000012"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000012-ing5",
+      "name": "salt",
+      "quantity": 0.5,
+      "unit": "tsp",
+      "display": "1/2 tsp",
+      "position": 4,
       "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000012"
     }
   ],
@@ -37,8 +73,53 @@
     {
       "id": "0190c8a1-7a2e-7b3c-9d1e-000000000012-st1",
       "position": 0,
-      "text": "Cook and serve.",
+      "text": "Rinse and cook the quinoa if not already cooked; cool 10 minutes.",
+      "timers": [
+        {
+          "seconds": 600,
+          "label": "cool"
+        }
+      ],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000012"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000012-st2",
+      "position": 1,
+      "text": "Chop the cucumber and halve the cherry tomatoes.",
       "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000012"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000012-st3",
+      "position": 2,
+      "text": "Whisk olive oil, lemon, and salt into a dressing.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000012"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000012-st4",
+      "position": 3,
+      "text": "Toss quinoa, cucumber, and tomatoes with dressing.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000012"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000012-st5",
+      "position": 4,
+      "text": "Crumble over the feta.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000012"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000012-st6",
+      "position": 5,
+      "text": "Chill 10 minutes or serve right away.",
+      "timers": [
+        {
+          "seconds": 600,
+          "label": "chill"
+        }
+      ],
       "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000012"
     }
   ]

@@ -25,11 +25,47 @@
   "ingredients": [
     {
       "id": "0190c8a1-7a2e-7b3c-9d1e-000000000005-ing1",
-      "name": "salt",
-      "quantity": 1,
-      "unit": "tsp",
-      "display": "1 tsp",
+      "name": "all-purpose flour",
+      "quantity": 2,
+      "unit": "cup",
+      "display": "2 cups",
       "position": 0,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000005"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000005-ing2",
+      "name": "blueberries",
+      "quantity": 1,
+      "unit": "cup",
+      "display": "1 cup",
+      "position": 1,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000005"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000005-ing3",
+      "name": "milk",
+      "quantity": 1.5,
+      "unit": "cup",
+      "display": "1 1/2 cups",
+      "position": 2,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000005"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000005-ing4",
+      "name": "egg",
+      "quantity": 1,
+      "unit": "",
+      "display": "1",
+      "position": 3,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000005"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000005-ing5",
+      "name": "salt",
+      "quantity": 0.5,
+      "unit": "tsp",
+      "display": "1/2 tsp",
+      "position": 4,
       "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000005"
     }
   ],
@@ -37,7 +73,52 @@
     {
       "id": "0190c8a1-7a2e-7b3c-9d1e-000000000005-st1",
       "position": 0,
-      "text": "Cook and serve.",
+      "text": "Whisk the all-purpose flour and salt in a large bowl.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000005"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000005-st2",
+      "position": 1,
+      "text": "In a second bowl, whisk the milk and egg.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000005"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000005-st3",
+      "position": 2,
+      "text": "Fold wet into dry until just combined, then fold in the blueberries.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000005"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000005-st4",
+      "position": 3,
+      "text": "Rest the batter for 5 minutes to hydrate.",
+      "timers": [
+        {
+          "seconds": 300,
+          "label": "rest"
+        }
+      ],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000005"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000005-st5",
+      "position": 4,
+      "text": "Cook 1/4-cup scoops on a buttered griddle, 3 minutes per side.",
+      "timers": [
+        {
+          "seconds": 180,
+          "label": "pancake"
+        }
+      ],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000005"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000005-st6",
+      "position": 5,
+      "text": "Serve warm with maple syrup.",
       "timers": [],
       "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000005"
     }

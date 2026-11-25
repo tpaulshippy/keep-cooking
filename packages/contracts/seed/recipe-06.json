@@ -25,11 +25,47 @@
   "ingredients": [
     {
       "id": "0190c8a1-7a2e-7b3c-9d1e-000000000006-ing1",
-      "name": "salt",
-      "quantity": 1,
-      "unit": "tsp",
-      "display": "1 tsp",
+      "name": "romaine hearts",
+      "quantity": 2,
+      "unit": "",
+      "display": "2",
       "position": 0,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000006"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000006-ing2",
+      "name": "parmesan",
+      "quantity": 0.5,
+      "unit": "cup",
+      "display": "1/2 cup, grated",
+      "position": 1,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000006"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000006-ing3",
+      "name": "croutons",
+      "quantity": 1,
+      "unit": "cup",
+      "display": "1 cup",
+      "position": 2,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000006"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000006-ing4",
+      "name": "caesar dressing",
+      "quantity": 0.33,
+      "unit": "cup",
+      "display": "1/3 cup",
+      "position": 3,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000006"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000006-ing5",
+      "name": "salt",
+      "quantity": 0.25,
+      "unit": "tsp",
+      "display": "1/4 tsp",
+      "position": 4,
       "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000006"
     }
   ],
@@ -37,7 +73,42 @@
     {
       "id": "0190c8a1-7a2e-7b3c-9d1e-000000000006-st1",
       "position": 0,
-      "text": "Cook and serve.",
+      "text": "Chop the romaine hearts into bite-size pieces and wash crisp.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000006"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000006-st2",
+      "position": 1,
+      "text": "Grate the parmesan fresh.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000006"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000006-st3",
+      "position": 2,
+      "text": "Toss romaine with caesar dressing and salt.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000006"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000006-st4",
+      "position": 3,
+      "text": "Add croutons and half the parmesan; toss again.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000006"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000006-st5",
+      "position": 4,
+      "text": "Plate and shower with remaining parmesan.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000006"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000006-st6",
+      "position": 5,
+      "text": "Serve immediately with lemon wedges.",
       "timers": [],
       "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000006"
     }

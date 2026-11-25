@@ -25,11 +25,47 @@
   "ingredients": [
     {
       "id": "0190c8a1-7a2e-7b3c-9d1e-000000000001-ing1",
-      "name": "salt",
+      "name": "salmon fillets",
+      "quantity": 4,
+      "unit": "",
+      "display": "4 fillets",
+      "position": 0,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000001"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000001-ing2",
+      "name": "white miso",
+      "quantity": 3,
+      "unit": "tbsp",
+      "display": "3 tbsp",
+      "position": 1,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000001"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000001-ing3",
+      "name": "mirin",
+      "quantity": 1,
+      "unit": "tbsp",
+      "display": "1 tbsp",
+      "position": 2,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000001"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000001-ing4",
+      "name": "soy sauce",
       "quantity": 1,
       "unit": "tsp",
       "display": "1 tsp",
-      "position": 0,
+      "position": 3,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000001"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000001-ing5",
+      "name": "salt",
+      "quantity": 0.5,
+      "unit": "tsp",
+      "display": "1/2 tsp",
+      "position": 4,
       "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000001"
     }
   ],
@@ -37,7 +73,52 @@
     {
       "id": "0190c8a1-7a2e-7b3c-9d1e-000000000001-st1",
       "position": 0,
-      "text": "Cook and serve.",
+      "text": "Heat the broiler to high. Line a sheet pan with foil.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000001"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000001-st2",
+      "position": 1,
+      "text": "Whisk the white miso, mirin, soy sauce, and salt in a small bowl.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000001"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000001-st3",
+      "position": 2,
+      "text": "Pat the salmon fillets dry and coat with the miso glaze.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000001"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000001-st4",
+      "position": 3,
+      "text": "Broil for 8 minutes until caramelized at the edges.",
+      "timers": [
+        {
+          "seconds": 480,
+          "label": "broil"
+        }
+      ],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000001"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000001-st5",
+      "position": 4,
+      "text": "Rest for 5 minutes so the juices settle.",
+      "timers": [
+        {
+          "seconds": 300,
+          "label": "rest"
+        }
+      ],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000001"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000001-st6",
+      "position": 5,
+      "text": "Serve over rice with extra glaze spooned on top.",
       "timers": [],
       "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000001"
     }

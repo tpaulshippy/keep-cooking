@@ -25,11 +25,47 @@
   "ingredients": [
     {
       "id": "0190c8a1-7a2e-7b3c-9d1e-000000000008-ing1",
+      "name": "crushed tomatoes",
+      "quantity": 28,
+      "unit": "oz",
+      "display": "28 oz",
+      "position": 0,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000008"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000008-ing2",
+      "name": "onion",
+      "quantity": 1,
+      "unit": "",
+      "display": "1, diced",
+      "position": 1,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000008"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000008-ing3",
+      "name": "garlic",
+      "quantity": 3,
+      "unit": "cloves",
+      "display": "3 cloves",
+      "position": 2,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000008"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000008-ing4",
+      "name": "fresh basil",
+      "quantity": 0.5,
+      "unit": "cup",
+      "display": "1/2 cup",
+      "position": 3,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000008"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000008-ing5",
       "name": "salt",
       "quantity": 1,
       "unit": "tsp",
       "display": "1 tsp",
-      "position": 0,
+      "position": 4,
       "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000008"
     }
   ],
@@ -37,7 +73,52 @@
     {
       "id": "0190c8a1-7a2e-7b3c-9d1e-000000000008-st1",
       "position": 0,
-      "text": "Cook and serve.",
+      "text": "Soften the onion and garlic in olive oil for 6 minutes.",
+      "timers": [
+        {
+          "seconds": 360,
+          "label": "soften"
+        }
+      ],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000008"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000008-st2",
+      "position": 1,
+      "text": "Add the crushed tomatoes and 2 cups water.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000008"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000008-st3",
+      "position": 2,
+      "text": "Simmer for 25 minutes until slightly thickened.",
+      "timers": [
+        {
+          "seconds": 1500,
+          "label": "simmer"
+        }
+      ],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000008"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000008-st4",
+      "position": 3,
+      "text": "Tear in the fresh basil and season with salt.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000008"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000008-st5",
+      "position": 4,
+      "text": "Blend until silky, then reheat gently.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000008"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000008-st6",
+      "position": 5,
+      "text": "Serve with grilled cheese for dunking.",
       "timers": [],
       "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000008"
     }

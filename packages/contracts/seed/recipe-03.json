@@ -25,11 +25,47 @@
   "ingredients": [
     {
       "id": "0190c8a1-7a2e-7b3c-9d1e-000000000003-ing1",
+      "name": "chicken thighs",
+      "quantity": 1.5,
+      "unit": "lb",
+      "display": "1 1/2 lb",
+      "position": 0,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000003"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000003-ing2",
+      "name": "yogurt",
+      "quantity": 0.5,
+      "unit": "cup",
+      "display": "1/2 cup",
+      "position": 1,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000003"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000003-ing3",
+      "name": "tikka masala paste",
+      "quantity": 3,
+      "unit": "tbsp",
+      "display": "3 tbsp",
+      "position": 2,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000003"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000003-ing4",
+      "name": "crushed tomatoes",
+      "quantity": 14,
+      "unit": "oz",
+      "display": "14 oz",
+      "position": 3,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000003"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000003-ing5",
       "name": "salt",
       "quantity": 1,
       "unit": "tsp",
       "display": "1 tsp",
-      "position": 0,
+      "position": 4,
       "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000003"
     }
   ],
@@ -37,7 +73,57 @@
     {
       "id": "0190c8a1-7a2e-7b3c-9d1e-000000000003-st1",
       "position": 0,
-      "text": "Cook and serve.",
+      "text": "Toss the chicken thighs with yogurt, tikka masala paste, and salt. Marinate 15 minutes.",
+      "timers": [
+        {
+          "seconds": 900,
+          "label": "marinate"
+        }
+      ],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000003"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000003-st2",
+      "position": 1,
+      "text": "Sear the chicken in a hot skillet until browned, about 6 minutes.",
+      "timers": [
+        {
+          "seconds": 360,
+          "label": "sear"
+        }
+      ],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000003"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000003-st3",
+      "position": 2,
+      "text": "Add the crushed tomatoes and 1/2 cup water. Stir to combine.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000003"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000003-st4",
+      "position": 3,
+      "text": "Simmer for 20 minutes until the chicken is tender.",
+      "timers": [
+        {
+          "seconds": 1200,
+          "label": "simmer"
+        }
+      ],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000003"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000003-st5",
+      "position": 4,
+      "text": "Stir in a splash of cream if you like and adjust salt.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000003"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000003-st6",
+      "position": 5,
+      "text": "Serve over basmati rice with warm naan.",
       "timers": [],
       "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000003"
     }

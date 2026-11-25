@@ -25,11 +25,47 @@
   "ingredients": [
     {
       "id": "0190c8a1-7a2e-7b3c-9d1e-000000000011-ing1",
+      "name": "spaghetti",
+      "quantity": 12,
+      "unit": "oz",
+      "display": "12 oz",
+      "position": 0,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000011"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000011-ing2",
+      "name": "butter",
+      "quantity": 4,
+      "unit": "tbsp",
+      "display": "4 tbsp",
+      "position": 1,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000011"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000011-ing3",
+      "name": "garlic",
+      "quantity": 4,
+      "unit": "cloves",
+      "display": "4 cloves, sliced",
+      "position": 2,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000011"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000011-ing4",
+      "name": "parmesan",
+      "quantity": 0.75,
+      "unit": "cup",
+      "display": "3/4 cup",
+      "position": 3,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000011"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000011-ing5",
       "name": "salt",
       "quantity": 1,
       "unit": "tsp",
-      "display": "1 tsp",
-      "position": 0,
+      "display": "1 tsp plus more",
+      "position": 4,
       "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000011"
     }
   ],
@@ -37,7 +73,52 @@
     {
       "id": "0190c8a1-7a2e-7b3c-9d1e-000000000011-st1",
       "position": 0,
-      "text": "Cook and serve.",
+      "text": "Boil the spaghetti in well-salted water for 9 minutes until al dente.",
+      "timers": [
+        {
+          "seconds": 540,
+          "label": "boil"
+        }
+      ],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000011"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000011-st2",
+      "position": 1,
+      "text": "Meanwhile melt the butter and gently cook the garlic for 3 minutes.",
+      "timers": [
+        {
+          "seconds": 180,
+          "label": "garlic"
+        }
+      ],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000011"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000011-st3",
+      "position": 2,
+      "text": "Reserve 1 cup pasta water, then drain.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000011"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000011-st4",
+      "position": 3,
+      "text": "Toss pasta with garlic butter, parmesan, and salt.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000011"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000011-st5",
+      "position": 4,
+      "text": "Loosen with splashes of pasta water until glossy.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000011"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000011-st6",
+      "position": 5,
+      "text": "Serve with extra parmesan and black pepper.",
       "timers": [],
       "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000011"
     }

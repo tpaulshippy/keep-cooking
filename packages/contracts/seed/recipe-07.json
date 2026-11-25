@@ -25,11 +25,47 @@
   "ingredients": [
     {
       "id": "0190c8a1-7a2e-7b3c-9d1e-000000000007-ing1",
-      "name": "salt",
+      "name": "ground beef",
       "quantity": 1,
-      "unit": "tsp",
-      "display": "1 tsp",
+      "unit": "lb",
+      "display": "1 lb",
       "position": 0,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000007"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000007-ing2",
+      "name": "taco seasoning",
+      "quantity": 2,
+      "unit": "tbsp",
+      "display": "2 tbsp",
+      "position": 1,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000007"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000007-ing3",
+      "name": "corn tortillas",
+      "quantity": 8,
+      "unit": "",
+      "display": "8",
+      "position": 2,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000007"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000007-ing4",
+      "name": "shredded cabbage",
+      "quantity": 2,
+      "unit": "cup",
+      "display": "2 cups",
+      "position": 3,
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000007"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000007-ing5",
+      "name": "salt",
+      "quantity": 0.5,
+      "unit": "tsp",
+      "display": "1/2 tsp",
+      "position": 4,
       "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000007"
     }
   ],
@@ -37,7 +73,52 @@
     {
       "id": "0190c8a1-7a2e-7b3c-9d1e-000000000007-st1",
       "position": 0,
-      "text": "Cook and serve.",
+      "text": "Brown the ground beef in a skillet, breaking it up, about 8 minutes.",
+      "timers": [
+        {
+          "seconds": 480,
+          "label": "brown"
+        }
+      ],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000007"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000007-st2",
+      "position": 1,
+      "text": "Stir in taco seasoning, salt, and 1/4 cup water.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000007"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000007-st3",
+      "position": 2,
+      "text": "Simmer for 5 minutes until saucy.",
+      "timers": [
+        {
+          "seconds": 300,
+          "label": "simmer"
+        }
+      ],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000007"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000007-st4",
+      "position": 3,
+      "text": "Warm the corn tortillas directly over the flame.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000007"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000007-st5",
+      "position": 4,
+      "text": "Fill with beef and shredded cabbage.",
+      "timers": [],
+      "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000007"
+    },
+    {
+      "id": "0190c8a1-7a2e-7b3c-9d1e-000000000007-st6",
+      "position": 5,
+      "text": "Serve with lime, salsa, and sour cream.",
       "timers": [],
       "recipeId": "0190c8a1-7a2e-7b3c-9d1e-000000000007"
     }
