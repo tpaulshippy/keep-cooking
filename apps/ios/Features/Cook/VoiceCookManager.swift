@@ -104,8 +104,9 @@ public final class LiveVoiceInput: VoiceAudioInput {
     public private(set) var isRunning = false
     private var shouldKeepListening = false
     private var onTranscript: ((String) -> Void)?
-    /// Live partial words for display only (set by the manager; never
-    /// routed to command handling).
+    /// Live partial words for display (set by the manager). Also the
+    /// barge-in trigger: a non-echo partial arriving while TTS speaks
+    /// stops TTS (see `startListening`). Never routed to command handling.
     var onPartial: ((String) -> Void)?
     /// Recognition failures for display (set by the manager).
     var onError: ((String) -> Void)?
@@ -567,10 +568,17 @@ public final class VoiceCookManager {
         })
         if let live = audioInput as? LiveVoiceInput {
             live.onPartial = { [weak self] text in
-                // Partials stay gated while TTS plays (barge-in resolves on
-                // finals): this keeps echo fragments out of the Heard
-                // caption while our audio is in the air.
-                guard let self, !self.synthesizer.isSpeaking else { return }
+                guard let self else { return }
+                if self.synthesizer.isSpeaking {
+                    // Barge-in: finals need silence to fire, and our own
+                    // read-aloud denies it — so the first real user speech
+                    // over our audio stops TTS, creating the silence the
+                    // final needs. Our own echo (a partial contained in
+                    // what we're speaking) is ignored so read-aloud can't
+                    // cut itself off.
+                    if self.partialIsEcho(text) { return }
+                    self.stopSpeakingOutput()
+                }
                 self.lastHeardTranscript = text
             }
             live.onError = { [weak self] message in
@@ -873,6 +881,14 @@ public final class VoiceCookManager {
         let heard = normalizeEchoText(transcript)
         guard !heard.isEmpty else { return false }
         return heard == normalizeEchoText(lastSpokenText)
+    }
+
+    private func partialIsEcho(_ partial: String) -> Bool {
+        let p = normalizeEchoText(partial)
+        guard !p.isEmpty else { return true }
+        let spoken = normalizeEchoText(lastSpokenText)
+        guard !spoken.isEmpty else { return false }
+        return spoken.contains(p)
     }
 
     private func normalizeEchoText(_ text: String) -> String {
