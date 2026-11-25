@@ -848,6 +848,8 @@ struct DrawerShellView: View {
     @State private var selection: DrawerSection = .recipes
     @State private var drawerOpen = false
     @State private var quickAdd: QuickAddKind? = nil
+    /// Blank-recipe request forwarded to the library (single + menu entry).
+    @State private var requestBlankRecipe = false
 
     @Query(filter: #Predicate<Recipe> { !$0.deleted })
     private var recipes: [Recipe]
@@ -954,6 +956,14 @@ struct DrawerShellView: View {
 
             SwiftUI.Menu {
                 Button {
+                    // Blank recipe lives in the library: switch there first
+                    // (no-op if already visible) then trigger creation.
+                    selection = .recipes
+                    requestBlankRecipe = true
+                } label: {
+                    Label("Create New Recipe", systemImage: "square.and.pencil")
+                }
+                Button {
                     quickAdd = .clip
                 } label: {
                     Label("Clip URL", systemImage: "link")
@@ -1008,7 +1018,7 @@ struct DrawerShellView: View {
         Group {
             switch selection {
             case .recipes:
-                RecipeLibraryView()
+                RecipeLibraryView(requestBlankRecipe: $requestBlankRecipe)
             case .plan:
                 PlanTabView()
             case .menus:

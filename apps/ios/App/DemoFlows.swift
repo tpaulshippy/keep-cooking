@@ -120,6 +120,10 @@ enum LibraryAddDestination: Hashable {
 
 struct RecipeLibraryView: View {
     @Environment(\.modelContext) private var context
+    /// Shell quick-add "Create New Recipe" trigger: the drawer shell owns
+    /// the single + menu, so blank-recipe creation is requested through
+    /// this binding and consumed here (insert + navigate to detail).
+    @Binding var requestBlankRecipe: Bool
     @Query(filter: #Predicate<Recipe> { !$0.deleted },
            sort: [SortDescriptor(\Recipe.title)])
     private var recipes: [Recipe]
@@ -309,6 +313,15 @@ struct RecipeLibraryView: View {
             .navigationTitle("Recipes")
             .overlay(alignment: .bottom) {
                 if isSelecting { selectionBar } else { bottomBar }
+            }
+            // Shell quick-add "Create New Recipe" lands here: consume the
+            // request whether the library was already visible (onChange) or
+            // was just switched to (onAppear, same update as the trigger).
+            .onAppear {
+                if requestBlankRecipe { consumeBlankRequest() }
+            }
+            .onChange(of: requestBlankRecipe) {
+                if requestBlankRecipe { consumeBlankRequest() }
             }
             .sheet(isPresented: $showFilterSheet) { filterSheet }
             .sheet(isPresented: $showCategorize) { categorizeSheet }
@@ -702,6 +715,13 @@ struct RecipeLibraryView: View {
         context.insert(recipe)
         try? context.save()
         createdRecipe = recipe
+    }
+
+    /// Consume the shell's blank-recipe request: reset the trigger first so
+    /// a re-appear can't double-insert, then create + navigate to detail.
+    private func consumeBlankRequest() {
+        requestBlankRecipe = false
+        createNew()
     }
 
     private func restore(_ recipe: Recipe) {
