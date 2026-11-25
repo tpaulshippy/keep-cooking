@@ -580,7 +580,7 @@ public final class VoiceCookManager {
         #endif
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = bestSpeechVoice(for: locale)
-            ?? locale.flatMap { AVSpeechSynthesisVoice(language: $0.identifier) }
+            ?? (locale.map { AVSpeechSynthesisVoice(language: $0.identifier) })
         synthesizer.speak(utterance)
         isReadingAloud = true
     }
