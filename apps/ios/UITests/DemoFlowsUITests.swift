@@ -68,10 +68,11 @@ final class DemoFlowsUITests: XCTestCase {
         app.launch()
 
         wait(id(app, "recipe-list"), "seeded recipe list missing")
-        let add = id(app, "add-recipe-button")
-        wait(add, "add-recipe button missing")
+        // Single + lives in the shell top bar (quick-add): Clip / Scan / Caption.
+        let add = id(app, "quick-add-button")
+        wait(add, "quick-add button missing")
         add.tap()
-        let scan = app.buttons["Scan cookbook (OCR)"]
+        let scan = app.buttons["Scan cookbook"]
         wait(scan, "Scan cookbook entry missing")
         scan.tap()
 
@@ -111,9 +112,8 @@ final class DemoFlowsUITests: XCTestCase {
         app.launch()
 
         // Week plan with demo entries (Mon/Wed/Fri dinners, seeded offline).
-        let planTab = app.buttons["Plan tab"]
-        wait(planTab, "Plan tab missing")
-        planTab.tap()
+        // Drawer-only nav: sections switch through the drawer (no bottom bar).
+        goDrawer(app, "drawer-plan")
         wait(app.buttons["Add week to list"], "Add-week button missing")
         sleep(1)
         app.buttons["Add week to list"].tap()
@@ -121,7 +121,7 @@ final class DemoFlowsUITests: XCTestCase {
         sleep(2)
 
         // Aggregated, aisle-sorted list → check off the first item.
-        // (Lists lives in the drawer; the bottom-bar shortcut is "Shopping".)
+        // (Lists lives in the drawer; Shopping/Lists switch via drawer rows.)
         goDrawer(app, "drawer-lists")
         let weeklyHeader = app.staticTexts.containing(
             NSPredicate(format: "label CONTAINS 'Weekly shop'")).firstMatch
@@ -134,9 +134,7 @@ final class DemoFlowsUITests: XCTestCase {
         sleep(2)
 
         // Cook mode reachable from a recipe: scaler + step pager.
-        let recipesTab = app.buttons["Recipes tab"]
-        wait(recipesTab, "Recipes tab missing")
-        recipesTab.tap()
+        goDrawer(app, "drawer-recipes")
         wait(id(app, "recipe-list"), "recipe list missing")
         let firstRecipe = id(app, "recipe-list").descendants(matching: .button).firstMatch
         wait(firstRecipe, "no recipe row")

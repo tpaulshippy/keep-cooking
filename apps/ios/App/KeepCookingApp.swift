@@ -848,6 +848,8 @@ struct DrawerShellView: View {
     @State private var selection: DrawerSection = .recipes
     @State private var drawerOpen = false
     @State private var quickAdd: QuickAddKind? = nil
+    /// Blank-recipe request forwarded to the library (single + menu entry).
+    @State private var requestBlankRecipe = false
 
     @Query(filter: #Predicate<Recipe> { !$0.deleted })
     private var recipes: [Recipe]
@@ -871,7 +873,6 @@ struct DrawerShellView: View {
             // Swipe right from the leading edge opens the drawer;
             // swipe left on open drawer dismisses it.
             .gesture(drawerOpen ? nil : edgeOpenGesture)
-            .safeAreaInset(edge: .bottom) { bottomBar }
             // While the drawer is open VoiceOver must not reach the
             // content dimmed behind the backdrop.
             .accessibilityHidden(drawerOpen)
@@ -955,6 +956,14 @@ struct DrawerShellView: View {
 
             SwiftUI.Menu {
                 Button {
+                    // Blank recipe lives in the library: switch there first
+                    // (no-op if already visible) then trigger creation.
+                    selection = .recipes
+                    requestBlankRecipe = true
+                } label: {
+                    Label("Create New Recipe", systemImage: "square.and.pencil")
+                }
+                Button {
                     quickAdd = .clip
                 } label: {
                     Label("Clip URL", systemImage: "link")
@@ -1009,7 +1018,7 @@ struct DrawerShellView: View {
         Group {
             switch selection {
             case .recipes:
-                RecipeLibraryView()
+                RecipeLibraryView(requestBlankRecipe: $requestBlankRecipe)
             case .plan:
                 PlanTabView()
             case .menus:
@@ -1027,69 +1036,6 @@ struct DrawerShellView: View {
         // Content views own their own NavigationStacks; this id helps
         // SwiftUI reset scroll/search state on section switch.
         .id(selection)
-    }
-
-    // MARK: Bottom bar — slim contextual pill
-
-    private var bottomBar: some View {
-        HStack {
-            Spacer()
-            HStack(spacing: 4) {
-                bottomButton(section: .recipes)
-                bottomButton(section: .plan)
-                Button {
-                    quickAdd = .clip
-                } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.title2)
-                        .frame(width: 44, height: 44)
-                }
-                .accessibilityLabel("Add recipe")
-                bottomButton(section: .lists)
-                Button {
-                    withAnimation { drawerOpen = true }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.body.weight(.semibold))
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .accessibilityLabel("More sections")
-                .accessibilityIdentifier("bottom-more-button")
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
-            .background(.ultraThinMaterial, in: Capsule())
-            .overlay {
-                Capsule()
-                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
-            Spacer()
-        }
-        .padding(.vertical, 8)
-        .background(Color(.systemBackground).opacity(0.001))
-    }
-
-    @ViewBuilder
-    private func bottomButton(section: DrawerSection) -> some View {
-        let active = selection == section
-        Button {
-            selection = section
-        } label: {
-            VStack(spacing: 2) {
-                Image(systemName: section.icon)
-                    .font(.body)
-                Text(section.title)
-                    .font(.caption2)
-                    .lineLimit(1)
-            }
-            .foregroundStyle(active ? Color.accentColor : Color.secondary)
-            .frame(minWidth: 56, minHeight: 44)
-            .contentShape(Rectangle())
-        }
-        .accessibilityLabel("\(section.title) tab")
-        .accessibilityAddTraits(active ? .isSelected : [])
     }
 
     // MARK: Drawer panel
