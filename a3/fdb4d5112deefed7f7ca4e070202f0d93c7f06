@@ -1,0 +1,20 @@
+apps/ios/App/DemoFlows.swift
+  h_6bbd00fe0a456a 127-132,219-220,296-298,307-310,1370,1458
+apps/ios/App/KeepCookingApp.swift
+  h_6bbd00fe0a456a 853-858,916-919,961-999,1010-1015
+apps/ios/Features/Library/LibraryViews.swift
+  h_6bbd00fe0a456a 112-114
+apps/ios/Features/Shop/ShopViews.swift
+  h_6bbd00fe0a456a 254-263
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a3fdb4d5112deefed7f7ca4e070202f0d93c7f06",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
