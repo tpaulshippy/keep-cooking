@@ -489,24 +489,38 @@ private func parseVoiceTimer(_ text: String) -> VoiceCommand? {
     for verb in ["start", "set"] {
         guard text == verb || text.hasPrefix(verb + " ") else { continue }
         var rest = text == verb ? "" : String(text.dropFirst(verb.count + 1))
-        if rest.hasPrefix("a ") { rest = String(rest.dropFirst(2)) }
-        if rest.hasPrefix("the ") { rest = String(rest.dropFirst(4)) }
-        if rest == "timer" || rest == "timers" { return .startTimer(seconds: nil, label: nil) }
-        let durationPart: String
-        if rest.hasSuffix(" timers") {
-            durationPart = String(rest.dropLast(" timers".count))
-        } else if rest.hasSuffix(" timer") {
-            durationPart = String(rest.dropLast(" timer".count))
-        } else {
-            continue
+        var unstripped: String?
+        for article in ["a ", "an ", "the "] where rest.hasPrefix(article) {
+            unstripped = rest
+            rest = String(rest.dropFirst(article.count))
+            break
         }
-        var duration = durationPart.trimmingCharacters(in: .whitespaces)
-        if duration.hasPrefix("for ") { duration = String(duration.dropFirst(4)) }
-        duration = duration.trimmingCharacters(in: .whitespaces)
-        guard !duration.isEmpty, let seconds = voiceTimerSeconds(in: duration) else { continue }
+        if rest == "timer" { return .startTimer(seconds: nil, label: nil) }
+        guard let seconds = parsePaprikaTimerBody(rest)
+            ?? unstripped.flatMap(parsePaprikaTimerBody) else { continue }
         return .startTimer(seconds: seconds, label: nil)
     }
     return nil
+}
+
+/// Parses the body of a Paprika-style timer command ("10 minute" from
+/// "set a 10 minute timer"). Returns nil when there is no "<duration> timer"
+/// shape or the duration is unparseable. The retry caller handles articles
+/// that double as the quantity ("a minute" = 60s, "a hundred minutes").
+private func parsePaprikaTimerBody(_ rest: String) -> Int? {
+    let durationPart: String
+    if rest.hasSuffix(" timers") {
+        durationPart = String(rest.dropLast(" timers".count))
+    } else if rest.hasSuffix(" timer") {
+        durationPart = String(rest.dropLast(" timer".count))
+    } else {
+        return nil
+    }
+    var duration = durationPart.trimmingCharacters(in: .whitespaces)
+    if duration.hasPrefix("for ") { duration = String(duration.dropFirst(4)) }
+    duration = duration.trimmingCharacters(in: .whitespaces)
+    guard !duration.isEmpty else { return nil }
+    return voiceTimerSeconds(in: duration)
 }
 
 private func parseVoiceIngredientAmount(_ text: String) -> VoiceCommand? {

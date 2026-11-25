@@ -202,6 +202,13 @@ class CookLogicTest {
         // Paprika parity: duration before "timer", no "for".
         assertEquals(VoiceCommand.StartTimer(600, null), parseVoiceCommand("set a 10 minute timer"))
         assertEquals(VoiceCommand.StartTimer(300, null), parseVoiceCommand("start a 5 minute timer"))
+        // Articles doubling as the quantity ("a" = 1) still parse.
+        assertEquals(VoiceCommand.StartTimer(60, null), parseVoiceCommand("set a minute timer"))
+        assertEquals(VoiceCommand.StartTimer(3600, null), parseVoiceCommand("set an hour timer"))
+        assertEquals(VoiceCommand.StartTimer(6000, null), parseVoiceCommand("set a hundred minute timer"))
+        // Bare verbs and bare plurals stay unknown.
+        assertEquals(VoiceCommand.Unknown, parseVoiceCommand("set"))
+        assertEquals(VoiceCommand.Unknown, parseVoiceCommand("start timers"))
     }
 
     @Test

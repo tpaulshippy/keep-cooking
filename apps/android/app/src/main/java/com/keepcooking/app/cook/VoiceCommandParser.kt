@@ -373,22 +373,39 @@ private fun parseVoiceTimer(text: String): VoiceCommand? {
     for (verb in listOf("start", "set")) {
         if (text != verb && !text.startsWith("$verb ")) continue
         var rest = if (text == verb) "" else text.drop(verb.length + 1)
-        if (rest.startsWith("a ")) rest = rest.drop(2)
-        if (rest.startsWith("the ")) rest = rest.drop(4)
-        if (rest == "timer" || rest == "timers") return VoiceCommand.StartTimer(seconds = null, label = null)
-        val durationPart = when {
-            rest.endsWith(" timers") -> rest.dropLast(" timers".length)
-            rest.endsWith(" timer") -> rest.dropLast(" timer".length)
-            else -> continue
+        var unstripped: String? = null
+        for (article in listOf("a ", "an ", "the ")) {
+            if (rest.startsWith(article)) {
+                unstripped = rest
+                rest = rest.drop(article.length)
+                break
+            }
         }
-        var duration = durationPart.trim()
-        if (duration.startsWith("for ")) duration = duration.drop(4)
-        duration = duration.trim()
-        if (duration.isEmpty()) continue
-        val seconds = voiceTimerSeconds(duration) ?: continue
+        if (rest == "timer") return VoiceCommand.StartTimer(seconds = null, label = null)
+        val seconds = parsePaprikaTimerBody(rest)
+            ?: unstripped?.let { parsePaprikaTimerBody(it) } ?: continue
         return VoiceCommand.StartTimer(seconds = seconds, label = null)
     }
     return null
+}
+
+/**
+ * Parses the body of a Paprika-style timer command ("10 minute" from
+ * "set a 10 minute timer"). Null when there is no "<duration> timer" shape
+ * or the duration is unparseable. The caller retries with the article
+ * intact since "a"/"an" can be the quantity ("a minute" = 60s).
+ */
+private fun parsePaprikaTimerBody(rest: String): Int? {
+    val durationPart = when {
+        rest.endsWith(" timers") -> rest.dropLast(" timers".length)
+        rest.endsWith(" timer") -> rest.dropLast(" timer".length)
+        else -> return null
+    }
+    var duration = durationPart.trim()
+    if (duration.startsWith("for ")) duration = duration.drop(4)
+    duration = duration.trim()
+    if (duration.isEmpty()) return null
+    return voiceTimerSeconds(duration)
 }
 
 private fun parseVoiceIngredientAmount(text: String): VoiceCommand? {
