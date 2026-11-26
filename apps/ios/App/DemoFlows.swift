@@ -1364,7 +1364,12 @@ struct RecipeDetailView: View {
     }
 }
 
-// MARK: - Plan tab (live week → add week to list)
+// MARK: - Plan tab (live week → add week to list + meal CRUD)
+//
+// Wires the full PlanView API: entries/menus/recipeOptions plus
+// onAddWeekToList/onApplyMenu/onAddDay/onSelectEntry/onDeleteEntry/
+// onSaveMeal/onSearchRecipes. Recipe search filters locally inside
+// AddMealSheet already, so onSearchRecipes is a no-op sink.
 
 struct PlanTabView: View {
     @Environment(\.modelContext) private var context
@@ -1372,6 +1377,7 @@ struct PlanTabView: View {
     @Query(sort: [SortDescriptor(\Menu.name)]) private var menus: [Menu]
     @Query private var recipes: [Recipe]
     @State private var confirm: String?
+    @State private var selectedRecipe: Recipe?
 
     var body: some View {
         NavigationStack {
@@ -1382,10 +1388,20 @@ struct PlanTabView: View {
                         .padding(.vertical, 6)
                         .accessibilityIdentifier("week-to-list-confirm")
                 }
-                PlanView(entries: entries, menus: menuSnapshots, onAddWeekToList: addWeekToList,
-                    onAddDay: addDay)
+                PlanView(entries: entries, menus: menuSnapshots,
+                    recipeOptions: recipeOptions,
+                    onAddWeekToList: addWeekToList,
+                    onApplyMenu: applyMenu, onAddDay: addDay,
+                    onSelectEntry: selectEntry, onDeleteEntry: deleteEntry,
+                    onSaveMeal: saveMeal, onSearchRecipes: { _ in })
                     .accessibilityIdentifier("plan-view")
                     .toolbar(.hidden, for: .navigationBar)
+            }
+            .navigationDestination(isPresented: Binding(
+                get: { selectedRecipe != nil },
+                set: { if !$0 { selectedRecipe = nil } }
+            )) {
+                if let selectedRecipe { RecipeDetailView(recipe: selectedRecipe) }
             }
         }
     }
@@ -1410,12 +1426,119 @@ struct PlanTabView: View {
         }
     }
 
+    /// All non-deleted recipes sorted by title for the PlanView
+    /// Add Meal wizard picker.
+    private var recipeOptions: [RecipeOptionSnapshot] {
+        recipes.filter { !$0.deleted }
+            .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+            .map { recipe in
+                RecipeOptionSnapshot(id: recipe.id, title: recipe.title,
+                    category: recipe.categories.first ?? "Uncategorized",
+                    rating: recipe.rating ?? 0, thumbKey: recipe.photoThumb)
+            }
+    }
+
     /// Empty-day "Add" affordance: inserts a blank dinner shell for `day`
     /// (recipe/note filled in later); the day row re-renders with content.
     private func addDay(_ day: Date) {
         context.insert(Plan(householdId: "hh-demo", date: day, meal: .dinner,
             deviceId: currentDeviceId()))
         try? context.save()
+    }
+
+    /// Inserts a planned meal. Skips the insert when the same day + meal +
+    /// recipe already exists non-deleted (double-tap safe, mirrors
+    /// RecipeDetailView.addToPlan). Pass nil recipeId + note for note-only
+    /// entries. Wired to PlanView `onSaveMeal`.
+    private func saveMeal(date: Date, meal: String, recipeId: String?,
+        note: String = "", servings: Double? = nil) {
+        let slot = MealSlot(rawValue: meal) ?? .dinner
+        let cal = Calendar.current
+        let dup: Bool = {
+            if let recipeId {
+                return plans.contains {
+                    !$0.deleted && cal.isDate($0.date, inSameDayAs: date)
+                        && $0.mealRaw == slot.rawValue && $0.recipeId == recipeId
+                }
+            }
+            let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return false }
+            return plans.contains {
+                !$0.deleted && cal.isDate($0.date, inSameDayAs: date)
+                    && $0.mealRaw == slot.rawValue && $0.recipeId == nil
+                    && $0.note == trimmed
+            }
+        }()
+        if dup { return }
+        let title: String
+        if let recipeId, let recipe = recipesById[recipeId] {
+            title = recipe.title
+        } else {
+            let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
+            title = trimmed.isEmpty ? "Meal" : trimmed
+        }
+        context.insert(Plan(householdId: "hh-demo", date: date, meal: slot,
+            recipeId: recipeId, note: note, servings: servings,
+            deviceId: currentDeviceId()))
+        try? context.save()
+        confirm = "Planned \(title) for \(PlanView.dayTitle(date))"
+    }
+
+    /// Updates an existing entry in place (tombstone + re-insert NOT needed:
+    /// same id, bump updatedAt for last-write-wins sync). Kept for a future
+    /// PlanView `onUpdateMeal` (not in the current API).
+    private func updateEntry(id: String, date: Date, meal: String,
+        recipeId: String? = nil, note: String = "", servings: Double? = nil) {
+        guard let plan = plans.first(where: { $0.id == id && !$0.deleted }) else { return }
+        plan.date = date
+        plan.mealRaw = (MealSlot(rawValue: meal) ?? .dinner).rawValue
+        plan.recipeId = recipeId
+        plan.note = note
+        plan.servings = servings
+        plan.updatedAt = Date()
+        try? context.save()
+        confirm = "Updated planned meal for \(PlanView.dayTitle(date))"
+    }
+
+    /// Tombstones a plan entry (sync-safe delete). Wired to PlanView
+    /// `onDeleteEntry`.
+    private func deleteEntry(id: String) {
+        guard let plan = plans.first(where: { $0.id == id && !$0.deleted }) else { return }
+        plan.deleted = true
+        plan.updatedAt = Date()
+        try? context.save()
+        confirm = "Removed planned meal"
+    }
+
+    /// Row tap: recipe entries navigate to RecipeDetailView; note-only
+    /// entries surface their text in the confirm banner. Wired to PlanView
+    /// `onSelectEntry`.
+    private func selectEntry(id: String) {
+        guard let plan = plans.first(where: { $0.id == id && !$0.deleted }) else { return }
+        if let recipeId = plan.recipeId, let recipe = recipesById[recipeId] {
+            selectedRecipe = recipe
+        } else {
+            let label = plan.note.trimmingCharacters(in: .whitespacesAndNewlines)
+            confirm = label.isEmpty ? "No meal details" : label
+        }
+    }
+
+    /// Copies a reusable menu's entries into the given week (same logic as
+    /// MenusTabView.apply, looked up by id for the PlanView callback).
+    private func applyMenu(menuId: String, weekStart: Date) {
+        guard let menu = menus.first(where: { $0.id == menuId && !$0.deleted }) else { return }
+        let cal = Calendar.current
+        var count = 0
+        for entry in menu.entries {
+            guard let day = cal.date(byAdding: .day, value: entry.dayOffset, to: weekStart) else { continue }
+            let slot = MealSlot(rawValue: entry.meal) ?? .dinner
+            context.insert(Plan(householdId: "hh-demo", date: day, meal: slot,
+                recipeId: entry.recipeId.isEmpty ? nil : entry.recipeId,
+                servings: entry.servings, deviceId: currentDeviceId()))
+            count += 1
+        }
+        try? context.save()
+        confirm = count > 0 ? "Applied \(menu.name): \(count) meals planned" : "\(menu.name) has no entries to apply"
     }
 
     private func addWeekToList(_ weekStart: Date) {
