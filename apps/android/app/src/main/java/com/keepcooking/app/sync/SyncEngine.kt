@@ -80,9 +80,16 @@ class SyncEngine(
     }
 
     /** Transport for this run: Advanced custom-server override or the built-in server. */
+    private val overrideApiCache = mutableMapOf<String, ApiService>()
+
     suspend fun activeApi(): ApiService {
         val override = dataStore.data.map { it[KEY_BASE_URL]?.trim().orEmpty() }.first()
-        return if (override.isNotEmpty()) createApiService(override) else api
+        if (override.isEmpty()) return api
+        // Cache per base URL: a Retrofit/OkHttpClient per sync run would
+        // leak connection pools and threads.
+        synchronized(overrideApiCache) {
+            return overrideApiCache.getOrPut(override) { createApiService(override) }
+        }
     }
 
     /** Enqueue a local envelope into the outbox (called after every local write). */
