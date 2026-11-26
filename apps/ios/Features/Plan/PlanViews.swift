@@ -273,7 +273,6 @@ public struct PlanView: View {
                 } header: {
                     MealSectionHeader(meal: meal, date: anchor) {
                         openSheet(date: anchor, meal: meal)
-                        onAddDay?(anchor)
                     }
                 }
             }
@@ -336,7 +335,6 @@ public struct PlanView: View {
                     WeekDayHeader(day: day,
                                   isToday: Calendar.current.isDateInToday(day)) {
                         openSheet(date: day, meal: "dinner")
-                        onAddDay?(day)
                     }
                 }
             }
@@ -400,41 +398,45 @@ public struct PlanView: View {
     }
 
     private func entryRow(_ entry: PlanEntrySnapshot, showMealLabel: Bool) -> some View {
-        Button {
-            onSelectEntry?(entry.id)
-        } label: {
-            HStack(spacing: 12) {
-                entryThumb(entry)
-                VStack(alignment: .leading, spacing: 2) {
-                    if showMealLabel {
-                        Text(Self.displayName(for: entry.meal).uppercased())
-                            .font(.caption2.bold())
-                            .foregroundStyle(Self.color(for: entry.meal))
-                    }
-                    Text(entryTitle(entry))
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                    if let s = entry.servings {
-                        Text("\(fractionDisplayString(for: s)) servings")
-                            .font(.caption).foregroundStyle(.secondary)
-                    } else if entry.recipeId == nil, entry.note.isEmpty == false, entry.recipeTitle == nil {
-                        Text(entry.note).font(.caption).foregroundStyle(.secondary)
-                    }
+        HStack(spacing: 12) {
+            entryThumb(entry)
+            VStack(alignment: .leading, spacing: 2) {
+                if showMealLabel {
+                    Text(Self.displayName(for: entry.meal).uppercased())
+                        .font(.caption2.bold())
+                        .foregroundStyle(Self.color(for: entry.meal))
                 }
-                Spacer()
-                if editMode {
-                    Button {
-                        onDeleteEntry?(entry.id)
-                    } label: {
-                        Label("Delete", systemImage: "minus.circle.fill")
-                            .labelStyle(.iconOnly)
-                            .foregroundStyle(.red)
-                    }
-                    .buttonStyle(.plain)
+                Text(entryTitle(entry))
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                if let s = entry.servings {
+                    Text("\(fractionDisplayString(for: s)) servings")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else if entry.recipeId == nil, entry.note.isEmpty == false, entry.recipeTitle == nil {
+                    Text(entry.note).font(.caption).foregroundStyle(.secondary)
                 }
             }
+            Spacer()
+            if editMode {
+                Button {
+                    onDeleteEntry?(entry.id)
+                } label: {
+                    Label("Delete", systemImage: "minus.circle.fill")
+                        .labelStyle(.iconOnly)
+                        .foregroundStyle(.red)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("plan-delete-\(entry.id)")
+            }
         }
+        .contentShape(Rectangle())
+        .onTapGesture { onSelectEntry?(entry.id) }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) { onDeleteEntry?(entry.id) } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+        .contextMenu {
             Button(role: .destructive) { onDeleteEntry?(entry.id) } label: {
                 Label("Delete", systemImage: "trash")
             }
@@ -442,37 +444,41 @@ public struct PlanView: View {
     }
 
     private func weekEntryRow(_ entry: PlanEntrySnapshot) -> some View {
-        Button {
-            onSelectEntry?(entry.id)
-        } label: {
-            HStack(spacing: 10) {
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(Self.color(for: entry.meal))
-                    .frame(width: 4)
-                Text(Self.displayName(for: entry.meal))
-                    .font(.subheadline.bold())
-                    .foregroundStyle(Self.color(for: entry.meal))
-                    .frame(minWidth: 76, alignment: .leading)
-                Text("|")
-                    .foregroundStyle(.tertiary)
-                Text(entryTitle(entry))
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Spacer()
-                if editMode {
-                    Button {
-                        onDeleteEntry?(entry.id)
-                    } label: {
-                        Label("Delete", systemImage: "minus.circle.fill")
-                            .labelStyle(.iconOnly)
-                            .foregroundStyle(.red)
-                    }
-                    .buttonStyle(.plain)
+        HStack(spacing: 10) {
+            RoundedRectangle(cornerRadius: 3)
+                .fill(Self.color(for: entry.meal))
+                .frame(width: 4)
+            Text(Self.displayName(for: entry.meal))
+                .font(.subheadline.bold())
+                .foregroundStyle(Self.color(for: entry.meal))
+                .frame(minWidth: 76, alignment: .leading)
+            Text("|")
+                .foregroundStyle(.tertiary)
+            Text(entryTitle(entry))
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+            Spacer()
+            if editMode {
+                Button {
+                    onDeleteEntry?(entry.id)
+                } label: {
+                    Label("Delete", systemImage: "minus.circle.fill")
+                        .labelStyle(.iconOnly)
+                        .foregroundStyle(.red)
                 }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("plan-delete-\(entry.id)")
             }
         }
+        .contentShape(Rectangle())
+        .onTapGesture { onSelectEntry?(entry.id) }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) { onDeleteEntry?(entry.id) } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+        .contextMenu {
             Button(role: .destructive) { onDeleteEntry?(entry.id) } label: {
                 Label("Delete", systemImage: "trash")
             }
