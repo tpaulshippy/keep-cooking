@@ -180,8 +180,10 @@ public enum SyncTransportError: Error, Sendable {
     case decode(Error)
 }
 
-/// Auth headers for the production beta gate + identity.
-/// - `betaToken`: `INTERNAL_BETA_TOKEN` (required on prod hosts).
+/// Auth headers for sync + identity.
+/// - `betaToken`: legacy, unused — callers pass nil (open access, no token
+///   enrollment). The transport still honors it if ever set, so old call
+///   sites stay source-compatible.
 /// - `userId`: shared household identity (beta: "beta-user"; pass 2 = Apple id).
 public struct SyncAuth: Sendable {
     public var betaToken: String?
@@ -200,8 +202,8 @@ public protocol SyncTransport: Sendable {
 
 /// URLSession transport against Lane 1 (/sync/pull, /sync/push).
 /// Strictly off-main: async/await, JSON with ISO8601 dates.
-/// Sends the beta-gate bearer + identity headers when `auth` is set
-/// (required on prod `*.workers.dev`; harmless on local dev).
+/// Sends the identity headers when `auth` is set (user/device; no bearer —
+/// open access). Harmless on local dev.
 public struct APISyncTransport: SyncTransport {
     private let baseURL: URL
     private let session: URLSession
@@ -712,7 +714,7 @@ struct E2EPushResponse: Decodable {
 }
 
 /// URLSession transport for /v2/sync/:hash, sharing the `baseURL` + auth
-/// header convention of `APISyncTransport` (beta bearer + identity headers).
+/// header convention of `APISyncTransport` (identity headers; no bearer).
 public struct APIE2ETransport: E2EEncryptedTransport {
     private let baseURL: URL
     private let session: URLSession

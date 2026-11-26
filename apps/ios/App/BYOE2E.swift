@@ -103,7 +103,12 @@ public func e2eParseInvite(_ pasted: String) throws -> SyncInviteBundle {
 /// in the Keychain + metadata in UserDefaults via `E2EKeyStore`.
 /// Returns identifiers only — the code itself never surfaces.
 public func e2eJoin(pasted: String) throws -> E2EJoinResult {
-    let bundle = try e2eParseInvite(pasted)
+    try e2eJoin(bundle: e2eParseInvite(pasted))
+}
+
+/// Join from an already-parsed bundle (e.g. after the caller confirmed a
+/// household switch). Same verify-then-store contract as `e2eJoin(pasted:)`.
+public func e2eJoin(bundle: SyncInviteBundle) throws -> E2EJoinResult {
     // Defense in depth: re-assert the kid binding immediately before
     // acceptInvite persists anything, even though the parser already checked.
     guard kid(syncCode: bundle.syncCode) == bundle.kid else { throw E2EJoinError.kidMismatch }

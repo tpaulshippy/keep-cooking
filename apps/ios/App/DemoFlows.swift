@@ -1827,28 +1827,27 @@ struct MenusTabView: View {
     }
 }
 
-// MARK: - Settings (device, counts, sync, BYO backend, E2E)
+// MARK: - Settings (sync status, devices sharing, advanced BYO backend)
 
 struct SettingsView: View {
-    @Query private var recipes: [Recipe]
-    @Query private var lists: [ShoppingList]
-    @Query private var plans: [Plan]
-    @State private var baseURLString: String = UserDefaults.standard.string(forKey: "smidgen.apiBaseURL") ?? ""
-    @State private var token: String = UserDefaults.standard.string(forKey: "smidgen.betaToken") ?? ""
     @State private var syncing = false
     @State private var status: String = ""
-    // BYO backend test state
-    @State private var healthResult: String = ""
-    @State private var testing = false
-    // E2E state (thin: identifiers from the Sync layer; the syncCode itself
+    // Devices sharing (E2E invite; the syncCode itself
     // lives only in the Keychain and never surfaces here)
     @State private var householdName: String = E2EKeyStore.loadMetadata()?.householdId ?? "hh-demo"
-    @State private var kid: String = E2EKeyStore.loadMetadata()?.kid ?? ""
-    @State private var hashPrefix: String = E2EKeyStore.loadMetadata().map { String($0.hash.prefix(8)) } ?? ""
     @State private var inviteBundle: String = ""
     @State private var pasteInput: String = ""
     @State private var joinResult: String = ""
     @State private var showQR = false
+    /// Join staged for explicit confirmation when this device already has a
+    /// key that may hold synced data — joining replaces it.
+    @State private var pendingJoin: SyncInviteBundle? = nil
+    // Advanced BYO backend (hidden by default — the app works out of the
+    // box against the built-in server).
+    @State private var showAdvanced = false
+    @State private var customURLString: String = UserDefaults.standard.string(forKey: "smidgen.apiBaseURL") ?? ""
+    @State private var healthResult: String = ""
+    @State private var testing = false
     // Pending endpoint hint from the last joined invite bundle. NEVER
     // auto-applied: the user must explicitly confirm AND the hint must pass
     // GET /health before it becomes the backend URL.
@@ -1856,55 +1855,34 @@ struct SettingsView: View {
     @State private var hintHealthResult: String = ""
     @State private var hintTesting = false
 
-    /// Effective base URL with the locked fallback chain:
-    /// UserDefaults smidgen.apiBaseURL (blank = skip) -> Bundle
-    /// SMIDGEN_API_BASE_URL -> prod Worker.
+    /// Effective base URL: Advanced override (blank = skip) -> Bundle
+    /// SMIDGEN_API_BASE_URL -> built-in prod server.
     private var effectiveBaseURL: String { SyncConfig.baseURLString }
+
+    /// True when an Advanced custom-server override is stored.
+    private var hasCustomServer: Bool {
+        !(UserDefaults.standard.string(forKey: "smidgen.apiBaseURL") ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
         List {
             Section {
-                TextField("API base URL (blank = default)", text: $baseURLString)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    #if os(iOS)
-                    .keyboardType(.URL)
-                    #endif
-                SecureField("Beta token", text: $token)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                Button(syncing ? "Syncing…" : "Save & sync now") {
-                    Task { await saveAndSync() }
+                SyncStatusRow()
+                Button(syncing ? "Syncing…" : "Sync now") {
+                    Task { await syncNow() }
                 }
                 .disabled(syncing)
-                HStack {
-                    Button(testing ? "Testing…" : "Test") {
-                        Task { await testHealth() }
-                    }
-                    .disabled(testing)
-                    Spacer()
-                    Button("Reset to default") { resetBackend() }
-                }
-                Text("Using: \(effectiveBaseURL)")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .lineLimit(1).truncationMode(.middle)
-                if !healthResult.isEmpty {
-                    Text(healthResult).font(.caption).foregroundStyle(.secondary)
-                }
                 if !status.isEmpty {
                     Text(status).font(.caption).foregroundStyle(.secondary)
                 }
             } header: {
-                Text("Server (BYO backend)")
+                Text("Sync")
             } footer: {
-                Text("Blank URL = Bundle SMIDGEN_API_BASE_URL, else prod \(SyncConfig.prodBaseURL). Paste the Worker URL printed by scripts/deploy-backend.sh.")
+                Text(hasCustomServer ? "Using a custom server (see Advanced)." : "Using the built-in server.")
             }
             Section {
-                HStack { Text("Household"); Spacer(); Text(householdName).font(.caption.monospaced()).foregroundStyle(.secondary) }
-                HStack { Text("Key ID"); Spacer(); Text(kid.isEmpty ? "—" : kid).font(.caption.monospaced()).foregroundStyle(.secondary) }
-                HStack { Text("Code hash"); Spacer(); Text(hashPrefix.isEmpty ? "—" : hashPrefix).font(.caption.monospaced()).foregroundStyle(.secondary) }
-                Button("Show invite bundle (QR / copy)") {
-                    if let json = e2eInviteBundleJSON(householdId: householdName, endpointHint: effectiveBaseURL) {
+                Button("Connect a new device") {
+                    if let json = e2eInviteBundleJSON(householdId: householdName, endpointHint: hasCustomServer ? effectiveBaseURL : nil) {
                         inviteBundle = json
                         refreshE2EState()
                         showQR = true
@@ -1921,18 +1899,18 @@ struct SettingsView: View {
                                 Text(inviteBundle)
                                     .font(.caption.monospaced())
                                     .textSelection(.enabled)
-                                Button("Copy bundle") {
+                                Button("Copy code") {
                                     #if os(iOS)
                                     UIPasteboard.general.string = inviteBundle
                                     #endif
                                 }
                             }
                             Section {
-                                Text("Send this to your second device out-of-band (Messages, Mail, AirDrop). It holds householdId, syncCode, kid, hash, and endpointHint.")
+                                Text("Send this to your second device out-of-band (Messages, Mail, AirDrop). Enter it there under Devices → Join with code.")
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                         }
-                        .navigationTitle("Invite bundle")
+                        .navigationTitle("Connect a new device")
                         .toolbar {
                             ToolbarItem(placement: .confirmationAction) {
                                 Button("Done") { showQR = false }
@@ -1940,17 +1918,56 @@ struct SettingsView: View {
                         }
                     }
                 }
-                TextField("Paste invite bundle to join", text: $pasteInput, axis: .vertical)
+                TextField("Paste code to join", text: $pasteInput, axis: .vertical)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .font(.caption.monospaced())
-                Button("Join with bundle") { joinWithBundle() }
+                Button("Join with code") { joinWithBundle() }
                     .disabled(pasteInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if pendingJoin != nil {
+                    HStack {
+                        Button("Join anyway") { confirmPendingJoin() }
+                        Spacer()
+                        Button("Cancel") {
+                            pendingJoin = nil
+                            joinResult = "Kept current household."
+                        }
+                    }
+                }
                 if !joinResult.isEmpty {
                     Text(joinResult).font(.caption).foregroundStyle(.secondary)
                 }
-                if let hint = pendingEndpointHint {
-                    Section("Suggested server (from invite)") {
+            } header: {
+                Text("Devices")
+            } footer: {
+                Text("Keep Cooking can't see or recover your data. Lose all devices = permanent loss. Add a new phone or iPad while you still have this one — open Settings here on both devices.")
+            }
+            Section {
+                DisclosureGroup("Custom server (advanced)", isExpanded: $showAdvanced) {
+                    TextField("Server URL (blank = built-in)", text: $customURLString)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        #if os(iOS)
+                        .keyboardType(.URL)
+                        #endif
+                    HStack {
+                        Button(testing ? "Testing…" : "Test") {
+                            Task { await testHealth() }
+                        }
+                        .disabled(testing)
+                        Spacer()
+                        Button("Save") { saveServer() }
+                        .disabled(syncing)
+                        if hasCustomServer {
+                            Button("Use built-in") { useBuiltInServer() }
+                        }
+                    }
+                    if !healthResult.isEmpty {
+                        Text(healthResult).font(.caption).foregroundStyle(.secondary)
+                    }
+                    if let hint = pendingEndpointHint {
+                        Text("Suggested server (from invite)")
+                            .font(.caption.weight(.semibold))
                         Text(hint)
                             .font(.caption.monospaced())
                             .textSelection(.enabled)
@@ -1972,29 +1989,9 @@ struct SettingsView: View {
                     }
                 }
             } header: {
-                Text("End-to-end encryption")
+                Text("Advanced")
             } footer: {
-                Text("Keep Cooking can't see or recover your recipes. Lose code+devices = permanent loss. Got a new phone or iPad? Add it now while you still have this one — open Settings here on both devices.")
-            }
-            Section("Sync") {
-                SyncStatusRow()
-            }
-            Section("Library") {
-                HStack { Text("Recipes"); Spacer(); Text("\(recipes.filter { !$0.deleted }.count)").foregroundStyle(.secondary) }
-                HStack { Text("Shopping lists"); Spacer(); Text("\(lists.filter { !$0.deleted }.count)").foregroundStyle(.secondary) }
-                HStack { Text("Planned meals"); Spacer(); Text("\(plans.filter { !$0.deleted }.count)").foregroundStyle(.secondary) }
-                HStack {
-                    Text("Endpoint")
-                    Spacer()
-                    Text(SyncConfig.baseURLString).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                }
-            }
-            Section("Device") {
-                HStack {
-                    Text("Device ID")
-                    Spacer()
-                    Text(ShortDevice.id).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                }
+                Text("Only set this if you run your own backend. Most users should leave it blank.")
             }
             Section("About") {
                 Text("Keep Cooking \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0") — offline-first, MIT.")
@@ -2004,23 +2001,107 @@ struct SettingsView: View {
         .navigationTitle("Settings")
     }
 
-    private func saveAndSync() async {
+    private func syncNow() async {
         syncing = true
         defer { syncing = false }
-        UserDefaults.standard.set(baseURLString.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "smidgen.apiBaseURL")
-        UserDefaults.standard.set(token.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "smidgen.betaToken")
         await SyncCoordinator.shared.sync()
         status = await SyncCoordinator.shared.describe()
     }
 
-    /// GET <base>/health against the typed URL (blank = effective default).
+    /// Persists the Advanced custom-server URL only. Deliberately does NOT
+    /// sync: on a fresh device the auto-generated identity is still a
+    /// throwaway until the user joins their household, so syncing here
+    /// would push local data to the custom server under the wrong bucket.
+    /// The user taps Sync now after joining.
+    private func saveServer() {
+        let trimmed = customURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let error = validateCustomServer(trimmed) {
+            healthResult = error
+            return
+        }
+        UserDefaults.standard.set(trimmed, forKey: "smidgen.apiBaseURL")
+        healthResult = "Server saved — tap Sync now after joining your household."
+    }
+
+    /// Acceptable custom-server values: blank (built-in) or an http(s) URL;
+    /// http:// only for local dev hosts. Returns an error message, else nil.
+    private func validateCustomServer(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return nil }
+        guard let url = URL(string: trimmed),
+              let host = url.host?.lowercased(),
+              !host.isEmpty
+        else {
+            return "That server URL does not look valid — keeping current server."
+        }
+        let scheme = url.scheme?.lowercased() ?? ""
+        let isLocalDev = host == "localhost" || host == "127.0.0.1" || host.hasSuffix(".local")
+        guard scheme == "https" || (scheme == "http" && isLocalDev) else {
+            return "Server must use HTTPS (http:// is only allowed for localhost / 127.0.0.1 / *.local dev servers)."
+        }
+        return nil
+    }
+
+    private func joinWithBundle() {
+        do {
+            let bundle = try e2eParseInvite(pasteInput)
+            if let active = E2EKeyStore.loadActive(), active.metadata.hash != bundle.hash {
+                // This device already has a key that may hold synced data —
+                // require explicit confirmation before switching households.
+                pendingJoin = bundle
+                joinResult = "This device already belongs to household \(active.metadata.householdId). Joining switches to \(bundle.householdId) and replaces this device's key."
+                return
+            }
+            finishJoin(try e2eJoin(bundle: bundle))
+        } catch {
+            joinResult = error.localizedDescription
+        }
+    }
+
+    private func confirmPendingJoin() {
+        guard let bundle = pendingJoin else { return }
+        do {
+            finishJoin(try e2eJoin(bundle: bundle))
+        } catch {
+            joinResult = error.localizedDescription
+        }
+    }
+
+    private func finishJoin(_ res: E2EJoinResult) {
+        householdName = res.householdId
+        pendingJoin = nil
+        // SECURITY: never auto-apply the invite's endpointHint. An
+        // attacker-controlled bundle must not silently redirect this
+        // device's backend. Stage it for explicit user confirmation +
+        // GET /health validation instead (see pendingEndpointHint UI).
+        if let hint = res.endpointHint?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !hint.isEmpty, hint != customURLString, hint != effectiveBaseURL {
+            pendingEndpointHint = hint
+            hintHealthResult = ""
+            showAdvanced = true
+            joinResult = "Joined household \(res.householdId). The invite suggests a custom server below — review it before switching."
+        } else {
+            pendingEndpointHint = nil
+            hintHealthResult = ""
+            joinResult = "Joined household \(res.householdId)."
+        }
+        pasteInput = ""
+    }
+
+    private func useBuiltInServer() {
+        UserDefaults.standard.removeObject(forKey: "smidgen.apiBaseURL")
+        customURLString = ""
+        healthResult = "Using the built-in server."
+    }
+
+    /// GET <base>/health against the typed URL (blank = built-in default).
     private func testHealth() async {
         testing = true
         defer { testing = false }
-        let typed = baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        let typed = customURLString.trimmingCharacters(in: .whitespacesAndNewlines)
         let base = typed.isEmpty ? effectiveBaseURL : typed
         guard let url = URL(string: base + "/health") else {
-            healthResult = "Bad URL — check the backend field."
+            healthResult = "Bad URL — check the server field."
             return
         }
         do {
@@ -2034,37 +2115,6 @@ struct SettingsView: View {
         }
     }
 
-    private func resetBackend() {
-        UserDefaults.standard.removeObject(forKey: "smidgen.apiBaseURL")
-        baseURLString = ""
-        healthResult = "Reset — using \(effectiveBaseURL)."
-    }
-
-    private func joinWithBundle() {
-        do {
-            let res = try e2eJoin(pasted: pasteInput)
-            kid = res.kid
-            hashPrefix = res.hashPrefix8
-            householdName = res.householdId
-            // SECURITY: never auto-apply the invite's endpointHint. An
-            // attacker-controlled bundle must not silently redirect this
-            // device's backend. Stage it for explicit user confirmation +
-            // GET /health validation instead (see pendingEndpointHint UI).
-            if let hint = res.endpointHint?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !hint.isEmpty, hint != baseURLString, hint != effectiveBaseURL {
-                pendingEndpointHint = hint
-                hintHealthResult = ""
-                joinResult = "Joined household \(res.householdId) — kid \(res.kid) · hash \(res.hashPrefix8). Verify the hash matches the other device. The invite suggests a server below — review it before switching."
-            } else {
-                pendingEndpointHint = nil
-                hintHealthResult = ""
-                joinResult = "Joined household \(res.householdId) — kid \(res.kid) · hash \(res.hashPrefix8). Verify the hash matches the other device."
-            }
-            pasteInput = ""
-        } catch {
-            joinResult = error.localizedDescription
-        }
-    }
 
     /// Confirmed adoption of the staged endpoint hint: validates
     /// GET <hint>/health, then — and only then — persists the hint as the
@@ -2086,9 +2136,9 @@ struct SettingsView: View {
             hintHealthResult = "Invalid server URL — keeping current server."
             return
         }
-        // SECURITY: the beta bearer token is sent to this server, so a
-        // cleartext http:// hint would leak it on the wire. Require HTTPS,
-        // except explicitly local dev targets (localhost / 127.0.0.1 / *.local).
+        // SECURITY: only accept HTTPS hints, except explicitly local dev
+        // targets (localhost / 127.0.0.1 / *.local). Require HTTPS so a
+        // cleartext http:// hint can't leak household data on the wire.
         let isLocalDev = host == "localhost" || host == "127.0.0.1" || host.hasSuffix(".local")
         guard scheme == "https" || (scheme == "http" && isLocalDev) else {
             hintHealthResult = "Invite server must use HTTPS (http:// is only allowed for localhost / 127.0.0.1 / *.local dev servers) — keeping current server."
@@ -2116,7 +2166,7 @@ struct SettingsView: View {
                 hintHealthResult = "A newer invite arrived — review the suggested server again before switching."
                 return
             }
-            baseURLString = hint
+            customURLString = hint
             UserDefaults.standard.set(hint, forKey: "smidgen.apiBaseURL")
             pendingEndpointHint = nil
             hintHealthResult = ""
@@ -2134,24 +2184,10 @@ struct SettingsView: View {
     /// Re-reads Keychain/UserDefaults identifiers into the displayed state.
     private func refreshE2EState() {
         if let meta = E2EKeyStore.loadMetadata() {
-            kid = meta.kid
-            hashPrefix = String(meta.hash.prefix(8))
             householdName = meta.householdId
         } else {
-            kid = ""
-            hashPrefix = ""
             householdName = "hh-demo"
         }
-    }
-}
-
-private enum ShortDevice {
-    static var id: String {
-        #if os(iOS)
-        UIDevice.current.identifierForVendor?.uuidString ?? "simulator"
-        #else
-        "mac"
-        #endif
     }
 }
 

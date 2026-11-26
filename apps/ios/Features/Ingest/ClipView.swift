@@ -45,7 +45,7 @@ public struct ClipView: View {
 
     private func authedClient() -> ClipClient {
         ClipClient(baseURL: baseURL,
-            betaToken: SyncConfig.betaToken.nilIfEmpty,
+            betaToken: nil,
             userId: SyncConfig.userId, deviceId: currentDeviceId())
     }
 

@@ -154,7 +154,7 @@ public struct CookbookShareView: View {
         defer { isSharing = false }
         do {
             let client = ShareAPIClient(baseURL: base,
-                betaToken: SyncConfig.betaToken.nilIfEmpty,
+                betaToken: nil,
                 userId: SyncConfig.userId, deviceId: currentDeviceId)
             link = try await client.createCookbookShare(
                 householdId: cookbook.householdId, recipeIds: cookbook.recipeIds)
