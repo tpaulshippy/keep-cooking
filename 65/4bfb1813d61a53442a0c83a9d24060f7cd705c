@@ -1,0 +1,14 @@
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/SettingsScreen.kt
+  h_6bbd00fe0a456a 186-191,199,256
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "654bfb1813d61a53442a0c83a9d24060f7cd705c",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
