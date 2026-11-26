@@ -1503,11 +1503,38 @@ struct PlanTabView: View {
     /// Tombstones a plan entry (sync-safe delete). Wired to PlanView
     /// `onDeleteEntry`.
     private func deleteEntry(id: String) {
-        guard let plan = plans.first(where: { $0.id == id && !$0.deleted }) else { return }
+        let cal = Calendar.current
+        let liveSameId = plans.filter { $0.id == id }
+        guard let plan = liveSameId.first(where: { !$0.deleted }) else {
+            confirm = "DEL FAIL match=0 sameId=\(liveSameId.count) total=\(plans.count)"
+            NSLog("DELFAIL id=%@ sameId=%d total=%d", id, liveSameId.count, plans.count)
+            return
+        }
+        let twins = plans.filter {
+            $0.id != plan.id && !$0.deleted
+            && cal.isDate($0.date, inSameDayAs: plan.date)
+            && $0.mealRaw == plan.mealRaw && $0.recipeId == plan.recipeId && $0.note == plan.note
+        }
+        let dupIds = plans.filter { $0.id == plan.id }.count
+        let hadChangesBefore = context.hasChanges
         plan.deleted = true
         plan.updatedAt = Date()
-        try? context.save()
-        confirm = "Removed planned meal"
+        var saveErr = "ok"
+        do { try context.save() } catch { saveErr = String(describing: error) }
+        var storeDeleted: String = "?"
+        var storeLiveSameSlot = -1
+        do {
+            let all = try context.fetch(FetchDescriptor<Plan>())
+            storeDeleted = String(describing: all.first(where: { $0.id == plan.id })?.deleted)
+            storeLiveSameSlot = all.filter {
+                !$0.deleted && cal.isDate($0.date, inSameDayAs: plan.date)
+                && $0.mealRaw == plan.mealRaw && $0.recipeId == plan.recipeId && $0.note == plan.note
+            }.count
+        } catch { storeDeleted = "fetch-\(error)" }
+        let entriesAfter = plans.filter { !$0.deleted }.count
+        confirm = "DEL id=\(id.prefix(4)) twins=\(twins.count) dupId=\(dupIds) ch=\(hadChangesBefore)->\(context.hasChanges) save=\(saveErr) storeDel=\(storeDeleted) storeSlot=\(storeLiveSameSlot) entries=\(entriesAfter)"
+        NSLog("DEL id=%@ twins=%d dupId=%d save=%@ storeDel=%@ storeSlot=%d entries=%d total=%d",
+              id as NSString, twins.count, dupIds, saveErr as NSString, storeDeleted as NSString, storeLiveSameSlot, entriesAfter, plans.count)
     }
 
     /// Row tap: recipe entries navigate to RecipeDetailView; note-only
@@ -2213,21 +2240,61 @@ enum DemoSeeds {
             (0, .dinner), (2, .dinner), (4, .dinner),
         ]
         let existing = (try? context.fetch(FetchDescriptor<Plan>())) ?? []
+        var allPlans = existing
         for (i, pick) in picks.enumerated() {
             guard let day = cal.date(byAdding: .day, value: pick.dayOffset, to: start) else { continue }
             let recipe = recipes[i % recipes.count]
             let dayStart = cal.startOfDay(for: day)
             let dayEnd = cal.date(byAdding: .day, value: 1, to: dayStart) ?? day
-            let dup = existing.contains {
-                !$0.deleted && $0.date >= dayStart && $0.date < dayEnd
+            // Resurrection guard: consider BOTH live and tombstoned plans. If
+            // the user deleted this seeded slot (deleted=true tombstone), a
+            // live-only check would see no match and insert a fresh duplicate,
+            // resurrecting the deleted row. Only seed when zero plans match.
+            let alreadyPresent = allPlans.contains {
+                $0.date >= dayStart && $0.date < dayEnd
                     && $0.mealRaw == pick.meal.rawValue && $0.recipeId == recipe.id
             }
-            if dup { continue }
-            context.insert(Plan(householdId: "hh-demo", date: day, meal: pick.meal,
-                recipeId: recipe.id, servings: recipe.servings, deviceId: deviceId))
+            if alreadyPresent { continue }
+            let plan = Plan(householdId: "hh-demo", date: day, meal: pick.meal,
+                recipeId: recipe.id, servings: recipe.servings, deviceId: deviceId)
+            context.insert(plan)
+            allPlans.append(plan)
         }
+        collapseExactDuplicatePlans(allPlans, calendar: cal)
         try? context.save()
     }
+
+    /// One-time cleanup for legacy exact duplicates left by the old seeding
+    /// bug: groups LIVE plans by calendar-day + mealRaw + recipeId + note and
+    /// tombstones all but the earliest-updated member of groups with > 1.
+    /// Exact-match only — groups of size 1 and plans differing in any key are
+    /// never touched.
+    private static func collapseExactDuplicatePlans(_ plans: [Plan], calendar: Calendar) {
+        var groups: [PlanDedupeKey: [Plan]] = [:]
+        for plan in plans where !plan.deleted {
+            let key = PlanDedupeKey(
+                day: calendar.startOfDay(for: plan.date),
+                mealRaw: plan.mealRaw,
+                recipeId: plan.recipeId,
+                note: plan.note)
+            groups[key, default: []].append(plan)
+        }
+        let now = Date()
+        for (_, dupes) in groups where dupes.count > 1 {
+            let ordered = dupes.sorted { $0.updatedAt < $1.updatedAt }
+            for extra in ordered.dropFirst() {
+                extra.deleted = true
+                extra.updatedAt = now
+            }
+        }
+    }
+}
+
+private struct PlanDedupeKey: Hashable {
+    let day: Date
+    let mealRaw: String
+    let recipeId: String?
+    let note: String
 }
 
 private func currentDeviceId() -> String {
