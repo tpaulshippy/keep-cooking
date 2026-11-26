@@ -51,7 +51,7 @@ Local Room is the source of truth; `SyncEngine.sync()` pulls + LWW-applies
 remote winners (a pending outbox edit shadows stale remotes), advances the
 pull cursor by ENVELOPE time, then pushes what remains. Server-won conflict
 envelopes apply via LWW and leave the outbox. Settings from DataStore: base
-URL (defaults to the production Workers URL), beta token, user id.
+URL (defaults to the production Workers URL unless overridden in Settings → Advanced), user id.
 
 ## E2E (v1, blind-server /v2/sync/:hash)
 

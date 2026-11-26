@@ -41,6 +41,7 @@ import com.keepcooking.app.ui.screens.MoreScreen
 import com.keepcooking.app.ui.screens.PlanScreen
 import com.keepcooking.app.ui.screens.RecipeDetailScreen
 import com.keepcooking.app.ui.screens.RecipesScreen
+import com.keepcooking.app.ui.screens.SettingsScreen
 import com.keepcooking.app.ui.screens.loadLibraryRows
 import com.keepcooking.app.ui.screens.ShareScreen
 import com.keepcooking.app.ui.screens.ShopScreen
@@ -392,6 +393,7 @@ fun KeepCookingNav() {
                     onExport = { navController.navigate(Routes.Export) },
                     onShare = { navController.navigate(Routes.Share) },
                     onNowCooking = { navController.navigate(Routes.NowCooking) },
+                    onSettings = { navController.navigate(Routes.Settings) },
                 )
             }
             // Ingest is a launched flow (Recipes + / More + share sheet), not a tab —
@@ -448,6 +450,9 @@ fun KeepCookingNav() {
             }
             composable(Routes.Export) { ExportScreen(container) }
             composable(Routes.Share) { ShareScreen(container) }
+            composable(Routes.Settings) {
+                SettingsScreen(container, onBack = { navController.popBackStack() })
+            }
             composable(Routes.NowCooking) { NowCookingScreen() }
         }
     }

@@ -18,6 +18,7 @@ import com.keepcooking.app.data.StepEntity
 import com.keepcooking.app.data.SyncEntityName
 import com.keepcooking.app.data.resolveSyncWinner
 import com.keepcooking.app.network.ApiService
+import com.keepcooking.app.network.createApiService
 import com.keepcooking.app.network.E2EPushResponse
 import com.keepcooking.app.network.EncryptedEnvelopeDto
 import com.keepcooking.app.network.SyncEnvelopeDto
@@ -64,7 +65,6 @@ class SyncEngine(
 
     companion object {
         val KEY_DEVICE_ID = stringPreferencesKey("device_id")
-        val KEY_BETA_TOKEN = stringPreferencesKey("beta_token")
         val KEY_BASE_URL = stringPreferencesKey("api_base_url")
         val KEY_USER_ID = stringPreferencesKey("user_id")
         val KEY_LAST_SYNC = stringPreferencesKey("last_sync_at")
@@ -77,6 +77,19 @@ class SyncEngine(
         val fresh = UUID.randomUUID().toString()
         dataStore.edit { it[KEY_DEVICE_ID] = fresh }
         return fresh
+    }
+
+    /** Transport for this run: Advanced custom-server override or the built-in server. */
+    private val overrideApiCache = mutableMapOf<String, ApiService>()
+
+    suspend fun activeApi(): ApiService {
+        val override = dataStore.data.map { it[KEY_BASE_URL]?.trim().orEmpty() }.first()
+        if (override.isEmpty()) return api
+        // Cache per base URL: a Retrofit/OkHttpClient per sync run would
+        // leak connection pools and threads.
+        synchronized(overrideApiCache) {
+            return overrideApiCache.getOrPut(override) { createApiService(override) }
+        }
     }
 
     /** Enqueue a local envelope into the outbox (called after every local write). */
@@ -99,8 +112,9 @@ class SyncEngine(
      * cannot retry forever.
      */
     suspend fun sync(): SyncResult {
-        val token = dataStore.data.map { it[KEY_BETA_TOKEN] }.first().orEmpty()
-        val auth = token.ifBlank { null }?.let { "Bearer $it" }
+        // Open access: no token enrollment. The Advanced custom-server
+        // override (KEY_BASE_URL) selects the transport; blank = built-in.
+        val transport = activeApi()
 
         // 1. Pull + LWW-apply. Pulled winners reconcile against the outbox:
         //    a pending row the winner supersedes (same id, winner newer-or-equal)
@@ -109,7 +123,7 @@ class SyncEngine(
         //    later envelopes sharing the cursor timestamp); replay is safe via LWW.
         val since = pullSinceValue()
         val household = "hh-demo"
-        val pulled = api.pull(auth, since, household)
+        val pulled = transport.pull(null, since, household)
         var applied = 0
         for (env in pulled) {
             if (applyRemote(env)) applied++
@@ -122,7 +136,7 @@ class SyncEngine(
         var conflicts = 0
         var pushed = 0
         if (envelopes.isNotEmpty()) {
-            val winners = api.push(auth, envelopes)
+            val winners = transport.push(null, envelopes)
             conflicts = winners.size
             val wonIds = winners.map { "${it.entity}:${it.id}" }.toSet()
             // Server-won envelopes apply locally via LWW.
@@ -480,9 +494,11 @@ class SyncEngine(
      * header-LWW merge as v1. Photos stay inline inside the sealed payload.
      */
     suspend fun syncE2E(identity: E2ESyncIdentity, authHeader: String? = null): SyncResult {
-        val token = authHeader ?: dataStore.data.map { it[KEY_BETA_TOKEN] }.first().orEmpty()
-            .ifBlank { null }?.let { "Bearer $it" }
-        val remoteEncrypted = api.pullEncrypted(token, identity.hash, pullSinceValue())
+        // Open access: no token enrollment. An explicit authHeader still
+        // overrides (tests/local targets); otherwise no Authorization header.
+        val token = authHeader
+        val transport = activeApi()
+        val remoteEncrypted = transport.pullEncrypted(token, identity.hash, pullSinceValue())
         val remote = remoteEncrypted.map { e2eDecryptDto(it, identity) }
         var pulled = 0
         for (env in remote) {
@@ -500,7 +516,7 @@ class SyncEngine(
         var pushed = 0
         if (pending.isNotEmpty()) {
             val encrypted = e2eEncryptBatch(pending, identity)
-            val stored = api.pushEncrypted(token, identity.hash, encrypted).stored.toSet()
+            val stored = transport.pushEncrypted(token, identity.hash, encrypted).stored.toSet()
             for ((row, env) in outbox.zip(pending)) {
                 if (stored.contains(e2eCarrierId(env))) {
                     database.outbox().remove(row.id)
@@ -511,7 +527,7 @@ class SyncEngine(
             if (unstored.isNotEmpty()) {
                 // Force a FULL pull: the winner may predate the cursor. Reconcile
                 // through header-LWW; entries still pending afterwards stay queued.
-                val allEncrypted = api.pullEncrypted(token, identity.hash, null)
+                val allEncrypted = transport.pullEncrypted(token, identity.hash, null)
                 val winners = allEncrypted.map { e2eDecryptDto(it, identity) }
                 advancePullCursor(winners)
                 for (env in winners) applyRemote(env)

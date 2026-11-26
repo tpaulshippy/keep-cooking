@@ -38,6 +38,11 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /** Domain separator prefix for household-hash derivation (matches api/src/e2e.ts). */
 const val HOUSEHOLD_HASH_DOMAIN = "smidgen-hh-v1"
@@ -105,7 +110,6 @@ fun kid(syncCode: String): String {
 
 /** First 8 hex chars of a household hash — the secret-store account suffix. */
 fun hashPrefix8(hash: String): String = hash.take(8)
-
 /** SHA-256 hex of raw bytes (photo dedup parity with iOS sha256Hex). */
 fun sha256HexBytes(bytes: ByteArray): String =
     MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
@@ -293,6 +297,77 @@ data class E2EMetadata(
 /** Active credential: metadata + the secret-store code + derived key. */
 data class E2ECredential(val metadata: E2EMetadata, val syncCode: String) {
     fun key(): SecretKey = keySpec(syncCode, metadata.householdId, metadata.kid)
+}
+
+// MARK: - Invite bundle JSON + first-run identity
+
+class E2EJoinException(message: String) : Exception(message)
+
+/**
+ * Encodes an invite bundle for out-of-band transport (share sheet / copy).
+ * Matches the iOS bundle shape: {v, householdId, syncCode, kid, hash,
+ * endpointHint?} with v == "2". The syncCode travels only inside this
+ * user-shared payload — never in logs or prefs files.
+ */
+fun inviteBundleJson(bundle: SyncInviteBundle): String {
+    val obj = buildJsonObject {
+        put("v", JsonPrimitive("2"))
+        put("householdId", JsonPrimitive(bundle.householdId))
+        put("syncCode", JsonPrimitive(bundle.syncCode))
+        put("kid", JsonPrimitive(bundle.kid))
+        put("hash", JsonPrimitive(bundle.hash))
+        bundle.endpointHint?.takeIf { it.isNotEmpty() }?.let { put("endpointHint", JsonPrimitive(it)) }
+    }
+    return Json.encodeToString(JsonObject.serializer(), obj)
+}
+
+/**
+ * Parses pasted invite text, verifying hash == derive AND kid == derive
+ * before returning. Stores nothing — the caller decides to acceptInvite.
+ */
+fun parseInviteBundle(pasted: String): SyncInviteBundle {
+    val obj = runCatching {
+        Json.parseToJsonElement(pasted.trim()).jsonObject
+    }.getOrNull() ?: throw E2EJoinException("That text is not a Keep Cooking invite code.")
+    val version = (obj["v"] as? JsonPrimitive)?.contentOrNull
+    if (version != "2") {
+        throw E2EJoinException("That text is not a Keep Cooking invite code.")
+    }
+    val householdId = (obj["householdId"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+    val syncCode = (obj["syncCode"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+    val kidValue = (obj["kid"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+    val hash = (obj["hash"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+    val hint = (obj["endpointHint"] as? JsonPrimitive)?.contentOrNull
+    if (householdId.isEmpty() || syncCode.isEmpty() || kidValue.isEmpty() || hash.isEmpty()) {
+        throw E2EJoinException("That text is not a Keep Cooking invite code.")
+    }
+    if (hash != householdHash(syncCode, householdId)) {
+        throw E2EJoinException("Code does not match — it was mistyped or tampered with.")
+    }
+    if (kid(syncCode) != kidValue) {
+        throw E2EJoinException("Key ID mismatch — code was created by an incompatible app.")
+    }
+    return SyncInviteBundle(householdId, syncCode, kidValue, hash, hint)
+}
+
+/**
+ * Returns the active credential, creating a fresh household identity
+ * (random 32-byte base64 syncCode) on first run. Existing identities are
+ * returned untouched — rotation is a deliberate Settings action, not a
+ * side effect.
+ */
+suspend fun ensureE2EIdentity(
+    metaStore: DataStore<Preferences>,
+    secretStore: DataStore<Preferences>,
+    householdId: String,
+): E2ECredential? {
+    E2EKeyStore.loadActive(metaStore, secretStore)?.let { return it }
+    val bytes = ByteArray(32).also { SecureRandom().nextBytes(it) }
+    val syncCode = JavaBase64.getEncoder().encodeToString(bytes)
+    val hh = householdId.trim().ifEmpty { "hh-demo" }
+    val bundle = SyncInviteBundle.make(hh, syncCode, kid(syncCode))
+    if (!E2EKeyStore.acceptInvite(metaStore, secretStore, bundle)) return null
+    return E2EKeyStore.loadActive(metaStore, secretStore)
 }
 
 /**

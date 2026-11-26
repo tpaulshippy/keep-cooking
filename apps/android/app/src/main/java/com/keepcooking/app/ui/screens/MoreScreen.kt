@@ -19,8 +19,8 @@ import androidx.compose.ui.unit.dp
 
 /**
  * More tab — parity with iOS PhoneTabView More tab.
- * Overflow destinations that are not daily tabs: clip, export, sharing,
- * watch companion. (Settings live in the OS + sync config for now.)
+ * Overflow destinations: clip, export, sharing, Settings, and the
+ * watch companion.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -29,12 +29,14 @@ fun MoreScreen(
     onExport: () -> Unit = {},
     onShare: () -> Unit = {},
     onNowCooking: () -> Unit = {},
+    onSettings: () -> Unit = {},
 ) {
     val rows = listOf(
         "Clip a recipe" to onClip,
         "Export a recipe" to onExport,
         "Share a cookbook" to onShare,
         "Now Cooking (watch)" to onNowCooking,
+        "Settings" to onSettings,
     )
     Scaffold(topBar = { TopAppBar(title = { Text("More") }) }) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding).padding(16.dp)) {

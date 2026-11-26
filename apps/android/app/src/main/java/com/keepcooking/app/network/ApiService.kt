@@ -59,6 +59,11 @@ interface ApiService {
         @Path("hash") hash: String,
     ): E2EWipeResponse
 
+    // --- Health (Advanced custom-server Test in Settings) ---
+
+    @GET("health")
+    suspend fun health(): JsonObject
+
     // --- Share (POST /share/cookbook — parity with ShareAPIClient) ---
 
     @POST("share/cookbook")
