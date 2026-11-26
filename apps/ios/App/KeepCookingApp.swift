@@ -323,17 +323,25 @@ final class SyncCoordinator {
             return
         }
         let did = currentDeviceId()
-        let transport = APISyncTransport(
-            baseURL: base,
-            auth: SyncAuth(betaToken: nil,
-                           userId: SyncConfig.userId, deviceId: did))
+        let auth = SyncAuth(betaToken: nil,
+                            userId: SyncConfig.userId, deviceId: did)
+        let transport = APISyncTransport(baseURL: base, auth: auth)
         let engine = SyncEngine(deviceId: did, transport: transport)
         do {
             for env in try collectEnvelopes(ctx: ctx) {
                 await engine.enqueue(env)
             }
             let box = SyncEnvelopeBox()
-            let res = try await engine.sync(applyRemote: { box.append($0) })
+            // E2E by default: an auto-generated per-install identity routes
+            // sync to this install's opaque hash bucket (blind server), so
+            // installs never share a plaintext household. Falls back to
+            // legacy v1 only when no identity exists (Keychain unavailable).
+            let household = E2EKeyStore.loadMetadata()?.householdId ?? "hh-demo"
+            _ = e2eEnsureIdentity(householdId: household)
+            let res = try await engine.syncRouted(
+                route: resolveSyncRoute(),
+                e2eTransport: APIE2ETransport(baseURL: base, auth: auth),
+                applyRemote: { box.append($0) })
             for env in box.all { applyEnvelope(env, ctx: ctx) }
             try? ctx.save()
             if res.conflicts > 0 {

@@ -160,7 +160,7 @@ public struct CookbookShareView: View {
                 householdId: cookbook.householdId, recipeIds: cookbook.recipeIds)
             error = nil
         } catch {
-            self.error = "Share failed (\(error.localizedDescription)). Please try again."
+            self.error = "Share failed (\(error.localizedDescription)). Check the base URL and retry."
         }
     }
 }

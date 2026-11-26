@@ -1879,7 +1879,7 @@ struct SettingsView: View {
             }
             Section {
                 Button("Connect a new device") {
-                    if let json = e2eInviteBundleJSON(householdId: householdName, endpointHint: nil) {
+                    if let json = e2eInviteBundleJSON(householdId: householdName, endpointHint: hasCustomServer ? effectiveBaseURL : nil) {
                         inviteBundle = json
                         refreshE2EState()
                         showQR = true
@@ -2043,11 +2043,11 @@ struct SettingsView: View {
                 pendingEndpointHint = hint
                 hintHealthResult = ""
                 showAdvanced = true
-                joinResult = "Joined household \(res.householdId). Verify the code matches the other device. The invite suggests a server below — review it before switching."
+                joinResult = "Joined household \(res.householdId). The invite suggests a custom server below — review it before switching."
             } else {
                 pendingEndpointHint = nil
                 hintHealthResult = ""
-                joinResult = "Joined household \(res.householdId). Verify the code matches the other device."
+                joinResult = "Joined household \(res.householdId)."
             }
             pasteInput = ""
         } catch {

@@ -11,6 +11,7 @@ function prodApp() {
   const app = createApp(store, {
     baseUrl: 'https://keep-cooking-api.pshippy-245.workers.dev',
     secret: 'test-secret',
+    betaToken: 'legacy-secret', // legacy deployments still configure one: must be ignored
   });
   return { app, store };
 }
@@ -47,7 +48,7 @@ describe('open access (no token enrollment)', () => {
     const write = await app.request('/recipes', {
       method: 'POST',
       headers: { 'x-user-id': 'u1', 'x-role': 'owner', 'content-type': 'application/json' },
-      body: JSON.stringify({ title: 'x', servings: 1 }),
+      body: JSON.stringify({ title: 'x', servings: 1, householdId: 'hh-demo' }),
     });
     expect(write.status).toBe(201);
   });
