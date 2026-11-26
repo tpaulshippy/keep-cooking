@@ -1943,9 +1943,7 @@ struct SettingsView: View {
                         }
                         .disabled(testing)
                         Spacer()
-                        Button("Save") {
-                            Task { await saveServer() }
-                        }
+                        Button("Save") { saveServer() }
                         .disabled(syncing)
                         if hasCustomServer {
                             Button("Use built-in") { useBuiltInServer() }
@@ -1997,10 +1995,14 @@ struct SettingsView: View {
         status = await SyncCoordinator.shared.describe()
     }
 
-    private func saveServer() async {
+    /// Persists the Advanced custom-server URL only. Deliberately does NOT
+    /// sync: on a fresh device the auto-generated identity is still a
+    /// throwaway until the user joins their household, so syncing here
+    /// would push local data to the custom server under the wrong bucket.
+    /// The user taps Sync now after joining.
+    private func saveServer() {
         UserDefaults.standard.set(customURLString.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "smidgen.apiBaseURL")
-        healthResult = ""
-        await syncNow()
+        healthResult = "Server saved — tap Sync now after joining your household."
     }
 
     private func useBuiltInServer() {
