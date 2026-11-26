@@ -1,0 +1,32 @@
+apps/android/README.md
+  h_6bbd00fe0a456a 54
+apps/android/app/build.gradle.kts
+  h_6bbd00fe0a456a 65
+apps/android/app/src/main/java/com/keepcooking/app/navigation/NavGraph.kt
+  h_6bbd00fe0a456a 44,396,453-455
+apps/android/app/src/main/java/com/keepcooking/app/navigation/Routes.kt
+  h_6bbd00fe0a456a 35
+apps/android/app/src/main/java/com/keepcooking/app/network/ApiService.kt
+  h_6bbd00fe0a456a 62-66
+apps/android/app/src/main/java/com/keepcooking/app/sync/SyncCrypto.kt
+  h_6bbd00fe0a456a 41-45,302-371
+apps/android/app/src/main/java/com/keepcooking/app/sync/SyncEngine.kt
+  h_6bbd00fe0a456a 21,82-87,108-110,119,132,490-494,512,523
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/MoreScreen.kt
+  h_6bbd00fe0a456a 32,39
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/SettingsScreen.kt
+  h_6bbd00fe0a456a 1-371
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/ShareScreen.kt
+  h_6bbd00fe0a456a 151
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fe8dfe84910fe2c76c8466258d8dc3fb90715f98",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
