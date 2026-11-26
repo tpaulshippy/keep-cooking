@@ -1,0 +1,32 @@
+apps/ios/App/DemoFlows.swift
+  h_6bbd00fe0a456a 133,136,619,623,717,740,784,813,826,897,1326,1347,1414,1424,1432,1460,1467,1492,1506,1508-1511,1513-1514,1521,1533,1551,1565,1597,1612,1632,1713,1733,1801,1812,2212,2251,2263
+apps/ios/App/KeepCookingApp.swift
+  h_6bbd00fe0a456a 142,191,215,488,507,521,534,551,621,636,684,689,718,728,744,752,770,775
+apps/ios/Core/Models.swift
+  h_6bbd00fe0a456a 106,131,150,163,180,194,205,213,229,241,250,263,286,297,304,312,329,343,354,362,380,393,405,413,430,442,453,466,480,489,497,510
+apps/ios/Core/SeedLoader.swift
+  h_6bbd00fe0a456a 154
+apps/ios/Export/ExportView.swift
+  h_6bbd00fe0a456a 45
+apps/ios/Features/Library/LibraryModels.swift
+  h_6bbd00fe0a456a 41,50,58
+apps/ios/Features/Library/LibraryViews.swift
+  h_6bbd00fe0a456a 16,80,416
+apps/ios/Intents/KeepCookingIntents.swift
+  h_6bbd00fe0a456a 139,184,289,296,341
+apps/ios/Sync/SyncEngineTests.swift
+  h_6bbd00fe0a456a 15,663-726
+apps/ios/Widgets/KeepCookingWidgets.swift
+  h_6bbd00fe0a456a 144,163-164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "25efcbcc857c81c7ba14cf0a00ee9143abe0ce72",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
