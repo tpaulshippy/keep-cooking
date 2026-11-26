@@ -1504,37 +1504,36 @@ struct PlanTabView: View {
     /// `onDeleteEntry`.
     private func deleteEntry(id: String) {
         let cal = Calendar.current
-        let liveSameId = plans.filter { $0.id == id }
-        guard let plan = liveSameId.first(where: { !$0.deleted }) else {
-            confirm = "DEL FAIL match=0 sameId=\(liveSameId.count) total=\(plans.count)"
-            NSLog("DELFAIL id=%@ sameId=%d total=%d", id, liveSameId.count, plans.count)
+        var diag = "id=\(id.prefix(4))"
+        var target: Plan?
+        do {
+            let fd = FetchDescriptor<Plan>(predicate: #Predicate { $0.id == id })
+            let found = try context.fetch(fd)
+            diag += " fresh=\(found.count)"
+            target = found.first(where: { !$0.deleted }) ?? found.first
+        } catch {
+            confirm = "DEL \(diag) fetchErr=\(error)"
+            NSLog("DELFETCH id=%@ err=%@", id as NSString, String(describing: error) as NSString)
             return
         }
-        let twins = plans.filter {
-            $0.id != plan.id && !$0.deleted
-            && cal.isDate($0.date, inSameDayAs: plan.date)
-            && $0.mealRaw == plan.mealRaw && $0.recipeId == plan.recipeId && $0.note == plan.note
+        guard let plan = target else {
+            confirm = "DEL \(diag) match=0 total=\(plans.count)"
+            return
         }
-        let dupIds = plans.filter { $0.id == plan.id }.count
-        let hadChangesBefore = context.hasChanges
+        let sameInstance = plans.first(where: { $0.id == id }).map { $0 === plan } ?? false
         plan.deleted = true
         plan.updatedAt = Date()
+        let changedAfter = context.hasChanges
         var saveErr = "ok"
         do { try context.save() } catch { saveErr = String(describing: error) }
-        var storeDeleted: String = "?"
-        var storeLiveSameSlot = -1
+        var storeDeleted = "?"
         do {
             let all = try context.fetch(FetchDescriptor<Plan>())
             storeDeleted = String(describing: all.first(where: { $0.id == plan.id })?.deleted)
-            storeLiveSameSlot = all.filter {
-                !$0.deleted && cal.isDate($0.date, inSameDayAs: plan.date)
-                && $0.mealRaw == plan.mealRaw && $0.recipeId == plan.recipeId && $0.note == plan.note
-            }.count
         } catch { storeDeleted = "fetch-\(error)" }
-        let entriesAfter = plans.filter { !$0.deleted }.count
-        confirm = "DEL id=\(id.prefix(4)) twins=\(twins.count) dupId=\(dupIds) ch=\(hadChangesBefore)->\(context.hasChanges) save=\(saveErr) storeDel=\(storeDeleted) storeSlot=\(storeLiveSameSlot) entries=\(entriesAfter)"
-        NSLog("DEL id=%@ twins=%d dupId=%d save=%@ storeDel=%@ storeSlot=%d entries=%d total=%d",
-              id as NSString, twins.count, dupIds, saveErr as NSString, storeDeleted as NSString, storeLiveSameSlot, entriesAfter, plans.count)
+        let remaining = plans.filter { !$0.deleted && cal.isDate($0.date, inSameDayAs: plan.date) && $0.mealRaw == plan.mealRaw }.count
+        confirm = "DEL \(diag) sameInst=\(sameInstance) ch=->\(changedAfter) save=\(saveErr) storeDel=\(storeDeleted) slotLeft=\(remaining)"
+        NSLog("DEL %@ sameInst=%d changed=%d save=%@ storeDel=%@", id as NSString, sameInstance, changedAfter, saveErr as NSString, storeDeleted as NSString)
     }
 
     /// Row tap: recipe entries navigate to RecipeDetailView; note-only
