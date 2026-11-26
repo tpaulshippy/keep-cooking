@@ -183,6 +183,12 @@ private fun DevicesCard(container: AppContainer) {
                         val cred = ensureE2EIdentity(
                             container.e2eMetaStore, container.e2eSecretStore, household,
                         )
+                        // Custom-server invites carry the server URL so the
+                        // joining device lands on the same backend; built-in
+                        // installs omit it (nothing to review).
+                        val hint = container.appDataStore.data
+                            .map { it[SyncEngine.KEY_BASE_URL]?.trim().orEmpty() }
+                            .first().ifEmpty { null }
                         inviteCode = cred?.let {
                             inviteBundleJson(
                                 com.keepcooking.app.sync.SyncInviteBundle(
@@ -190,7 +196,7 @@ private fun DevicesCard(container: AppContainer) {
                                     syncCode = it.syncCode,
                                     kid = it.metadata.kid,
                                     hash = it.metadata.hash,
-                                    endpointHint = null,
+                                    endpointHint = hint,
                                 ),
                             )
                         }
@@ -247,7 +253,7 @@ private fun DevicesCard(container: AppContainer) {
                                 joinResult = if (!bundle.endpointHint.isNullOrEmpty()) {
                                     "Joined household ${bundle.householdId}. The code suggests a custom server — review it under Advanced before switching."
                                 } else {
-                                    "Joined household ${bundle.householdId}. Verify the code matches the other device."
+                                    "Joined household ${bundle.householdId}."
                                 }
                             }
                         } catch (e: E2EJoinException) {
