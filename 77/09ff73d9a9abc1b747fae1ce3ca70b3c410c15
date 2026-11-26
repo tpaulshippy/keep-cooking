@@ -1,0 +1,18 @@
+apps/android/app/src/main/java/com/keepcooking/app/sync/SyncCrypto.kt
+  h_6bbd00fe0a456a 332-333,336-340
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/MoreScreen.kt
+  h_6bbd00fe0a456a 22-23
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/SettingsScreen.kt
+  h_6bbd00fe0a456a 44,60-78,87-91,142-144,147-158,196,204,211-239,259,310-311,313-318,320,331-342,362-369,376,382-385,412-415,434-438,440-444,446-447,458-461,478-531
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7709ff73d9a9abc1b747fae1ce3ca70b3c410c15",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
