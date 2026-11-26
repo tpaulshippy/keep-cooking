@@ -1,0 +1,14 @@
+apps/ios/Features/Plan/PlanViews.swift
+  h_6bbd00fe0a456a 401-407,409-416,419-430,432-433,439-443,447-468,470-471,474-475,481-485
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4e6071f62687cde9a9c8ecee6218b8e8d2281588",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
