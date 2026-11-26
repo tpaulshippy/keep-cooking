@@ -141,7 +141,7 @@ public enum SnapshotWriter {
             let f = DateFormatter()
             f.calendar = Calendar(identifier: .iso8601)
             f.dateFormat = "yyyy-MM-dd"
-            for p in plans where !p.deleted {
+            for p in plans where !p.tombstoned {
                 let iso = f.string(from: p.date)
                 guard iso == dayISO else { continue }
                 let title: String
@@ -160,8 +160,8 @@ public enum SnapshotWriter {
         }
         var listItems: [ListProgressSnapshot] = []
         if let lists = try? context.fetch(FetchDescriptor<ShoppingList>()) {
-            for l in lists where !l.deleted {
-                let live = l.items.filter { !$0.deleted }
+            for l in lists where !l.tombstoned {
+                let live = l.items.filter { !$0.tombstoned }
                 listItems.append(ListProgressSnapshot(
                     listId: l.id, name: l.name,
                     checked: live.filter { $0.checked }.count, total: live.count))

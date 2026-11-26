@@ -151,7 +151,7 @@ public final class SeedLoader {
             photoThumb: dto.photoKeys?.thumb,
             updatedAt: updatedAt,
             deviceId: dto.deviceId ?? "seed",
-            deleted: dto.deleted ?? false
+            tombstoned: dto.deleted ?? false
         )
         context.insert(recipe)
         for ing in dto.ingredients ?? [] {

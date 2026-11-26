@@ -139,7 +139,7 @@ enum PadSection: String, Hashable, CaseIterable, Identifiable {
 
 /// Recipes tab / iPad content column. Live SwiftData, zero network.
 struct RecipeListPlaceholder: View {
-    @Query(filter: #Predicate<Recipe> { !$0.deleted },
+    @Query(filter: #Predicate<Recipe> { !$0.tombstoned },
            sort: [SortDescriptor(\Recipe.updatedAt, order: .reverse)])
     private var recipes: [Recipe]
     @Binding private var selectionId: String?
@@ -188,7 +188,7 @@ struct RecipeDetailPlaceholder: View {
 }
 
 struct PlanListPlaceholder: View {
-    @Query(filter: #Predicate<Plan> { !$0.deleted },
+    @Query(filter: #Predicate<Plan> { !$0.tombstoned },
            sort: [SortDescriptor(\Plan.date)])
     private var plans: [Plan]
     var body: some View {
@@ -212,7 +212,7 @@ struct PlanListPlaceholder: View {
 }
 
 struct ListsPlaceholder: View {
-    @Query(filter: #Predicate<ShoppingList> { !$0.deleted },
+    @Query(filter: #Predicate<ShoppingList> { !$0.tombstoned },
            sort: [SortDescriptor(\ShoppingList.updatedAt, order: .reverse)])
     private var lists: [ShoppingList]
     var body: some View {
@@ -485,7 +485,7 @@ extension SyncCoordinator {
             ])
         })
         return SyncEnvelope(id: r.id, updatedAt: r.updatedAt, deviceId: r.deviceId,
-                            deleted: r.deleted, entity: .recipe, payload: payload)
+                            deleted: r.tombstoned, entity: .recipe, payload: payload)
     }
 
     func listEnvelope(_ l: ShoppingList) -> SyncEnvelope {
@@ -504,7 +504,7 @@ extension SyncCoordinator {
             }),
         ]
         return SyncEnvelope(id: l.id, updatedAt: l.updatedAt, deviceId: l.deviceId,
-                            deleted: l.deleted, entity: .list, payload: payload)
+                            deleted: l.tombstoned, entity: .list, payload: payload)
     }
 
     func pantryEnvelope(_ p: PantryItem) -> SyncEnvelope {
@@ -518,7 +518,7 @@ extension SyncCoordinator {
             "barcode": .string(p.barcode),
         ]
         return SyncEnvelope(id: p.id, updatedAt: p.updatedAt, deviceId: p.deviceId,
-                            deleted: p.deleted, entity: .pantryItem, payload: payload)
+                            deleted: p.tombstoned, entity: .pantryItem, payload: payload)
     }
 
     func planEnvelope(_ p: Plan) -> SyncEnvelope {
@@ -531,7 +531,7 @@ extension SyncCoordinator {
             "servings": p.servings.map { JSONValue.double($0) } ?? .null,
         ]
         return SyncEnvelope(id: p.id, updatedAt: p.updatedAt, deviceId: p.deviceId,
-                            deleted: p.deleted, entity: .plan, payload: payload)
+                            deleted: p.tombstoned, entity: .plan, payload: payload)
     }
 
     func menuEnvelope(_ m: Menu) -> SyncEnvelope {
@@ -548,7 +548,7 @@ extension SyncCoordinator {
             }),
         ]
         return SyncEnvelope(id: m.id, updatedAt: m.updatedAt, deviceId: m.deviceId,
-                            deleted: m.deleted, entity: .menu, payload: payload)
+                            deleted: m.tombstoned, entity: .menu, payload: payload)
     }
 
     // MARK: Apply (remote-won envelopes land in SwiftData; upsert by id)
@@ -618,7 +618,7 @@ extension SyncCoordinator {
             }
             r.updatedAt = env.updatedAt
             r.deviceId = env.deviceId
-            r.deleted = env.deleted
+            r.tombstoned = env.deleted
         } else {
             let r = Recipe(id: env.id, householdId: str("householdId") ?? "hh-demo",
                 title: str("title") ?? "Untitled",
@@ -633,7 +633,7 @@ extension SyncCoordinator {
                 photoOriginal: p["photoKeys"]?.objectValue?["original"]?.stringValue,
                 photoLarge1024: p["photoKeys"]?.objectValue?["large1024"]?.stringValue,
                 photoThumb: p["photoKeys"]?.objectValue?["thumb"]?.stringValue,
-                updatedAt: env.updatedAt, deviceId: env.deviceId, deleted: env.deleted)
+                updatedAt: env.updatedAt, deviceId: env.deviceId, tombstoned: env.deleted)
             ctx.insert(r)
             for (i, j) in (p["ingredients"]?.arrayValue ?? []).enumerated() {
                 guard let o = j.objectValue else { continue }
@@ -681,12 +681,12 @@ extension SyncCoordinator {
             }
             l.updatedAt = env.updatedAt
             l.deviceId = env.deviceId
-            l.deleted = env.deleted
+            l.tombstoned = env.deleted
         } else {
             let l = ShoppingList(id: env.id,
                 householdId: p["householdId"]?.stringValue ?? "hh-demo",
                 name: p["name"]?.stringValue ?? "List",
-                updatedAt: env.updatedAt, deviceId: env.deviceId, deleted: env.deleted)
+                updatedAt: env.updatedAt, deviceId: env.deviceId, tombstoned: env.deleted)
             ctx.insert(l)
             for j in p["items"]?.arrayValue ?? [] {
                 guard let o = j.objectValue else { continue }
@@ -715,7 +715,7 @@ extension SyncCoordinator {
             if let v = p["barcode"]?.stringValue { item.barcode = v }
             item.updatedAt = env.updatedAt
             item.deviceId = env.deviceId
-            item.deleted = env.deleted
+            item.tombstoned = env.deleted
         } else {
             ctx.insert(PantryItem(id: env.id,
                 householdId: p["householdId"]?.stringValue ?? "hh-demo",
@@ -725,7 +725,7 @@ extension SyncCoordinator {
                 expiresAt: day,
                 lowThreshold: p["lowThreshold"]?.stringValue ?? "",
                 barcode: p["barcode"]?.stringValue ?? "",
-                updatedAt: env.updatedAt, deviceId: env.deviceId, deleted: env.deleted))
+                updatedAt: env.updatedAt, deviceId: env.deviceId, tombstoned: env.deleted))
         }
     }
 
@@ -741,7 +741,7 @@ extension SyncCoordinator {
             if p["servings"] != nil { plan.servings = p["servings"]?.doubleValue }
             plan.updatedAt = env.updatedAt
             plan.deviceId = env.deviceId
-            plan.deleted = env.deleted
+            plan.tombstoned = env.deleted
         } else {
             ctx.insert(Plan(id: env.id,
                 householdId: p["householdId"]?.stringValue ?? "hh-demo",
@@ -749,7 +749,7 @@ extension SyncCoordinator {
                 recipeId: p["recipeId"]?.stringValue,
                 note: p["note"]?.stringValue ?? "",
                 servings: p["servings"]?.doubleValue,
-                updatedAt: env.updatedAt, deviceId: env.deviceId, deleted: env.deleted))
+                updatedAt: env.updatedAt, deviceId: env.deviceId, tombstoned: env.deleted))
         }
     }
 
@@ -767,12 +767,12 @@ extension SyncCoordinator {
             if p["entries"] != nil { m.entries = entries }
             m.updatedAt = env.updatedAt
             m.deviceId = env.deviceId
-            m.deleted = env.deleted
+            m.tombstoned = env.deleted
         } else {
             ctx.insert(Menu(id: env.id,
                 householdId: p["householdId"]?.stringValue ?? "hh-demo",
                 name: p["name"]?.stringValue ?? "Menu", entries: entries,
-                updatedAt: env.updatedAt, deviceId: env.deviceId, deleted: env.deleted))
+                updatedAt: env.updatedAt, deviceId: env.deviceId, tombstoned: env.deleted))
         }
     }
 }

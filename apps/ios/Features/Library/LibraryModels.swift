@@ -38,7 +38,7 @@ public final class Cookbook {
     public var recipeIdsJSON: String // [String] recipe ids
     public var updatedAt: Date
     public var deviceId: String
-    public var deleted: Bool
+    @Attribute(originalName: "deleted") public var tombstoned: Bool
 
     public init(
         id: String = UUID().uuidString,
@@ -47,7 +47,7 @@ public final class Cookbook {
         recipeIds: [String] = [],
         updatedAt: Date = Date(),
         deviceId: String,
-        deleted: Bool = false
+        tombstoned: Bool = false
     ) {
         self.id = id
         self.householdId = householdId
@@ -55,7 +55,7 @@ public final class Cookbook {
         self.recipeIdsJSON = (try? String(data: JSONEncoder().encode(recipeIds), encoding: .utf8)) ?? "[]"
         self.updatedAt = updatedAt
         self.deviceId = deviceId
-        self.deleted = deleted
+        self.tombstoned = tombstoned
     }
 
     public var recipeIds: [String] {

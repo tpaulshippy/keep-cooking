@@ -12,6 +12,7 @@
 import XCTest
 import CryptoKit
 import Foundation
+import SwiftData
 
 // MARK: - Fake transport (in-memory Lane 1 stand-in)
 
@@ -657,5 +658,69 @@ final class PhotoDedupTests: XCTestCase {
         XCTAssertNotNil(k1)
         XCTAssertNotNil(k2)
         XCTAssertNotEqual(k1, k2)
+    }
+}
+
+// MARK: - 7. Tombstone persistence (SwiftData regression)
+
+/// Permanent regression coverage for the app-wide delete failure: a SwiftData
+/// stored property literally named `deleted` silently reverted on save
+/// (`deleted=0` persisted while a control property stuck), so NO tombstone in
+/// the app ever persisted. Every model now stores the tombstone as
+/// `tombstoned` (same SQLite column via `originalName: "deleted"`) — these
+/// tests prove the exact failing sequence (insert → save → fetch → set flag +
+/// bump updatedAt → save → refetch reads true) persists in-memory.
+@MainActor
+final class PlanTombstonePersistenceTests: XCTestCase {
+    func testPlanTombstonePersists() throws {
+        let container = try ModelContainer(
+            for: Plan.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        let plan = Plan(householdId: "hh-test", date: Date(), meal: .dinner,
+                        deviceId: "test-device")
+        context.insert(plan)
+        try context.save()
+        let id = plan.id
+        guard let fetched = try context.fetch(
+            FetchDescriptor<Plan>(predicate: #Predicate { $0.id == id })).first
+        else {
+            return XCTFail("inserted plan not found")
+        }
+        fetched.tombstoned = true
+        fetched.updatedAt = Date().addingTimeInterval(1)
+        try context.save()
+        guard let refetched = try context.fetch(
+            FetchDescriptor<Plan>(predicate: #Predicate { $0.id == id })).first
+        else {
+            return XCTFail("tombstoned plan not found")
+        }
+        XCTAssertTrue(refetched.tombstoned)
+    }
+
+    func testRecipeTombstonePersists() throws {
+        let container = try ModelContainer(
+            for: Recipe.self, Ingredient.self, Step.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        let recipe = Recipe(householdId: "hh-test", title: "Tombstone Soup",
+                            deviceId: "test-device")
+        context.insert(recipe)
+        try context.save()
+        let id = recipe.id
+        guard let fetched = try context.fetch(
+            FetchDescriptor<Recipe>(predicate: #Predicate { $0.id == id })).first
+        else {
+            return XCTFail("inserted recipe not found")
+        }
+        fetched.tombstoned = true
+        fetched.updatedAt = Date().addingTimeInterval(1)
+        try context.save()
+        guard let refetched = try context.fetch(
+            FetchDescriptor<Recipe>(predicate: #Predicate { $0.id == id })).first
+        else {
+            return XCTFail("tombstoned recipe not found")
+        }
+        XCTAssertTrue(refetched.tombstoned)
     }
 }

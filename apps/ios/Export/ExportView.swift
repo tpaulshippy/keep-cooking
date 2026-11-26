@@ -42,7 +42,7 @@ public enum ExportFormat: String, CaseIterable, Identifiable {
 /// Export is computed on-device from SwiftData (works offline); the ShareLink
 /// writes a temp file so Messages/Mail/Files all receive a real document.
 public struct RecipeExportView: View {
-    @Query(filter: #Predicate<Recipe> { !$0.deleted },
+    @Query(filter: #Predicate<Recipe> { !$0.tombstoned },
            sort: [SortDescriptor(\Recipe.title)])
     private var recipes: [Recipe]
 

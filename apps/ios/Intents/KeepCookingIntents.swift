@@ -136,7 +136,7 @@ struct StartTimerIntent: AppIntent {
         let timerLabel = name.isEmpty ? "\(minutes)-minute timer" : name
         // Log onto (or create) a "Shortcut Timers" recipe so Cook mode sees it.
         let existing = try? context.fetch(FetchDescriptor<Recipe>(
-            predicate: #Predicate { $0.title == "Shortcut Timers" && !$0.deleted }))
+            predicate: #Predicate { $0.title == "Shortcut Timers" && !$0.tombstoned }))
         let recipe: Recipe
         if let found = existing?.first {
             recipe = found
@@ -181,7 +181,7 @@ struct AddToListIntent: AppIntent {
         let container = try IntentStore.container()
         let context = ModelContext(container)
         let lists = (try? context.fetch(FetchDescriptor<ShoppingList>(
-            predicate: #Predicate { !$0.deleted },
+            predicate: #Predicate { !$0.tombstoned },
             sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]))) ?? []
         let list: ShoppingList
         if let current = lists.first {
@@ -286,14 +286,14 @@ struct CrossOffIngredientIntent: AppIntent {
         let container = try IntentStore.container()
         let context = ModelContext(container)
         let recipes = (try? context.fetch(FetchDescriptor<Recipe>(
-            predicate: #Predicate { !$0.deleted },
+            predicate: #Predicate { !$0.tombstoned },
             sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]))) ?? []
         // Shared fuzzy resolution (VoiceCommandParser lives in the same app
         // target as these intents). Deleted rows are excluded so a removed
         // ingredient can never match.
         var matched: Ingredient?
         for recipe in recipes {
-            let live = recipe.ingredients.filter { !$0.deleted }
+            let live = recipe.ingredients.filter { !$0.tombstoned }
             let pairs = live.map { (id: $0.id, name: $0.name) }
             if let id = ingredientId(matching: needle, in: pairs) {
                 matched = live.first { $0.id == id }
@@ -338,7 +338,7 @@ struct StartCookTimerIntent: AppIntent {
         let timerLabel = name.isEmpty ? "\(minutes)-minute timer" : name
         // Same "Shortcut Timers" logging as StartTimerIntent so Cook mode sees it.
         let existing = try? context.fetch(FetchDescriptor<Recipe>(
-            predicate: #Predicate { $0.title == "Shortcut Timers" && !$0.deleted }))
+            predicate: #Predicate { $0.title == "Shortcut Timers" && !$0.tombstoned }))
         let recipe: Recipe
         if let found = existing?.first {
             recipe = found

@@ -130,10 +130,10 @@ struct RecipeLibraryView: View {
     @Binding var section: LibrarySection
     @Binding var showFilterSheet: Bool
     @Binding var visibleRecipeCount: Int
-    @Query(filter: #Predicate<Recipe> { !$0.deleted },
+    @Query(filter: #Predicate<Recipe> { !$0.tombstoned },
            sort: [SortDescriptor(\Recipe.title)])
     private var recipes: [Recipe]
-    @Query(filter: #Predicate<Recipe> { $0.deleted },
+    @Query(filter: #Predicate<Recipe> { $0.tombstoned },
            sort: [SortDescriptor(\Recipe.updatedAt, order: .reverse)])
     private var trashed: [Recipe]
     @Query(sort: [SortDescriptor(\Cookbook.name)])
@@ -616,11 +616,11 @@ struct RecipeLibraryView: View {
     private var cookbookSheet: some View {
         NavigationStack {
             List {
-                if cookbooks.filter({ !$0.deleted }).isEmpty {
+                if cookbooks.filter({ !$0.tombstoned }).isEmpty {
                     Text("No cookbooks yet — create one below.")
                         .foregroundStyle(.secondary)
                 }
-                ForEach(cookbooks.filter { !$0.deleted }, id: \.id) { book in
+                ForEach(cookbooks.filter { !$0.tombstoned }, id: \.id) { book in
                     Button {
                         toggleCookbookMembership(book)
                     } label: {
@@ -714,7 +714,7 @@ struct RecipeLibraryView: View {
     }
 
     private func restore(_ recipe: Recipe) {
-        recipe.deleted = false
+        recipe.tombstoned = false
         recipe.updatedAt = Date()
         try? context.save()
     }
@@ -737,7 +737,7 @@ struct RecipeLibraryView: View {
         var count = 0
         let byId = recipesById
         for id in selection {
-            guard let recipe = byId[id], !recipe.deleted else { continue }
+            guard let recipe = byId[id], !recipe.tombstoned else { continue }
             var existing = recipe.categories
             for cat in cats where !existing.contains(where: { $0.lowercased() == cat.lowercased() }) {
                 existing.append(cat)
@@ -781,7 +781,7 @@ struct RecipeLibraryView: View {
         let lines = aggregateWeekToList(inputs)
         let list: ShoppingList
         if let existing = (try? context.fetch(FetchDescriptor<ShoppingList>()))?.first(where: {
-            $0.name == "Shopping" && !$0.deleted
+            $0.name == "Shopping" && !$0.tombstoned
         }) {
             list = existing
         } else {
@@ -810,7 +810,7 @@ struct RecipeLibraryView: View {
         var count = 0
         let byId = recipesById
         for id in selection {
-            guard let recipe = byId[id], !recipe.deleted else { continue }
+            guard let recipe = byId[id], !recipe.tombstoned else { continue }
             context.insert(Plan(householdId: "hh-demo", date: today, meal: .dinner,
                 recipeId: recipe.id, servings: recipe.servings, deviceId: deviceId))
             count += 1
@@ -823,7 +823,7 @@ struct RecipeLibraryView: View {
         let byId = recipesById
         for id in selection {
             guard let recipe = byId[id] else { continue }
-            recipe.deleted = true
+            recipe.tombstoned = true
             recipe.updatedAt = Date()
         }
         try? context.save()
@@ -894,7 +894,7 @@ struct RecipeLibraryView: View {
 
     private func tombstone(at offsets: IndexSet) {
         for i in offsets {
-            filtered[i].deleted = true
+            filtered[i].tombstoned = true
             // Sync is last-write-wins on updatedAt: bump it so this delete
             // tombstone beats a remote copy (mirrors applyMerge in LibraryViews).
             filtered[i].updatedAt = Date()
@@ -1323,7 +1323,7 @@ struct RecipeDetailView: View {
         let recipeId = recipe.id
         let mealRaw = MealSlot.dinner.rawValue
         let dup = (try? context.fetch(FetchDescriptor<Plan>(predicate: #Predicate<Plan> {
-            !$0.deleted && $0.householdId == householdId
+            !$0.tombstoned && $0.householdId == householdId
                 && $0.date >= tonight && $0.date < tomorrow && $0.mealRaw == mealRaw
         })))?.contains(where: { $0.recipeId == recipeId }) ?? false
         if !dup {
@@ -1344,7 +1344,7 @@ struct RecipeDetailView: View {
         let lines = aggregateWeekToList(inputs)
         let list: ShoppingList
         if let existing = (try? context.fetch(FetchDescriptor<ShoppingList>()))?.first(where: {
-            $0.name == "Shopping" && !$0.deleted
+            $0.name == "Shopping" && !$0.tombstoned
         }) {
             list = existing
         } else {
@@ -1411,7 +1411,7 @@ struct PlanTabView: View {
     }
 
     private var entries: [PlanEntrySnapshot] {
-        plans.filter { !$0.deleted }.map { plan in
+        plans.filter { !$0.tombstoned }.map { plan in
             let recipe = plan.recipeId.flatMap { recipesById[$0] }
             return PlanEntrySnapshot(id: plan.id, date: plan.date,
                 meal: plan.mealRaw, recipeId: plan.recipeId,
@@ -1421,7 +1421,7 @@ struct PlanTabView: View {
     }
 
     private var menuSnapshots: [MenuSnapshot] {
-        menus.filter { !$0.deleted }.map {
+        menus.filter { !$0.tombstoned }.map {
             MenuSnapshot(id: $0.id, name: $0.name, entryCount: $0.entries.count)
         }
     }
@@ -1429,7 +1429,7 @@ struct PlanTabView: View {
     /// All non-deleted recipes sorted by title for the PlanView
     /// Add Meal wizard picker.
     private var recipeOptions: [RecipeOptionSnapshot] {
-        recipes.filter { !$0.deleted }
+        recipes.filter { !$0.tombstoned }
             .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
             .map { recipe in
                 RecipeOptionSnapshot(id: recipe.id, title: recipe.title,
@@ -1457,14 +1457,14 @@ struct PlanTabView: View {
         let dup: Bool = {
             if let recipeId {
                 return plans.contains {
-                    !$0.deleted && cal.isDate($0.date, inSameDayAs: date)
+                    !$0.tombstoned && cal.isDate($0.date, inSameDayAs: date)
                         && $0.mealRaw == slot.rawValue && $0.recipeId == recipeId
                 }
             }
             let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return false }
             return plans.contains {
-                !$0.deleted && cal.isDate($0.date, inSameDayAs: date)
+                !$0.tombstoned && cal.isDate($0.date, inSameDayAs: date)
                     && $0.mealRaw == slot.rawValue && $0.recipeId == nil
                     && $0.note == trimmed
             }
@@ -1489,7 +1489,7 @@ struct PlanTabView: View {
     /// PlanView `onUpdateMeal` (not in the current API).
     private func updateEntry(id: String, date: Date, meal: String,
         recipeId: String? = nil, note: String = "", servings: Double? = nil) {
-        guard let plan = plans.first(where: { $0.id == id && !$0.deleted }) else { return }
+        guard let plan = plans.first(where: { $0.id == id && !$0.tombstoned }) else { return }
         plan.date = date
         plan.mealRaw = (MealSlot(rawValue: meal) ?? .dinner).rawValue
         plan.recipeId = recipeId
@@ -1503,44 +1503,22 @@ struct PlanTabView: View {
     /// Tombstones a plan entry (sync-safe delete). Wired to PlanView
     /// `onDeleteEntry`.
     private func deleteEntry(id: String) {
-        let cal = Calendar.current
-        var diag = "id=\(id.prefix(4))"
-        var target: Plan?
+        let target: Plan?
         do {
-            let fd = FetchDescriptor<Plan>(predicate: #Predicate { $0.id == id })
-            let found = try context.fetch(fd)
-            diag += " fresh=\(found.count)"
-            target = found.first(where: { !$0.deleted }) ?? found.first
-        } catch {
-            confirm = "DEL \(diag) fetchErr=\(error)"
-            NSLog("DELFETCH id=%@ err=%@", id as NSString, String(describing: error) as NSString)
-            return
-        }
-        guard let plan = target else {
-            confirm = "DEL \(diag) match=0 total=\(plans.count)"
-            return
-        }
-        let sameInstance = plans.first(where: { $0.id == id }).map { $0 === plan } ?? false
-        plan.deleted = true
+            target = try context.fetch(FetchDescriptor<Plan>(predicate: #Predicate { $0.id == id })).first
+        } catch { target = plans.first(where: { $0.id == id }) }
+        guard let plan = target, !plan.tombstoned else { return }
+        plan.tombstoned = true
         plan.updatedAt = Date()
-        let changedAfter = context.hasChanges
-        var saveErr = "ok"
-        do { try context.save() } catch { saveErr = String(describing: error) }
-        var storeDeleted = "?"
-        do {
-            let all = try context.fetch(FetchDescriptor<Plan>())
-            storeDeleted = String(describing: all.first(where: { $0.id == plan.id })?.deleted)
-        } catch { storeDeleted = "fetch-\(error)" }
-        let remaining = plans.filter { !$0.deleted && cal.isDate($0.date, inSameDayAs: plan.date) && $0.mealRaw == plan.mealRaw }.count
-        confirm = "DEL \(diag) sameInst=\(sameInstance) ch=->\(changedAfter) save=\(saveErr) storeDel=\(storeDeleted) slotLeft=\(remaining)"
-        NSLog("DEL %@ sameInst=%d changed=%d save=%@ storeDel=%@", id as NSString, sameInstance, changedAfter, saveErr as NSString, storeDeleted as NSString)
+        do { try context.save() } catch { confirm = "Couldn't delete: \(error)"; return }
+        confirm = "Removed planned meal"
     }
 
     /// Row tap: recipe entries navigate to RecipeDetailView; note-only
     /// entries surface their text in the confirm banner. Wired to PlanView
     /// `onSelectEntry`.
     private func selectEntry(id: String) {
-        guard let plan = plans.first(where: { $0.id == id && !$0.deleted }) else { return }
+        guard let plan = plans.first(where: { $0.id == id && !$0.tombstoned }) else { return }
         if let recipeId = plan.recipeId, let recipe = recipesById[recipeId] {
             selectedRecipe = recipe
         } else {
@@ -1552,7 +1530,7 @@ struct PlanTabView: View {
     /// Copies a reusable menu's entries into the given week (same logic as
     /// MenusTabView.apply, looked up by id for the PlanView callback).
     private func applyMenu(menuId: String, weekStart: Date) {
-        guard let menu = menus.first(where: { $0.id == menuId && !$0.deleted }) else { return }
+        guard let menu = menus.first(where: { $0.id == menuId && !$0.tombstoned }) else { return }
         let cal = Calendar.current
         var count = 0
         for entry in menu.entries {
@@ -1570,7 +1548,7 @@ struct PlanTabView: View {
     private func addWeekToList(_ weekStart: Date) {
         let cal = Calendar.current
         let weekEnd = cal.date(byAdding: .day, value: 7, to: weekStart) ?? weekStart
-        let weekPlans = plans.filter { !$0.deleted && $0.date >= weekStart && $0.date < weekEnd }
+        let weekPlans = plans.filter { !$0.tombstoned && $0.date >= weekStart && $0.date < weekEnd }
         var inputs: [PlanGroceryInput] = []
         for plan in weekPlans {
             guard let rid = plan.recipeId, let recipe = recipesById[rid] else { continue }
@@ -1584,7 +1562,7 @@ struct PlanTabView: View {
         let deviceId = currentDeviceId()
         let list: ShoppingList
         if let existing = (try? context.fetch(FetchDescriptor<ShoppingList>()))?.first(where: {
-            $0.name == "Weekly shop" && !$0.deleted
+            $0.name == "Weekly shop" && !$0.tombstoned
         }) {
             list = existing
             for item in list.items { context.delete(item) }
@@ -1616,7 +1594,7 @@ struct ListsTabView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if lists.filter({ !$0.deleted }).isEmpty {
+                if lists.filter({ !$0.tombstoned }).isEmpty {
                     ContentUnavailableView("No lists yet", systemImage: "cart",
                         description: Text("Add a week to a list from the Plan tab."))
                 } else {
@@ -1631,7 +1609,7 @@ struct ListsTabView: View {
     }
 
     private var snapshots: [ShoppingListSnapshot] {
-        lists.filter { !$0.deleted }.map { list in
+        lists.filter { !$0.tombstoned }.map { list in
             ShoppingListSnapshot(id: list.id, name: list.name, items: list.items.map { item in
                 ShopItemSnapshot(id: item.id, name: item.name, quantity: item.quantity,
                     aisle: item.aisle, checked: item.checked, recipeId: item.recipeId)
@@ -1651,7 +1629,7 @@ struct ListsTabView: View {
         let text = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         guard let list = (try? context.fetch(FetchDescriptor<ShoppingList>()))?.first(where: {
-            $0.id == listId && !$0.deleted
+            $0.id == listId && !$0.tombstoned
         }) else { return }
         let item = ListItem(listId: listId, name: text, aisle: guessAisle(for: text),
             deviceId: currentDeviceId())
@@ -1732,7 +1710,7 @@ struct PantryTabView: View {
     }
 
     private var snapshots: [PantrySnapshot] {
-        items.filter { !$0.deleted }.map {
+        items.filter { !$0.tombstoned }.map {
             PantrySnapshot(id: $0.id, name: $0.name, quantity: $0.quantity,
                 location: $0.location, expiresAt: $0.expiresAt,
                 lowThreshold: $0.lowThreshold, barcode: $0.barcode)
@@ -1752,7 +1730,7 @@ struct PantryTabView: View {
     private func insertBarcode(_ code: String) {
         let text = code.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        if let existing = items.first(where: { $0.barcode == text && !$0.deleted }) {
+        if let existing = items.first(where: { $0.barcode == text && !$0.tombstoned }) {
             existing.updatedAt = Date()
         } else {
             context.insert(PantryItem(householdId: "hh-demo", name: text,
@@ -1820,7 +1798,7 @@ struct MenusTabView: View {
         .navigationTitle("Menus")
     }
 
-    private var liveMenus: [Menu] { menus.filter { !$0.deleted } }
+    private var liveMenus: [Menu] { menus.filter { !$0.tombstoned } }
 
     private func createMenu() {
         let text = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1831,7 +1809,7 @@ struct MenusTabView: View {
     }
 
     private func tombstone(_ menu: Menu) {
-        menu.deleted = true
+        menu.tombstoned = true
         menu.updatedAt = Date()
         try? context.save()
     }
@@ -2231,7 +2209,7 @@ enum DemoSeeds {
     static func seedDemoPlans(context: ModelContext, deviceId: String) {
         let recipes = ((try? context.fetch(
             FetchDescriptor<Recipe>(sortBy: [SortDescriptor(\Recipe.title)]))) ?? [])
-            .filter { !$0.deleted }
+            .filter { !$0.tombstoned }
         guard recipes.count >= 3 else { return }
         let cal = Calendar.current
         let start = weekStart(containing: Date())
@@ -2270,7 +2248,7 @@ enum DemoSeeds {
     /// never touched.
     private static func collapseExactDuplicatePlans(_ plans: [Plan], calendar: Calendar) {
         var groups: [PlanDedupeKey: [Plan]] = [:]
-        for plan in plans where !plan.deleted {
+        for plan in plans where !plan.tombstoned {
             let key = PlanDedupeKey(
                 day: calendar.startOfDay(for: plan.date),
                 mealRaw: plan.mealRaw,
@@ -2282,7 +2260,7 @@ enum DemoSeeds {
         for (_, dupes) in groups where dupes.count > 1 {
             let ordered = dupes.sorted { $0.updatedAt < $1.updatedAt }
             for extra in ordered.dropFirst() {
-                extra.deleted = true
+                extra.tombstoned = true
                 extra.updatedAt = now
             }
         }

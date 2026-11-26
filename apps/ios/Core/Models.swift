@@ -103,7 +103,7 @@ public final class Recipe {
     public var photoThumb: String?
     public var updatedAt: Date
     public var deviceId: String
-    public var deleted: Bool
+    @Attribute(originalName: "deleted") public var tombstoned: Bool
 
     @Relationship(deleteRule: .cascade, inverse: \Ingredient.recipe)
     public var ingredients: [Ingredient] = []
@@ -128,7 +128,7 @@ public final class Recipe {
         photoThumb: String? = nil,
         updatedAt: Date = Date(),
         deviceId: String,
-        deleted: Bool = false
+        tombstoned: Bool = false
     ) {
         self.id = id
         self.householdId = householdId
@@ -147,7 +147,7 @@ public final class Recipe {
         self.photoThumb = photoThumb
         self.updatedAt = updatedAt
         self.deviceId = deviceId
-        self.deleted = deleted
+        self.tombstoned = tombstoned
     }
 
     public var categories: [String] {
@@ -160,7 +160,7 @@ extension Recipe: Syncable {
     public var syncId: String { id }
     public var syncUpdatedAt: Date { get { updatedAt } set { updatedAt = newValue } }
     public var syncDeviceId: String { get { deviceId } set { deviceId = newValue } }
-    public var syncDeleted: Bool { get { deleted } set { deleted = newValue } }
+    public var syncDeleted: Bool { get { tombstoned } set { tombstoned = newValue } }
     public var syncEntity: SyncEntityName { .recipe }
 }
 
@@ -177,7 +177,7 @@ public final class Ingredient {
     public var position: Int
     public var updatedAt: Date
     public var deviceId: String
-    public var deleted: Bool
+    @Attribute(originalName: "deleted") public var tombstoned: Bool
 
     public var recipe: Recipe?
 
@@ -191,7 +191,7 @@ public final class Ingredient {
         position: Int = 0,
         updatedAt: Date = Date(),
         deviceId: String,
-        deleted: Bool = false
+        tombstoned: Bool = false
     ) {
         self.id = id
         self.recipeId = recipeId
@@ -202,7 +202,7 @@ public final class Ingredient {
         self.position = position
         self.updatedAt = updatedAt
         self.deviceId = deviceId
-        self.deleted = deleted
+        self.tombstoned = tombstoned
     }
 }
 
@@ -210,7 +210,7 @@ extension Ingredient: Syncable {
     public var syncId: String { id }
     public var syncUpdatedAt: Date { get { updatedAt } set { updatedAt = newValue } }
     public var syncDeviceId: String { get { deviceId } set { deviceId = newValue } }
-    public var syncDeleted: Bool { get { deleted } set { deleted = newValue } }
+    public var syncDeleted: Bool { get { tombstoned } set { tombstoned = newValue } }
     public var syncEntity: SyncEntityName { .ingredient }
 }
 
@@ -226,7 +226,7 @@ public final class Step {
     public var timersJSON: String // [StepTimer] encoded — schema.sql timers TEXT DEFAULT '[]'
     public var updatedAt: Date
     public var deviceId: String
-    public var deleted: Bool
+    @Attribute(originalName: "deleted") public var tombstoned: Bool
 
     public var recipe: Recipe?
 
@@ -238,7 +238,7 @@ public final class Step {
         timers: [StepTimer] = [],
         updatedAt: Date = Date(),
         deviceId: String,
-        deleted: Bool = false
+        tombstoned: Bool = false
     ) {
         self.id = id
         self.recipeId = recipeId
@@ -247,7 +247,7 @@ public final class Step {
         self.timersJSON = encodeJSONArray(timers)
         self.updatedAt = updatedAt
         self.deviceId = deviceId
-        self.deleted = deleted
+        self.tombstoned = tombstoned
     }
 
     public var timers: [StepTimer] {
@@ -260,7 +260,7 @@ extension Step: Syncable {
     public var syncId: String { id }
     public var syncUpdatedAt: Date { get { updatedAt } set { updatedAt = newValue } }
     public var syncDeviceId: String { get { deviceId } set { deviceId = newValue } }
-    public var syncDeleted: Bool { get { deleted } set { deleted = newValue } }
+    public var syncDeleted: Bool { get { tombstoned } set { tombstoned = newValue } }
     public var syncEntity: SyncEntityName { .step }
 }
 
@@ -283,7 +283,7 @@ public final class ShoppingList {
     public var name: String
     public var updatedAt: Date
     public var deviceId: String
-    public var deleted: Bool
+    @Attribute(originalName: "deleted") public var tombstoned: Bool
 
     @Relationship(deleteRule: .cascade, inverse: \ListItem.shoppingList)
     public var items: [ListItem] = []
@@ -294,14 +294,14 @@ public final class ShoppingList {
         name: String,
         updatedAt: Date = Date(),
         deviceId: String,
-        deleted: Bool = false
+        tombstoned: Bool = false
     ) {
         self.id = id
         self.householdId = householdId
         self.name = name
         self.updatedAt = updatedAt
         self.deviceId = deviceId
-        self.deleted = deleted
+        self.tombstoned = tombstoned
     }
 }
 
@@ -309,7 +309,7 @@ extension ShoppingList: Syncable {
     public var syncId: String { id }
     public var syncUpdatedAt: Date { get { updatedAt } set { updatedAt = newValue } }
     public var syncDeviceId: String { get { deviceId } set { deviceId = newValue } }
-    public var syncDeleted: Bool { get { deleted } set { deleted = newValue } }
+    public var syncDeleted: Bool { get { tombstoned } set { tombstoned = newValue } }
     public var syncEntity: SyncEntityName { .list }
 }
 
@@ -326,7 +326,7 @@ public final class ListItem {
     public var recipeId: String?
     public var updatedAt: Date
     public var deviceId: String
-    public var deleted: Bool
+    @Attribute(originalName: "deleted") public var tombstoned: Bool
 
     public var shoppingList: ShoppingList?
 
@@ -340,7 +340,7 @@ public final class ListItem {
         recipeId: String? = nil,
         updatedAt: Date = Date(),
         deviceId: String,
-        deleted: Bool = false
+        tombstoned: Bool = false
     ) {
         self.id = id
         self.listId = listId
@@ -351,7 +351,7 @@ public final class ListItem {
         self.recipeId = recipeId
         self.updatedAt = updatedAt
         self.deviceId = deviceId
-        self.deleted = deleted
+        self.tombstoned = tombstoned
     }
 }
 
@@ -359,7 +359,7 @@ extension ListItem: Syncable {
     public var syncId: String { id }
     public var syncUpdatedAt: Date { get { updatedAt } set { updatedAt = newValue } }
     public var syncDeviceId: String { get { deviceId } set { deviceId = newValue } }
-    public var syncDeleted: Bool { get { deleted } set { deleted = newValue } }
+    public var syncDeleted: Bool { get { tombstoned } set { tombstoned = newValue } }
     public var syncEntity: SyncEntityName { .list }
 }
 
@@ -377,7 +377,7 @@ public final class PantryItem {
     public var barcode: String
     public var updatedAt: Date
     public var deviceId: String
-    public var deleted: Bool
+    @Attribute(originalName: "deleted") public var tombstoned: Bool
 
     public init(
         id: String = UUID().uuidString,
@@ -390,7 +390,7 @@ public final class PantryItem {
         barcode: String = "",
         updatedAt: Date = Date(),
         deviceId: String,
-        deleted: Bool = false
+        tombstoned: Bool = false
     ) {
         self.id = id
         self.householdId = householdId
@@ -402,7 +402,7 @@ public final class PantryItem {
         self.barcode = barcode
         self.updatedAt = updatedAt
         self.deviceId = deviceId
-        self.deleted = deleted
+        self.tombstoned = tombstoned
     }
 }
 
@@ -410,7 +410,7 @@ extension PantryItem: Syncable {
     public var syncId: String { id }
     public var syncUpdatedAt: Date { get { updatedAt } set { updatedAt = newValue } }
     public var syncDeviceId: String { get { deviceId } set { deviceId = newValue } }
-    public var syncDeleted: Bool { get { deleted } set { deleted = newValue } }
+    public var syncDeleted: Bool { get { tombstoned } set { tombstoned = newValue } }
     public var syncEntity: SyncEntityName { .pantryItem }
 }
 
@@ -427,7 +427,7 @@ public final class Plan {
     public var servings: Double?
     public var updatedAt: Date
     public var deviceId: String
-    public var deleted: Bool
+    @Attribute(originalName: "deleted") public var tombstoned: Bool
 
     public init(
         id: String = UUID().uuidString,
@@ -439,7 +439,7 @@ public final class Plan {
         servings: Double? = nil,
         updatedAt: Date = Date(),
         deviceId: String,
-        deleted: Bool = false
+        tombstoned: Bool = false
     ) {
         self.id = id
         self.householdId = householdId
@@ -450,7 +450,7 @@ public final class Plan {
         self.servings = servings
         self.updatedAt = updatedAt
         self.deviceId = deviceId
-        self.deleted = deleted
+        self.tombstoned = tombstoned
     }
 
     public var meal: MealSlot {
@@ -463,7 +463,7 @@ extension Plan: Syncable {
     public var syncId: String { id }
     public var syncUpdatedAt: Date { get { updatedAt } set { updatedAt = newValue } }
     public var syncDeviceId: String { get { deviceId } set { deviceId = newValue } }
-    public var syncDeleted: Bool { get { deleted } set { deleted = newValue } }
+    public var syncDeleted: Bool { get { tombstoned } set { tombstoned = newValue } }
     public var syncEntity: SyncEntityName { .plan }
 }
 
@@ -477,7 +477,7 @@ public final class Menu {
     public var entriesJSON: String // [MenuEntry] encoded — schema.sql entries TEXT DEFAULT '[]'
     public var updatedAt: Date
     public var deviceId: String
-    public var deleted: Bool
+    @Attribute(originalName: "deleted") public var tombstoned: Bool
 
     public init(
         id: String = UUID().uuidString,
@@ -486,7 +486,7 @@ public final class Menu {
         entries: [MenuEntry] = [],
         updatedAt: Date = Date(),
         deviceId: String,
-        deleted: Bool = false
+        tombstoned: Bool = false
     ) {
         self.id = id
         self.householdId = householdId
@@ -494,7 +494,7 @@ public final class Menu {
         self.entriesJSON = encodeJSONArray(entries)
         self.updatedAt = updatedAt
         self.deviceId = deviceId
-        self.deleted = deleted
+        self.tombstoned = tombstoned
     }
 
     public var entries: [MenuEntry] {
@@ -507,7 +507,7 @@ extension Menu: Syncable {
     public var syncId: String { id }
     public var syncUpdatedAt: Date { get { updatedAt } set { updatedAt = newValue } }
     public var syncDeviceId: String { get { deviceId } set { deviceId = newValue } }
-    public var syncDeleted: Bool { get { deleted } set { deleted = newValue } }
+    public var syncDeleted: Bool { get { tombstoned } set { tombstoned = newValue } }
     public var syncEntity: SyncEntityName { .menu }
 }
 

@@ -13,7 +13,7 @@ import SwiftData
 /// Entry point for the Library tab. Sections: Search, Categories, Cookbooks,
 /// Duplicates (badge = group count), Saved searches.
 public struct LibraryHomeView: View {
-    @Query(filter: #Predicate<Recipe> { !$0.deleted },
+    @Query(filter: #Predicate<Recipe> { !$0.tombstoned },
            sort: [SortDescriptor(\Recipe.title)])
     private var recipes: [Recipe]
     @Query(sort: [SortDescriptor(\Cookbook.name)])
@@ -77,7 +77,7 @@ public struct LibraryHomeView: View {
                     }
                 }
                 Section("Cookbooks") {
-                    ForEach(cookbooks.filter { !$0.deleted }, id: \.id) { book in
+                    ForEach(cookbooks.filter { !$0.tombstoned }, id: \.id) { book in
                         NavigationLink {
                             CookbookDetailView(cookbook: book, recipes: recipes)
                         } label: {
@@ -413,7 +413,7 @@ public struct DuplicateReviewView: View {
             position += 1
         }
         for id in plan.absorbedIds {
-            byId[id]?.deleted = true
+            byId[id]?.tombstoned = true
             byId[id]?.updatedAt = Date()
         }
         try? context.save()
