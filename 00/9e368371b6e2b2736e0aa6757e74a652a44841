@@ -1,0 +1,14 @@
+apps/android/app/src/main/java/com/keepcooking/app/sync/SyncEngine.kt
+  h_6bbd00fe0a456a 83-84,87-92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "009e368371b6e2b2736e0aa6757e74a652a44841",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
