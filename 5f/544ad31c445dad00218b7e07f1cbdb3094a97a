@@ -1,0 +1,22 @@
+api/test/beta-gate.test.ts
+  h_6bbd00fe0a456a 14,51
+apps/ios/App/DemoFlows.swift
+  h_6bbd00fe0a456a 1882,2046,2050
+apps/ios/App/KeepCookingApp.swift
+  h_6bbd00fe0a456a 326-328,335-344
+apps/ios/Features/Library/ShareViews.swift
+  h_6bbd00fe0a456a 163
+apps/ios/Sync/SyncEngine.swift
+  h_6bbd00fe0a456a 184-186,205-206,717
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5f544ad31c445dad00218b7e07f1cbdb3094a97a",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
