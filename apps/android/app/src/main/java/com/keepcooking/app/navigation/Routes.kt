@@ -32,4 +32,5 @@ object Routes {
     const val Export = "export"
     const val Share = "share"
     const val NowCooking = "now_cooking"
+    const val Settings = "settings"
 }

@@ -62,7 +62,7 @@ dependencies {
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
 
-    // DataStore (beta token, base URL, device id — mirrors UserDefaults SyncConfig)
+    // DataStore (base URL override, device id — mirrors UserDefaults SyncConfig)
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
     // Retrofit + OkHttp (SyncEngine transport)

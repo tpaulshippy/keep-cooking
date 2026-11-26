@@ -18,7 +18,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,9 +32,6 @@ import com.keepcooking.app.AppContainer
 import com.keepcooking.app.network.ShareCookbookRequest
 import com.keepcooking.app.network.ShareLinkDto
 import com.keepcooking.app.share.HouseholdInvite
-import com.keepcooking.app.sync.SyncEngine
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
@@ -125,13 +121,6 @@ private fun CookbookShareCard(container: AppContainer) {
     var link by remember { mutableStateOf<ShareLinkDto?>(null) }
     var sharing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var betaToken by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(container) {
-        // Reuse the container's DataStore — no second delegate on this file.
-        betaToken = runCatching {
-            container.appDataStore.data.map { it[SyncEngine.KEY_BETA_TOKEN] }.first()
-        }.getOrNull()
-    }
 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
@@ -158,9 +147,8 @@ private fun CookbookShareCard(container: AppContainer) {
                     sharing = true
                     scope.launch {
                         try {
-                            val auth = betaToken?.takeIf { it.isNotBlank() }?.let { "Bearer $it" }
                             link = container.api.createCookbookShare(
-                                auth,
+                                null,
                                 ShareCookbookRequest(householdId.trim(), ids),
                             )
                             error = null

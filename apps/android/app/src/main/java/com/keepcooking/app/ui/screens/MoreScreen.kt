@@ -29,12 +29,14 @@ fun MoreScreen(
     onExport: () -> Unit = {},
     onShare: () -> Unit = {},
     onNowCooking: () -> Unit = {},
+    onSettings: () -> Unit = {},
 ) {
     val rows = listOf(
         "Clip a recipe" to onClip,
         "Export a recipe" to onExport,
         "Share a cookbook" to onShare,
         "Now Cooking (watch)" to onNowCooking,
+        "Settings" to onSettings,
     )
     Scaffold(topBar = { TopAppBar(title = { Text("More") }) }) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
