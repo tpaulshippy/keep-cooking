@@ -41,6 +41,7 @@ import com.keepcooking.app.network.createApiService
 import com.keepcooking.app.sync.E2EJoinException
 import com.keepcooking.app.sync.E2EKeyStore
 import com.keepcooking.app.sync.SyncEngine
+import com.keepcooking.app.sync.SyncInviteBundle
 import com.keepcooking.app.sync.SyncRoute
 import com.keepcooking.app.sync.ensureE2EIdentity
 import com.keepcooking.app.sync.inviteBundleJson
@@ -56,6 +57,25 @@ import kotlinx.coroutines.launch
  * auto-generated E2E identity), and an Advanced custom-server disclosure.
  * No URL, token, Test/Reset, or identifier rows anywhere else.
  */
+
+/**
+ * Returns an error message, or null when [raw] is an acceptable custom
+ * server URL. Blank = built-in (always valid). http:// only for local dev
+ * hosts (localhost / 127.0.0.1 / *.local); everything else must be https.
+ */
+fun validateCustomServer(raw: String): String? {
+    val trimmed = raw.trim()
+    if (trimmed.isEmpty()) return null
+    val url = runCatching { java.net.URL(trimmed) }.getOrNull()
+    val host = url?.host?.lowercase().orEmpty()
+    if (url == null || host.isEmpty()) return "That server URL does not look valid — keeping current server."
+    val isLocalDev = host == "localhost" || host == "127.0.0.1" || host.endsWith(".local")
+    if (url.protocol.lowercase() != "https" && !(url.protocol.lowercase() == "http" && isLocalDev)) {
+        return "Server must use HTTPS (http:// is only allowed for localhost / 127.0.0.1 / *.local dev servers)."
+    }
+    return null
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(container: AppContainer, onBack: () -> Unit = {}) {
@@ -64,6 +84,11 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit = {}) {
     var status by remember { mutableStateOf("") }
     var household by remember { mutableStateOf("hh-demo") }
     var hasCustomServer by remember { mutableStateOf(false) }
+    // Pending endpoint hint from the last joined invite bundle. NEVER
+    // auto-applied: the user must explicitly confirm AND the hint must pass
+    // GET /health before it becomes the backend URL.
+    var pendingHint by remember { mutableStateOf<String?>(null) }
+    var hintHealth by remember { mutableStateOf("") }
 
     LaunchedEffect(container) {
         household = E2EKeyStore.loadMetadata(container.e2eMetaStore)?.householdId ?: "hh-demo"
@@ -114,12 +139,22 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit = {}) {
         ) {
             SyncCard(status = status, syncing = syncing, hasCustomServer = hasCustomServer, onSync = ::doSync)
             Spacer(Modifier.height(12.dp))
-            DevicesCard(container)
-            Spacer(Modifier.height(12.dp))
-            AdvancedCard(container, onServerChanged = { custom ->
-                hasCustomServer = custom
-                if (!custom) doSync()
+            DevicesCard(container, onHintStaged = { hint ->
+                pendingHint = hint
+                hintHealth = ""
             })
+            Spacer(Modifier.height(12.dp))
+            AdvancedCard(
+                container,
+                pendingHint = pendingHint,
+                hintHealth = hintHealth,
+                onHintHealth = { hintHealth = it },
+                onHintResolved = { pendingHint = null; hintHealth = "" },
+                onServerChanged = { custom ->
+                    hasCustomServer = custom
+                    if (!custom) doSync()
+                },
+            )
             Spacer(Modifier.height(12.dp))
             Card(Modifier.fillMaxWidth()) {
                 Text(
@@ -158,7 +193,7 @@ private fun SyncCard(status: String, syncing: Boolean, hasCustomServer: Boolean,
 }
 
 @Composable
-private fun DevicesCard(container: AppContainer) {
+private fun DevicesCard(container: AppContainer, onHintStaged: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
@@ -166,10 +201,40 @@ private fun DevicesCard(container: AppContainer) {
     var inviteCode by remember { mutableStateOf<String?>(null) }
     var pasteInput by remember { mutableStateOf("") }
     var joinResult by remember { mutableStateOf("") }
+    var pendingJoin by remember { mutableStateOf<SyncInviteBundle?>(null) }
     var working by remember { mutableStateOf(false) }
 
     LaunchedEffect(container) {
         household = E2EKeyStore.loadMetadata(container.e2eMetaStore)?.householdId ?: "hh-demo"
+    }
+
+    fun performJoin(bundle: SyncInviteBundle) {
+        scope.launch {
+            working = true
+            try {
+                val ok = E2EKeyStore.acceptInvite(
+                    container.e2eMetaStore, container.e2eSecretStore, bundle,
+                )
+                if (!ok) {
+                    joinResult = "Code does not match — it was mistyped or tampered with."
+                } else {
+                    household = bundle.householdId
+                    pasteInput = ""
+                    pendingJoin = null
+                    if (!bundle.endpointHint.isNullOrEmpty()) {
+                        // Stage for explicit review in Advanced — never
+                        // auto-applied (an invite must not silently redirect
+                        // this device's backend).
+                        onHintStaged(bundle.endpointHint)
+                        joinResult = "Joined household ${bundle.householdId}. The code suggests a custom server — review it under Advanced before switching."
+                    } else {
+                        joinResult = "Joined household ${bundle.householdId}."
+                    }
+                }
+            } finally {
+                working = false
+            }
+        }
     }
 
     Card(Modifier.fillMaxWidth()) {
@@ -191,7 +256,7 @@ private fun DevicesCard(container: AppContainer) {
                             .first().ifEmpty { null }
                         inviteCode = cred?.let {
                             inviteBundleJson(
-                                com.keepcooking.app.sync.SyncInviteBundle(
+                                SyncInviteBundle(
                                     householdId = it.metadata.householdId,
                                     syncCode = it.syncCode,
                                     kid = it.metadata.kid,
@@ -242,19 +307,17 @@ private fun DevicesCard(container: AppContainer) {
                         working = true
                         try {
                             val bundle = parseInviteBundle(pasteInput)
-                            val ok = E2EKeyStore.acceptInvite(
-                                container.e2eMetaStore, container.e2eSecretStore, bundle,
+                            val active = E2EKeyStore.loadActive(
+                                container.e2eMetaStore, container.e2eSecretStore,
                             )
-                            if (!ok) {
-                                joinResult = "Code does not match — it was mistyped or tampered with."
+                            if (active != null && active.metadata.hash != bundle.hash) {
+                                // This device already has a key that may hold
+                                // synced data — require explicit confirmation
+                                // before switching households.
+                                pendingJoin = bundle
+                                joinResult = "This device already belongs to household ${active.metadata.householdId}. Joining switches to ${bundle.householdId} and replaces this device's key."
                             } else {
-                                household = bundle.householdId
-                                pasteInput = ""
-                                joinResult = if (!bundle.endpointHint.isNullOrEmpty()) {
-                                    "Joined household ${bundle.householdId}. The code suggests a custom server — review it under Advanced before switching."
-                                } else {
-                                    "Joined household ${bundle.householdId}."
-                                }
+                                performJoin(bundle)
                             }
                         } catch (e: E2EJoinException) {
                             joinResult = e.message ?: "That text is not a Keep Cooking invite code."
@@ -265,6 +328,18 @@ private fun DevicesCard(container: AppContainer) {
                 },
                 enabled = !working && pasteInput.trim().isNotEmpty(),
             ) { Text("Join with code") }
+            pendingJoin?.let { staged ->
+                Row(modifier = Modifier.padding(top = 8.dp)) {
+                    Button(
+                        onClick = { performJoin(staged) },
+                        enabled = !working,
+                    ) { Text("Join anyway") }
+                    TextButton(
+                        onClick = { pendingJoin = null; joinResult = "Kept current household." },
+                        enabled = !working,
+                    ) { Text("Cancel") }
+                }
+            }
             if (joinResult.isNotEmpty()) {
                 Text(
                     joinResult,
@@ -284,17 +359,29 @@ private fun DevicesCard(container: AppContainer) {
 }
 
 @Composable
-private fun AdvancedCard(container: AppContainer, onServerChanged: (Boolean) -> Unit) {
+private fun AdvancedCard(
+    container: AppContainer,
+    pendingHint: String?,
+    hintHealth: String,
+    onHintHealth: (String) -> Unit,
+    onHintResolved: () -> Unit,
+    onServerChanged: (Boolean) -> Unit,
+) {
     val scope = rememberCoroutineScope()
     var expanded by remember { mutableStateOf(false) }
     var customUrl by remember { mutableStateOf("") }
     var healthResult by remember { mutableStateOf("") }
     var testing by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
+    var hintTesting by remember { mutableStateOf(false) }
 
     LaunchedEffect(container) {
         customUrl = container.appDataStore.data
             .map { it[SyncEngine.KEY_BASE_URL].orEmpty() }.first()
+    }
+    // A newly staged hint deserves a look: expand Advanced when it arrives.
+    LaunchedEffect(pendingHint) {
+        if (pendingHint != null) expanded = true
     }
 
     Card(Modifier.fillMaxWidth()) {
@@ -322,6 +409,10 @@ private fun AdvancedCard(container: AppContainer, onServerChanged: (Boolean) -> 
                         scope.launch {
                             testing = true
                             try {
+                                validateCustomServer(customUrl)?.let {
+                                    healthResult = it
+                                    return@launch
+                                }
                                 val base = customUrl.trim()
                                     .ifEmpty { SyncEngine.PROD_BASE_URL }
                                 createApiService(base).health()
@@ -340,11 +431,20 @@ private fun AdvancedCard(container: AppContainer, onServerChanged: (Boolean) -> 
                         scope.launch {
                             saving = true
                             try {
-                                container.appDataStore.edit {
-                                    it[SyncEngine.KEY_BASE_URL] = customUrl.trim()
+                                validateCustomServer(customUrl)?.let {
+                                    healthResult = it
+                                    return@launch
                                 }
-                                healthResult = ""
-                                onServerChanged(customUrl.trim().isNotEmpty())
+                                val trimmed = customUrl.trim()
+                                container.appDataStore.edit {
+                                    it[SyncEngine.KEY_BASE_URL] = trimmed
+                                    // New server, new history: a stale cursor
+                                    // would skip envelopes older than the old
+                                    // server's last sync. LWW handles replay.
+                                    it.remove(SyncEngine.KEY_LAST_SYNC)
+                                }
+                                healthResult = "Server saved — tap Sync now."
+                                onServerChanged(trimmed.isNotEmpty())
                             } finally {
                                 saving = false
                             }
@@ -355,7 +455,10 @@ private fun AdvancedCard(container: AppContainer, onServerChanged: (Boolean) -> 
                 TextButton(
                     onClick = {
                         scope.launch {
-                            container.appDataStore.edit { it.remove(SyncEngine.KEY_BASE_URL) }
+                            container.appDataStore.edit {
+                                it.remove(SyncEngine.KEY_BASE_URL)
+                                it.remove(SyncEngine.KEY_LAST_SYNC)
+                            }
                             customUrl = ""
                             healthResult = "Using the built-in server."
                             onServerChanged(false)
@@ -371,6 +474,60 @@ private fun AdvancedCard(container: AppContainer, onServerChanged: (Boolean) -> 
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp),
                 )
+            }
+            pendingHint?.let { hint ->
+                Spacer(Modifier.height(8.dp))
+                Text("Suggested server (from code)", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    hint,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(vertical = 4.dp),
+                )
+                Text(
+                    "This came from the invite code — it is not your server until you confirm it. Confirming checks GET /health first.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(modifier = Modifier.padding(top = 4.dp)) {
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                hintTesting = true
+                                try {
+                                    validateCustomServer(hint)?.let {
+                                        onHintHealth("$it — keeping current server.")
+                                        return@launch
+                                    }
+                                    createApiService(hint).health()
+                                    container.appDataStore.edit {
+                                        it[SyncEngine.KEY_BASE_URL] = hint
+                                        it.remove(SyncEngine.KEY_LAST_SYNC)
+                                    }
+                                    customUrl = hint
+                                    onHintResolved()
+                                    onServerChanged(true)
+                                } catch (t: Throwable) {
+                                    onHintHealth("Unreachable: ${t.message ?: "unknown error"} — keeping current server.")
+                                } finally {
+                                    hintTesting = false
+                                }
+                            }
+                        },
+                        enabled = !hintTesting,
+                    ) { Text(if (hintTesting) "Checking…" else "Test & use this server") }
+                    TextButton(
+                        onClick = onHintResolved,
+                        enabled = !hintTesting,
+                    ) { Text("Keep current server") }
+                }
+                if (hintHealth.isNotEmpty()) {
+                    Text(
+                        hintHealth,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
             }
         }
     }

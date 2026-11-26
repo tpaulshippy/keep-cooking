@@ -329,14 +329,15 @@ fun parseInviteBundle(pasted: String): SyncInviteBundle {
     val obj = runCatching {
         Json.parseToJsonElement(pasted.trim()).jsonObject
     }.getOrNull() ?: throw E2EJoinException("That text is not a Keep Cooking invite code.")
-    if (obj["v"]?.jsonPrimitive?.content != "2") {
+    val version = (obj["v"] as? JsonPrimitive)?.contentOrNull
+    if (version != "2") {
         throw E2EJoinException("That text is not a Keep Cooking invite code.")
     }
-    val householdId = obj["householdId"]?.jsonPrimitive?.content.orEmpty()
-    val syncCode = obj["syncCode"]?.jsonPrimitive?.content.orEmpty()
-    val kidValue = obj["kid"]?.jsonPrimitive?.content.orEmpty()
-    val hash = obj["hash"]?.jsonPrimitive?.content.orEmpty()
-    val hint = obj["endpointHint"]?.jsonPrimitive?.contentOrNull
+    val householdId = (obj["householdId"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+    val syncCode = (obj["syncCode"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+    val kidValue = (obj["kid"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+    val hash = (obj["hash"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+    val hint = (obj["endpointHint"] as? JsonPrimitive)?.contentOrNull
     if (householdId.isEmpty() || syncCode.isEmpty() || kidValue.isEmpty() || hash.isEmpty()) {
         throw E2EJoinException("That text is not a Keep Cooking invite code.")
     }
