@@ -1,0 +1,32 @@
+api/src/auth.ts
+  h_6bbd00fe0a456a 5-8,26-27,60-65,68-69
+api/src/index.ts
+  h_6bbd00fe0a456a 86-88,456-458
+api/test/beta-gate.test.ts
+  h_6bbd00fe0a456a 5-7,12,24-25,31-32,42,44-52,55,57-58,60-64,67,70,81,84
+api/test/e2e-blindness.test.ts
+  h_6bbd00fe0a456a 238,245,249
+apps/ios/App/DemoFlows.swift
+  h_6bbd00fe0a456a 1830,1835,1842-1847,1855-1856,1859-1863,1867-1869,1876,1878,1881-1882,1899,1906,1910,1918,1922,1927-1959,1981,1983,1993,2000-2012,2016,2019,2042,2045-2046,2050,2078-2080,2108
+apps/ios/App/KeepCookingApp.swift
+  h_6bbd00fe0a456a 310-313,322,328,347,369,388
+apps/ios/Features/Ingest/CaptionsImportView.swift
+  h_6bbd00fe0a456a 241
+apps/ios/Features/Ingest/ClipView.swift
+  h_6bbd00fe0a456a 48
+apps/ios/Features/Library/ShareViews.swift
+  h_6bbd00fe0a456a 157,163
+apps/ios/Sync/SyncEngine.swift
+  h_6bbd00fe0a456a 183-185
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c8702dd5a6104a60e1cbee03a637d50f6adb5f89",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
