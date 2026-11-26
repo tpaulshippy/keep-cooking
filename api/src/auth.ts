@@ -2,8 +2,10 @@ import type { Context, Next } from 'hono';
 import type { Store } from './store';
 
 // Better Auth stub — PASS 2 will verify the real Apple session cookie/JWT here.
-// Pass 1 (internal TestFlight): dev stub is kept for `wrangler dev`/vitest,
-// but PROD is gated behind INTERNAL_BETA_TOKEN (see betaGate below).
+// The app works out of the box against the deployed backend: there is no
+// beta-token enrollment. E2E household data stays blind (opaque hash buckets);
+// the beta gate below is a passthrough kept only to set the `prod` context
+// flag for getUser() role handling.
 // PII: user ids/emails are NEVER logged (see logger in index.ts).
 
 export type Role = 'owner' | 'member' | 'viewer';
@@ -21,8 +23,8 @@ const VALID_ROLES: Role[] = ['owner', 'member', 'viewer'];
 /**
  * True when baseUrl looks like a deployed host (prod).
  * Dev hosts (`localhost`, `127.0.0.1`, `*.local`, `test`) stay on the stub.
- * Anything else — including `*.workers.dev` and custom domains — is prod
- * and must present the beta token. Pass 2 replaces this with Apple auth.
+ * Anything else — including `*.workers.dev` and custom domains — is prod.
+ * (Pass 2 replaces the stub with Apple auth.)
  */
 export function isProdBaseUrl(baseUrl: string | undefined): boolean {
   if (!baseUrl) return false;
@@ -55,26 +57,18 @@ export function isBetaAuthorized(c: Context, betaToken: string | undefined): boo
 
 /**
  * Prod gate middleware factory.
- * - Dev (`prod === false`): passthrough, header stub fully trusted.
- * - Prod: `/health` stays unauthenticated; every other route requires
- *   `Authorization: Bearer <INTERNAL_BETA_TOKEN>` else 401 (PII-safe body).
- *   Also sets the `prod` context flag so getUser() de-escalates x-role.
+ * - Open access: every route (including prod) passes through — the app works
+ *   out of the box with no token enrollment. E2E household buckets stay
+ *   blind via unguessable hashes; v1 RBAC below still applies per household.
+ * - `/health` stays unauthenticated; all other routes proceed to authAttach.
+ * - Sets the `prod` context flag so getUser() de-escalates x-role.
+ * - `betaToken` is accepted but ignored (kept for call-site compat).
  */
 export function createBetaGate(opts: { betaToken?: string; prod: boolean }) {
-  const { betaToken, prod } = opts;
+  const { prod } = opts;
+  void opts.betaToken; // ignored: open access, no token enrollment
   return async function betaGate(c: Context, next: Next) {
     c.set('prod' as never, prod as never);
-    if (!prod) return next();
-    let path = '';
-    try {
-      path = new URL(c.req.url).pathname;
-    } catch {
-      path = '';
-    }
-    if (path === '/health') return next();
-    if (!isBetaAuthorized(c, betaToken)) {
-      return c.json({ error: 'unauthorized' }, 401);
-    }
     return next();
   };
 }

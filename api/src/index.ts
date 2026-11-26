@@ -83,8 +83,9 @@ export function createApp(
     const path = redactE2EPath(new URL(c.req.url).pathname);
     console.log(JSON.stringify({ m: c.req.method, p: path, s: c.res.status, ms: Date.now() - t0 }));
   });
-  // Prod beta gate runs BEFORE authAttach: /health stays open, everything
-  // else needs `Authorization: Bearer <INTERNAL_BETA_TOKEN>` (401 otherwise).
+  // Prod beta gate (passthrough): /health stays open and everything else
+  // proceeds to authAttach with no token enrollment. E2E buckets stay blind;
+  // v1 routes still enforce household RBAC below.
   app.use('*', createBetaGate({ betaToken, prod }));
   app.use('*', authAttach);
   app.use('*', async (c, next) => {
@@ -452,11 +453,9 @@ export function createApp(
   app.delete('/v2/sync/:hash', async (c) => {
     const hash = c.req.param('hash') ?? '';
     if (!E2E_HASH_RE.test(hash)) return c.json({ error: 'invalid household hash' }, 400);
-    // Whole-bucket wipe. Beta-gated via the global prod beta gate (Bearer
-    // INTERNAL_BETA_TOKEN fronts every non-health route in prod); no
-    // household membership lookup is possible from an opaque hash, so no
-    // additional role check applies in either env. Per-id delete travels as
-    // a deleted=true tombstone envelope via PUT.
+    // Whole-bucket wipe. No household membership lookup is possible from an
+    // opaque hash, so no role check applies in either env. Per-id delete
+    // travels as a deleted=true tombstone envelope via PUT.
     const wiped = await getStore().e2eWipe(hash);
     return c.json({ wiped });
   });

@@ -6,8 +6,6 @@ import { D1Store, type D1 } from '../src/d1store';
 import { householdHash, type EncryptedEnvelope } from '../src/e2e';
 import { makeApp, req } from './helpers';
 
-const BETA = 'e2e-beta-token';
-
 let HASH = '';
 let OTHER_HASH = '';
 beforeAll(async () => {
@@ -237,24 +235,18 @@ describe('e2e v1 blind blob pipe', () => {
     expect(await pull.json()).toEqual([]);
   });
 
-  it('beta gate fronts /v2 in prod (401 without token)', async () => {
+  it('/v2 is open without any token (no enrollment)', async () => {
     const store = new MemoryStore();
     const app = createApp(store, {
       baseUrl: 'https://keep-cooking-api.pshippy-245.workers.dev',
       secret: 'test-secret',
-      betaToken: BETA,
     });
     const anon = { 'content-type': 'application/json' };
-    expect((await app.request(`/v2/sync/${HASH}`, { headers: anon })).status).toBe(401);
+    expect((await app.request(`/v2/sync/${HASH}`, { headers: anon })).status).toBe(200);
     expect(
       (await app.request(`/v2/sync/${HASH}`, { method: 'PUT', headers: anon, body: JSON.stringify([]) })).status,
-    ).toBe(401);
-    expect((await app.request(`/v2/sync/${HASH}`, { method: 'DELETE', headers: anon })).status).toBe(401);
-    const auth = { Authorization: `Bearer ${BETA}`, 'content-type': 'application/json' };
-    expect((await app.request(`/v2/sync/${HASH}`, { headers: auth })).status).toBe(200);
-    expect(
-      (await app.request(`/v2/sync/${HASH}`, { method: 'DELETE', headers: auth })).status,
     ).toBe(200);
+    expect((await app.request(`/v2/sync/${HASH}`, { method: 'DELETE', headers: anon })).status).toBe(200);
   });
 
   it('logs never include ciphertext-adjacent plaintext (hash prefix only)', async () => {

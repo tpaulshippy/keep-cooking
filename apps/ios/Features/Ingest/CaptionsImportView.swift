@@ -238,7 +238,7 @@ public struct CaptionsImportView: View {
             let clipDeviceId = UUID().uuidString
             #endif
             let client = ClipClient(baseURL: baseURL,
-                betaToken: SyncConfig.betaToken.nilIfEmpty,
+                betaToken: nil,
                 userId: SyncConfig.userId, deviceId: clipDeviceId)
             let rep = try await client.clip(req)
             print(client.logEvent(for: rep, requestURL: req.url).description)

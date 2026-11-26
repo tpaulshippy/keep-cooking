@@ -154,13 +154,13 @@ public struct CookbookShareView: View {
         defer { isSharing = false }
         do {
             let client = ShareAPIClient(baseURL: base,
-                betaToken: SyncConfig.betaToken.nilIfEmpty,
+                betaToken: nil,
                 userId: SyncConfig.userId, deviceId: currentDeviceId)
             link = try await client.createCookbookShare(
                 householdId: cookbook.householdId, recipeIds: cookbook.recipeIds)
             error = nil
         } catch {
-            self.error = "Share failed (\(error.localizedDescription)). Check the base URL and retry."
+            self.error = "Share failed (\(error.localizedDescription)). Please try again."
         }
     }
 }

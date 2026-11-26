@@ -180,8 +180,9 @@ public enum SyncTransportError: Error, Sendable {
     case decode(Error)
 }
 
-/// Auth headers for the production beta gate + identity.
-/// - `betaToken`: `INTERNAL_BETA_TOKEN` (required on prod hosts).
+/// Auth headers for sync + identity.
+/// - `betaToken`: legacy, always nil now (open access, no token enrollment).
+///   Kept so transports stay source-compatible.
 /// - `userId`: shared household identity (beta: "beta-user"; pass 2 = Apple id).
 public struct SyncAuth: Sendable {
     public var betaToken: String?

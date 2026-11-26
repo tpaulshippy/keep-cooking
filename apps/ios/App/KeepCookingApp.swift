@@ -307,6 +307,10 @@ final class SyncCoordinator {
         }
         // Demo week plans (idempotent) so Plan → list records deterministically.
         DemoSeeds.seedDemoPlans(context: context, deviceId: currentDeviceId())
+        // E2E identity is auto-generated on first launch so there is always a
+        // key to share — the user never sees key setup, only Devices sharing.
+        let household = E2EKeyStore.loadMetadata()?.householdId ?? "hh-demo"
+        _ = e2eEnsureIdentity(householdId: household)
     }
 
     func sync() async {
@@ -315,18 +319,13 @@ final class SyncCoordinator {
             return
         }
         guard let base = SyncConfig.baseURL else {
-            lastResult = "bad API base URL — check Settings"
-            return
-        }
-        let token = SyncConfig.betaToken
-        if SyncConfig.isProd && token.isEmpty {
-            lastResult = "enter the beta token in Settings → sync paused"
+            lastResult = "sync unavailable — check connection"
             return
         }
         let did = currentDeviceId()
         let transport = APISyncTransport(
             baseURL: base,
-            auth: SyncAuth(betaToken: token.isEmpty ? nil : token,
+            auth: SyncAuth(betaToken: nil,
                            userId: SyncConfig.userId, deviceId: did))
         let engine = SyncEngine(deviceId: did, transport: transport)
         do {
@@ -345,7 +344,7 @@ final class SyncCoordinator {
         } catch let e as SyncTransportError {
             switch e {
             case .httpStatus(401):
-                lastResult = "unauthorized — check the beta token in Settings"
+                lastResult = "unauthorized — sync failed"
             case .httpStatus(let code):
                 lastResult = "sync failed (HTTP \(code))"
             default:
@@ -367,7 +366,7 @@ final class SyncCoordinator {
     }
 }
 
-// MARK: - Sync endpoint + credentials (Settings-editable, UserDefaults-backed)
+// MARK: - Sync endpoint (out of the box; Advanced override only)
 
 enum SyncConfig {
     static let prodBaseURL = "https://keep-cooking-api.pshippy-245.workers.dev"
@@ -386,19 +385,10 @@ enum SyncConfig {
 
     static var baseURLString: String { baseURL?.absoluteString ?? prodBaseURL }
 
-    static var betaToken: String {
-        UserDefaults.standard.string(forKey: "smidgen.betaToken") ?? ""
-    }
-
-    /// Shared household identity for the internal beta (pass 2 = Apple id).
+    /// Shared household identity (pass 2 = Apple id).
     static var userId: String {
         let s = UserDefaults.standard.string(forKey: "smidgen.userId") ?? ""
         return s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "beta-user" : s
-    }
-
-    static var isProd: Bool {
-        guard let h = baseURL?.host?.lowercased() else { return false }
-        return !(h.contains("localhost") || h.contains("127.0.0.1") || h.hasSuffix(".local"))
     }
 }
 
