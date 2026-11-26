@@ -1839,6 +1839,9 @@ struct SettingsView: View {
     @State private var pasteInput: String = ""
     @State private var joinResult: String = ""
     @State private var showQR = false
+    /// Join staged for explicit confirmation when this device already has a
+    /// key that may hold synced data — joining replaces it.
+    @State private var pendingJoin: SyncInviteBundle? = nil
     // Advanced BYO backend (hidden by default — the app works out of the
     // box against the built-in server).
     @State private var showAdvanced = false
@@ -1921,6 +1924,16 @@ struct SettingsView: View {
                     .font(.caption.monospaced())
                 Button("Join with code") { joinWithBundle() }
                     .disabled(pasteInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if pendingJoin != nil {
+                    HStack {
+                        Button("Join anyway") { confirmPendingJoin() }
+                        Spacer()
+                        Button("Cancel") {
+                            pendingJoin = nil
+                            joinResult = "Kept current household."
+                        }
+                    }
+                }
                 if !joinResult.isEmpty {
                     Text(joinResult).font(.caption).foregroundStyle(.secondary)
                 }
@@ -2001,8 +2014,78 @@ struct SettingsView: View {
     /// would push local data to the custom server under the wrong bucket.
     /// The user taps Sync now after joining.
     private func saveServer() {
-        UserDefaults.standard.set(customURLString.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "smidgen.apiBaseURL")
+        let trimmed = customURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let error = validateCustomServer(trimmed) {
+            healthResult = error
+            return
+        }
+        UserDefaults.standard.set(trimmed, forKey: "smidgen.apiBaseURL")
         healthResult = "Server saved — tap Sync now after joining your household."
+    }
+
+    /// Acceptable custom-server values: blank (built-in) or an http(s) URL;
+    /// http:// only for local dev hosts. Returns an error message, else nil.
+    private func validateCustomServer(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return nil }
+        guard let url = URL(string: trimmed),
+              let host = url.host?.lowercased(),
+              !host.isEmpty
+        else {
+            return "That server URL does not look valid — keeping current server."
+        }
+        let scheme = url.scheme?.lowercased() ?? ""
+        let isLocalDev = host == "localhost" || host == "127.0.0.1" || host.hasSuffix(".local")
+        guard scheme == "https" || (scheme == "http" && isLocalDev) else {
+            return "Server must use HTTPS (http:// is only allowed for localhost / 127.0.0.1 / *.local dev servers)."
+        }
+        return nil
+    }
+
+    private func joinWithBundle() {
+        do {
+            let bundle = try e2eParseInvite(pasteInput)
+            if let active = E2EKeyStore.loadActive(), active.metadata.hash != bundle.hash {
+                // This device already has a key that may hold synced data —
+                // require explicit confirmation before switching households.
+                pendingJoin = bundle
+                joinResult = "This device already belongs to household \(active.metadata.householdId). Joining switches to \(bundle.householdId) and replaces this device's key."
+                return
+            }
+            finishJoin(try e2eJoin(bundle: bundle))
+        } catch {
+            joinResult = error.localizedDescription
+        }
+    }
+
+    private func confirmPendingJoin() {
+        guard let bundle = pendingJoin else { return }
+        do {
+            finishJoin(try e2eJoin(bundle: bundle))
+        } catch {
+            joinResult = error.localizedDescription
+        }
+    }
+
+    private func finishJoin(_ res: E2EJoinResult) {
+        householdName = res.householdId
+        pendingJoin = nil
+        // SECURITY: never auto-apply the invite's endpointHint. An
+        // attacker-controlled bundle must not silently redirect this
+        // device's backend. Stage it for explicit user confirmation +
+        // GET /health validation instead (see pendingEndpointHint UI).
+        if let hint = res.endpointHint?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !hint.isEmpty, hint != customURLString, hint != effectiveBaseURL {
+            pendingEndpointHint = hint
+            hintHealthResult = ""
+            showAdvanced = true
+            joinResult = "Joined household \(res.householdId). The invite suggests a custom server below — review it before switching."
+        } else {
+            pendingEndpointHint = nil
+            hintHealthResult = ""
+            joinResult = "Joined household \(res.householdId)."
+        }
+        pasteInput = ""
     }
 
     private func useBuiltInServer() {
@@ -2032,30 +2115,6 @@ struct SettingsView: View {
         }
     }
 
-    private func joinWithBundle() {
-        do {
-            let res = try e2eJoin(pasted: pasteInput)
-            householdName = res.householdId
-            // SECURITY: never auto-apply the invite's endpointHint. An
-            // attacker-controlled bundle must not silently redirect this
-            // device's backend. Stage it for explicit user confirmation +
-            // GET /health validation instead (see pendingEndpointHint UI).
-            if let hint = res.endpointHint?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !hint.isEmpty, hint != customURLString, hint != effectiveBaseURL {
-                pendingEndpointHint = hint
-                hintHealthResult = ""
-                showAdvanced = true
-                joinResult = "Joined household \(res.householdId). The invite suggests a custom server below — review it before switching."
-            } else {
-                pendingEndpointHint = nil
-                hintHealthResult = ""
-                joinResult = "Joined household \(res.householdId)."
-            }
-            pasteInput = ""
-        } catch {
-            joinResult = error.localizedDescription
-        }
-    }
 
     /// Confirmed adoption of the staged endpoint hint: validates
     /// GET <hint>/health, then — and only then — persists the hint as the
