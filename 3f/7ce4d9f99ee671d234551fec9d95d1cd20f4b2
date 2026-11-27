@@ -1,0 +1,24 @@
+.github/workflows/android-check.yml
+  h_6bbd00fe0a456a 1-46
+apps/android/README.md
+  h_6bbd00fe0a456a 39,44-46
+apps/android/app/build.gradle.kts
+  h_6bbd00fe0a456a 42-47
+apps/android/app/src/test/java/com/keepcooking/app/MenuPlanningTest.kt
+  h_6bbd00fe0a456a 116
+apps/android/gradlew
+  h_6bbd00fe0a456a 1-132,134-141,143-248
+apps/android/gradlew.bat
+  h_6bbd00fe0a456a 1-112
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3f7ce4d9f99ee671d234551fec9d95d1cd20f4b2",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
