@@ -64,31 +64,38 @@ class SyncEngine(
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
 
     companion object {
-        val KEY_DEVICE_ID = stringPreferencesKey("device_id")
+        val KEY_DEVICE_ID = DeviceAuth.KEY_DEVICE_ID
         val KEY_BASE_URL = stringPreferencesKey("api_base_url")
         val KEY_USER_ID = stringPreferencesKey("user_id")
         val KEY_LAST_SYNC = stringPreferencesKey("last_sync_at")
         const val PROD_BASE_URL = "https://keep-cooking-api.pshippy-245.workers.dev"
     }
 
-    suspend fun deviceId(): String {
-        val existing = dataStore.data.map { it[KEY_DEVICE_ID] }.first()
-        if (existing != null) return existing
-        val fresh = UUID.randomUUID().toString()
-        dataStore.edit { it[KEY_DEVICE_ID] = fresh }
-        return fresh
-    }
+    /**
+     * Persisted UUIDv4 device id (stable across launches). identifierForVendor
+     * / Build.MODEL are display hints only — the device key is the identity.
+     */
+    suspend fun deviceId(): String = DeviceAuth.deviceId(dataStore)
 
-    /** Transport for this run: Advanced custom-server override or the built-in server. */
+    /**
+     * Transport for this run: Advanced custom-server override or the built-in
+     * server. Enrollment runs first on every call (unsigned, idempotent,
+     * best-effort) and retries until this endpoint's marker persists, so a
+     * failed first enroll never sticks. Every transport carries the device
+     * interceptor, which signs mutating requests (POST/PUT/DELETE) and
+     * leaves reads unsigned.
+     */
     private val overrideApiCache = mutableMapOf<String, ApiService>()
 
     suspend fun activeApi(): ApiService {
         val override = dataStore.data.map { it[KEY_BASE_URL]?.trim().orEmpty() }.first()
+        val base = override.ifEmpty { PROD_BASE_URL }
+        runCatching { DeviceAuth.ensure(dataStore, base) }
         if (override.isEmpty()) return api
         // Cache per base URL: a Retrofit/OkHttpClient per sync run would
         // leak connection pools and threads.
         synchronized(overrideApiCache) {
-            return overrideApiCache.getOrPut(override) { createApiService(override) }
+            return overrideApiCache.getOrPut(override) { createApiService(override, DeviceAuth.interceptor()) }
         }
     }
 
@@ -496,6 +503,8 @@ class SyncEngine(
     suspend fun syncE2E(identity: E2ESyncIdentity, authHeader: String? = null): SyncResult {
         // Open access: no token enrollment. An explicit authHeader still
         // overrides (tests/local targets); otherwise no Authorization header.
+        // Device identity (Ed25519 enroll + signed mutating requests) flows
+        // via the transport's device interceptor (see activeApi/DeviceAuth).
         val token = authHeader
         val transport = activeApi()
         val remoteEncrypted = transport.pullEncrypted(token, identity.hash, pullSinceValue())

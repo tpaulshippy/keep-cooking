@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import { MemoryStore, newId, type Store, type SyncEnvelopeWire } from './store';
 import { D1Store } from './d1store';
-import { authAttach, agentAttach, createBetaGate, getAgent, getUser, isProdBaseUrl, requireAgentScope, requireOwnerRole, requireWriteRole } from './auth';
+import { authAttach, agentAttach, authenticateDevice, getAgent, getUser, isProdBaseUrl, requireAgentScope, requireOwnerRole, requireWriteRole } from './auth';
+import { devicesEnroll, devicesRevoke } from './devices';
 import { clipRecipe } from './clip';
 import { scaleRecipe } from './scale';
 import { signKey, variantKeys, DEFAULT_SIGNED_URL_TTL_SECONDS } from './photos';
@@ -29,8 +30,7 @@ export interface Env {
   PHOTOS?: unknown;
   APP_VERSION?: string;
   PUBLIC_BASE_URL?: string;
-  BETTER_AUTH_SECRET?: string; // reserved for pass 2 (real Apple auth); unused by the beta gate
-  INTERNAL_BETA_TOKEN?: string; // required in prod: `wrangler secret put INTERNAL_BETA_TOKEN`
+  PHOTOS_SIGNING_SECRET?: string; // HMAC for photo signed URLs only; not auth
 }
 
 const VERSION = '0.1.0';
@@ -41,6 +41,9 @@ const VERSION = '0.1.0';
 export function redactE2EPath(path: string): string {
   const m = path.match(/^(\/v2\/sync\/)([0-9a-fA-F]{16,})(.*)$/);
   if (m) return `${m[1]}${m[2]!.slice(0, HASH_LOG_PREFIX_LEN)}…`;
+  // Device ids are user ids in prod (see auth.ts) — never log them.
+  const d = path.match(/^(\/v2\/devices\/)[^/?#]+(.*)$/);
+  if (d) return `${d[1]}…${d[2]}`;
   return path;
 }
 
@@ -65,7 +68,7 @@ export function resolveStore(env: Env): Store {
 
 export function createApp(
   store: Store,
-  opts: { version?: string; baseUrl?: string; secret?: string; betaToken?: string; prod?: boolean } = {},
+  opts: { version?: string; baseUrl?: string; secret?: string; prod?: boolean } = {},
 ) {
   const app = new Hono<{ Variables: { store: Store } }>();
   const version = opts.version ?? VERSION;
@@ -74,7 +77,6 @@ export function createApp(
   // Prod detection: explicit override wins, else derived from baseUrl
   // (workers.dev / any non-local host => prod). Dev keeps the header stub.
   const prod = opts.prod ?? isProdBaseUrl(baseUrl);
-  const betaToken = opts.betaToken;
 
   // PII-safe access log: method + pathname + status + ms only.
   // Never log headers (Authorization, x-user-*, cookies) or bodies.
@@ -85,14 +87,44 @@ export function createApp(
     const path = redactE2EPath(new URL(c.req.url).pathname);
     console.log(JSON.stringify({ m: c.req.method, p: path, s: c.res.status, ms: Date.now() - t0 }));
   });
-  // Prod beta gate (passthrough): /health stays open and everything else
-  // proceeds to authAttach with no token enrollment. E2E buckets stay blind;
-  // v1 routes still enforce household RBAC below.
-  app.use('*', createBetaGate({ betaToken, prod }));
-  app.use('*', authAttach);
   // Key-only agent auth (#26): no x-agent-token header → passthrough
   // (existing behavior byte-identical); header present → must verify (401).
+  // Runs BEFORE the device gate so a valid agent token is an alternative
+  // credential to the Ed25519 device signature (agents hold only the
+  // syncCode, never a device signing key).
   app.use('*', agentAttach(store));
+  // Device-signature gate.
+  // Open (no sig): GET/HEAD/OPTIONS on any route, plus /health,
+  // /openapi.json, and POST /v2/devices (enrollment — how devices join).
+  // POST /v2/devices/:id/revoke is also exempt here so devicesRevoke can
+  // return 404 for unknown targets before auth (it re-verifies the
+  // signature itself, keeping dev/prod consistent).
+  // Agent-token requests (agentAttach above) skip the device signature:
+  // the token already proves syncCode possession for that household.
+  // Everything else: dev (!prod) passes through to the getUser() header
+  // stub; prod requires a valid Ed25519 device signature (401 otherwise).
+  // v2 writes are sig-only; v1 writes additionally enforce household RBAC
+  // with user.id = the verified device id (see getUser in auth.ts).
+  app.use('*', async (c, next) => {
+    c.set('prod' as never, prod as never);
+    const pathname = new URL(c.req.url).pathname;
+    const m = c.req.method;
+    if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return next();
+    if (pathname === '/health' || pathname === '/openapi.json') return next();
+    if (pathname === '/v2/devices' && m === 'POST') return next();
+    if (m === 'POST' && /^\/v2\/devices\/[^/]+\/revoke$/.test(pathname)) return next();
+    // Key-only agent surface (#26): open enrollment (how agents join — same
+    // trust as the unguessable /v2 bucket) and the MCP endpoint, whose
+    // per-method auth lives in handleMcp (agent calls carry x-agent-token;
+    // initialize/notifications stay usable for handshake).
+    if (pathname === '/agent/enroll' && m === 'POST') return next();
+    if (pathname === '/mcp' && m === 'POST') return next();
+    if (!prod) return next(); // dev header stub
+    if (getAgent(c)) return next(); // agent token already verified (#26)
+    await authenticateDevice(c, store); // throws 401
+    return next();
+  });
+  app.use('*', authAttach);
   app.use('*', async (c, next) => {
     c.set('store' as never, store as never);
     await next();
@@ -106,6 +138,19 @@ export function createApp(
   });
 
   const getStore = (): Store => store;
+
+  // ---------- device enrollment (public; no sig — this is how devices join) ----------
+  // devicesEnroll is owned by the enroll-store lane (api/src/devices.ts):
+  // POST { deviceId: UUIDv4, publicKey: base64(32B), displayName? } ->
+  // 201 first enroll / 200 idempotent re-enroll / 409 key conflict.
+  app.post('/v2/devices', async (c) => devicesEnroll(c, getStore()));
+
+  // ---------- device self-revoke (sig verified by the handler, not the
+  // gate: the '/v2/devices/:id/revoke' exemption above lets devicesRevoke
+  // check existence first — 404 unknown :id -> 401 missing/bad/stale sig
+  // -> 403 signer != :id -> 200 { deviceId, revokedAt }). Revoked devices
+  // fail all later writes with 401 via authenticateDevice.
+  app.post('/v2/devices/:id/revoke', async (c) => devicesRevoke(c, getStore()));
 
   // ---------- health / openapi ----------
   app.get('/health', (c) => c.json({ ok: true, version }));
@@ -647,8 +692,7 @@ export default {
     const app = createApp(store, {
       version: env.APP_VERSION ?? VERSION,
       baseUrl: env.PUBLIC_BASE_URL ?? 'https://api.keepcooking.local',
-      secret: env.BETTER_AUTH_SECRET ?? 'dev-only-change-me',
-      betaToken: env.INTERNAL_BETA_TOKEN,
+      secret: env.PHOTOS_SIGNING_SECRET ?? 'dev-only-change-me',
       // prod derived from PUBLIC_BASE_URL via isProdBaseUrl (workers.dev => prod)
     });
     return app.fetch(request);

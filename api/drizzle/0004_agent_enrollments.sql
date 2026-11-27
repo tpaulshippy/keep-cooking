@@ -1,7 +1,7 @@
 -- Keep Cooking key-only agent auth (#26): enrollment binding.
 -- Canonical migration chain: apply drizzle/0001_init.sql, then
--- 0002_e2e_blobs.sql, then this file. All statements are IF NOT EXISTS, so
--- re-applying is safe.
+-- 0002_e2e_blobs.sql, then 0003_device_keys.sql, then this file (0004).
+-- All statements are IF NOT EXISTS, so re-applying is safe.
 -- Server-blind: rows hold the householdHash (unguessable bucket address), a
 -- plaintext householdId LABEL, and a token VERIFIER = hex(SHA256(raw agent
 -- token)). The verifier is a one-way hash — a DB dump yields no usable

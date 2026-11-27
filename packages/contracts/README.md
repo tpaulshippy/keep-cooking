@@ -1,4 +1,4 @@
-# Contracts v0.1.0 — source of truth. No lane changes without orchestrator approval.
+# Contracts v0.2.0 — source of truth. No lane changes without orchestrator approval.
 
 Ownership: orchestrator only. Lanes consume, never edit.
 
@@ -32,7 +32,7 @@ Zero-knowledge scope is the `/v2/sync/:hash` route only — legacy
 Server tries JSON-LD → reader → caption fallback, logs which. All parsing unit-tested client-side too.
 
 ## Auth / RBAC
-Better Auth (email + Apple). `householdId` on every entity. Roles: owner/member/viewer. Viewer read-only, member CRUD, owner + invites/deletes.
+Single device-key auth (open auth, no login). `householdId` on every entity. Roles: owner/member/viewer. Viewer read-only, member CRUD, owner + invites/deletes.
 
 ## Endpoints (see openapi.yaml)
 POST /clip, CRUD /recipes, POST /recipes/:id/scale, CRUD /lists + /pantry, CRUD /plans + /menus, GET /plans/feed.ics, POST /share/cookbook, GET /export/:id.(json|md|html), GET /sync/pull, POST /sync/push, GET /health, GET /openapi.json (must byte-match openapi.json).

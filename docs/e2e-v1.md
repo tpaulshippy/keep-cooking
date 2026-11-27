@@ -126,17 +126,21 @@ produce or verify plaintext.
 ## BYO steps (fresh backend)
 
 1. `wrangler login` (once per machine).
-2. Mint a beta token and deploy from the repo root:
-   `INTERNAL_BETA_TOKEN=$(openssl rand -base64 32) ./scripts/deploy-backend.sh`
+2. Deploy from the repo root: `./scripts/deploy-backend.sh`
    - Creates D1 `keep-cooking` (writes the new `database_id` into
      `api/wrangler.toml` on first run), R2 `keep-cooking-photos`, applies the D1
-     schema remotely (`api/drizzle/0001_init.sql` + `0002_e2e_blobs.sql`),
-     sets `INTERNAL_BETA_TOKEN` as a Worker secret, writes
-     `PUBLIC_BASE_URL` into `api/wrangler.toml [vars]` when provided, deploys
-     the Worker, then curls `/health` on the actual published URL.
-   - The token is REQUIRED: without it the script aborts (pass
-     `BYO_NO_TOKEN=1` only for an explicit local/no-token setup, where
-     writes are ungated and the backend must never be exposed).
+     schema remotely (`api/drizzle/0001_init.sql` + `0002_e2e_blobs.sql` +
+     `0003_device_keys.sql`), writes `PUBLIC_BASE_URL` into
+     `api/wrangler.toml [vars]` when provided, deploys the Worker, then
+     curls `/health` on the actual published URL.
+   - No shared-secret gate: writes are authorized by per-device Ed25519
+     signatures (see `api/README.md` Auth). Enrollment is open, not a
+     gate — anyone reaching the Worker can enroll a key
+     (`POST /v2/devices { deviceId, publicKey, displayName? }`), so do
+     not treat enrollment as an access control. There is no token to
+     mint, store, or paste. (Historical note, deferred:
+     pass 1 used an `INTERNAL_BETA_TOKEN` bearer gate; device signatures
+     replaced it — do not reintroduce token enrollment.)
 3. The script prints the Worker URL, e.g.
    `https://keep-cooking-api.<account>.workers.dev`.
 4. In the app: Settings → Server (BYO backend) → paste URL → **Test**
@@ -147,10 +151,15 @@ produce or verify plaintext.
 5. FIRST join or create the household key in Settings → End-to-end
    encryption (paste the invite bundle on a second device, or create a new
    household), and eyeball-match `kid` / `hashPrefix8` across devices.
-6. ONLY THEN, back in Settings → Server (BYO backend), enter the same
-   `INTERNAL_BETA_TOKEN` in the Beta token field → Save & sync now. From
-   this point recipe sync travels as E2E v2 envelopes; the legacy plaintext
-   pipes stay unused for recipe content.
+6. ONLY THEN let the app enroll this device's signing key: the app
+   auto-enrolls on launch via `POST /v2/devices` with no UI export of
+   `deviceId` / `publicKey` (client Beta UI is deferred, so there is no
+   in-app enroll screen or key display). Manual `POST /v2/devices` with
+   curl is operators-only (debugging a fresh backend, not a normal setup
+   step). Then, back in Settings → Server (BYO backend) → Save &
+   sync now. From this point recipe sync travels as E2E v2 envelopes
+   written under the enrolled device key; the legacy plaintext pipes stay
+   unused for recipe content.
 
 ## Blindness acceptance (prove the server learns nothing)
 

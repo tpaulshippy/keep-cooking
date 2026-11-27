@@ -1,7 +1,7 @@
 # Keep Cooking API — Lane 1
 
 One Hono Worker on Cloudflare: D1 (via Drizzle schema + parameterized SQL) + R2 photos.
-Better Auth (email + Apple stub via headers, production wiring documented below).
+Single device-key auth (open auth, header stub in dev; device signing key is the credential).
 Households + RBAC (owner/member/viewer). Zod-validated inputs. **PII is never logged**
 (access log records method + pathname + status + ms only).
 
@@ -67,60 +67,81 @@ reads).
 
 - Key-only agent access (#26, see `docs/agents/`): the device encryption key
   alone authenticates via `x-agent-token` (base64url HKDF-SHA256, domain-separated
-  from the data key). `POST /agent/enroll` binds `{householdHash, householdId,
-  verifier}` (server stores only the verifier hash — no key material); agents
-  are owner-scoped to their enrolled household (out-of-scope reads 404, wrong
-  writes 403, unknown tokens 401). `POST /mcp` exposes the same Store through
-  stateless JSON-RPC on this Worker (schemas in `packages/contracts/mcp-tools.json`).
-  The `/v2` blind pipe stays hash-addressed and needs no token.
-- Production: Better Auth (email + Apple) verifies the session; `src/auth.ts`
-  `getUser()` is the single swap point (currently trusts `x-user-id` /
-  `x-user-email` / `x-role` headers as a dev stub — **never enable header auth
-  in production**; set `BETTER_AUTH_SECRET` via `wrangler secret put`).
-  `BETTER_AUTH_SECRET` is currently **unused** (reserved for pass 2 real Apple
-  auth); the TestFlight gate uses `INTERNAL_BETA_TOKEN` instead.
-- Internal TestFlight gate (pass 1): when `PUBLIC_BASE_URL` is a deployed host
-  (`*.workers.dev` or any non-local domain), every route except `GET /health`
-  requires `Authorization: Bearer <INTERNAL_BETA_TOKEN>` (else `401
-  {error:"unauthorized"}`). `x-role` is **ignored in prod** — header fallback
-  is forced to `viewer`, so header-role escalation is impossible; stored
-  `memberships` rows (keyed off `user.id`) can still grant member/owner.
-  Dev (`localhost` / `*.local` / vitest) keeps the header stub with no bearer.
+  from the data key) as an alternative to the Ed25519 device signature below
+  (agents hold only the syncCode, never a device signing key).
+  `POST /agent/enroll` binds `{householdHash, householdId, verifier}` (server
+  stores only the verifier hash — no key material); agents are owner-scoped to
+  their enrolled household (out-of-scope reads 404, wrong-household writes 403,
+  unknown tokens 401). `POST /mcp` exposes the same Store through stateless
+  JSON-RPC on this Worker (schemas in `packages/contracts/mcp-tools.json`).
+- Auth: per-device Ed25519 signing keys — the device signing key is the
+  credential, there is no password or login (`api/src/auth.ts`). Enroll the
+  device once, then sign every write. The household E2E key (see
+  `docs/e2e-v1.md`) is a different secret: it encrypts recipe content and
+  never leaves the device — it is never sent to, or verified by, the server.
+- Enroll (open — the only unsigned write):
+  `POST /v2/devices { deviceId: UUIDv4, publicKey: base64(32B Ed25519),
+  displayName? }` → `201 { deviceId, enrolledAt }` on first enroll,
+  `200` on idempotent re-enroll with the same key, `410` when the id was
+  revoked (gone — enroll a fresh `deviceId` instead), `409` when the id is
+  already enrolled with a different key.
+- Signed writes carry `x-device-id` / `x-device-ts` (millis since epoch) /
+  `x-device-sig` (base64 Ed25519 over the canonical string
+  `METHOD + "\n" + path+query + "\n" + ts + "\n" + hex(SHA256(bodyBytes))`;
+  the empty body hashes as `hex(SHA256(""))`). Reads (`GET`/`HEAD`/`OPTIONS`)
+  plus `GET /health`, `GET /openapi.json`, and `POST /v2/devices`
+  (enrollment) stay open; every other `POST`/`PUT`/`DELETE` requires a valid
+  signature (`401` otherwise). Replay window `|now - ts| <= 5 min` is a
+  documented limitation, not a nonce ledger: two identical writes inside the
+  window both verify (handlers are idempotent, so this is safe). This has
+  nothing to do with the E2E envelope `nonce` (`api/src/e2e.ts`), which is a
+  per-envelope AES-GCM IV for content encryption, not auth replay protection.
 - Roles: `viewer` read-only (all mutations → 403), `member` full CRUD,
   `owner` everything + `POST /share/cookbook` + membership management.
+  In prod `x-role` is **ignored** — the header fallback is forced to
+  `viewer`, so header-role escalation is impossible; stored `memberships`
+  rows (keyed off the verified device id) can still grant member/owner.
+  First-claim bootstrap: on an empty household the first verified writer
+  becomes `owner`; further devices stay `viewer` (role-checked writes → 403)
+  until an owner grants them a role. No membership seed is applied at deploy.
+  Dev (`localhost` / `*.local` / vitest) keeps the header stub with no
+  signature checks.
 - Stored `memberships` rows win over the header fallback role (tested).
-
-### Beta-gate env (set once, applied on every prod deploy)
-
-```bash
-# Generate + store the token as a repo secret (never commit the value):
-openssl rand -hex 32 | gh secret set INTERNAL_BETA_TOKEN --repo tpaulshippy/keep-cooking
-```
-
-`.github/workflows/deploy.yml` pushes that secret to the Worker
-(`wrangler secret put`) and ensures the `hh-demo` / `beta-user` owner
-membership exists, so the iOS app's sync (x-user-id `beta-user`) can write.
-Manual alternative: `npx wrangler secret put INTERNAL_BETA_TOKEN`.
-
-# Reserved for pass 2, unused by the beta gate:
-# npx wrangler secret put BETTER_AUTH_SECRET
-
-# D1: wrangler.toml still has `database_id = "local-keepcooking-placeholder"` —
-# replace it with the real id from `npx wrangler d1 create keep-cooking` before deploy.
-```
+- Revocation: `POST /v2/devices/{id}/revoke` (signed; self-only).
+  A revoked device gets `401 device revoked` on its next write —
+  self-revoke is logout. There is no shared token to rotate; enroll a fresh
+  key instead.
+- `PHOTOS_SIGNING_SECRET` is HMAC-only: it signs photo URLs
+  (`wrangler secret put PHOTOS_SIGNING_SECRET`), it is not auth and never
+  substitutes for a device signature.
 
 ### Curl
 
 ```bash
 BASE=https://keep-cooking-api.pshippy-245.workers.dev
-TOKEN=$(cat ~/.keepcooking-beta-token)   # value stored via `wrangler secret put INTERNAL_BETA_TOKEN`
+DEVICE_ID=$(uuidgen)   # persist one per device; the private half never leaves it
 
-curl -s $BASE/health                                        # 200, no auth
-curl -s $BASE/recipes                                      # 401 {error:"unauthorized"}
-curl -s -H "Authorization: Bearer $TOKEN" $BASE/recipes    # 200
+# 1. enroll (open — the only unsigned write):
+curl -s -X POST $BASE/v2/devices \
+  -H 'content-type: application/json' \
+  -d "{\"deviceId\":\"$DEVICE_ID\",\"publicKey\":\"<base64-of-32B-Ed25519-pubkey>\"}"
+# → 201 {"deviceId":"...","enrolledAt":"..."} (200 = same key re-enrolled, 410 = revoked id, 409 = id taken)
+
+# 2. reads are open — no headers:
+curl -s $BASE/health     # 200, proves boot
+curl -s $BASE/recipes    # 200, no signature
+
+# 3. writes are signed (TS = millis, SIG = Ed25519 over the canonical string;
+#    construction below is schematic — see deviceCanonicalString in api/src/auth.ts):
+BODY='{"title":"probe","servings":2}'
+TS=$(date +%s000)
+CANONICAL=$(printf 'POST\n/recipes\n%s\n%s' "$TS" "$(printf '%s' "$BODY" | sha256sum | cut -d' ' -f1)")
+SIG=$(sign_ed25519 "$CANONICAL" device-private-key)   # Ed25519, base64 output
 curl -s -X POST $BASE/recipes \
-  -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
-  -H 'x-role: owner' -d '{"title":"probe","servings":2}'   # 403 — x-role ignored in prod
+  -H 'content-type: application/json' \
+  -H "x-device-id: $DEVICE_ID" -H "x-device-ts: $TS" -H "x-device-sig: $SIG" \
+  -d "$BODY"   # 201 as first-claim owner on an empty household, else 201 as
+               # granted owner/member, 403 as viewer (needs a grant)
 ```
 
 ## Endpoints (exactly packages/contracts/openapi.yaml, plus 2 photo helpers)
@@ -129,6 +150,7 @@ curl -s -X POST $BASE/recipes \
 `POST /clip`, CRUD `/recipes` + `POST /recipes/:id/scale`,
 CRUD `/lists`, CRUD `/pantry`, CRUD `/plans` + `/menus`,
 `GET /plans/feed.ics`, `POST /share/cookbook`, `GET /export/:id.(json|md|html)`,
+`POST /v2/devices` (enroll) + `POST /v2/devices/{id}/revoke` (self-revoke = logout),
 `GET /sync/pull?since=`, `POST /sync/push`,
 plus `GET /photos/variants?recipeId=` and `GET /photos/sign?key=` (<15 min TTL).
 Key-only agent surface (#26): `POST /agent/enroll`, `GET /agent/status`,

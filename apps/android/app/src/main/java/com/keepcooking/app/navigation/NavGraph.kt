@@ -31,6 +31,8 @@ import com.keepcooking.app.data.StepEntity
 import com.keepcooking.app.library.DuplicateMergePlan
 import com.keepcooking.app.network.SyncEnvelopeDto
 import com.keepcooking.app.share.ShareHandler
+import com.keepcooking.app.sync.DeviceAuth
+import com.keepcooking.app.sync.SyncEngine
 import com.keepcooking.app.ui.screens.CookScreen
 import com.keepcooking.app.ui.screens.ExportScreen
 import com.keepcooking.app.ui.screens.IngestDraft
@@ -411,6 +413,10 @@ fun KeepCookingNav() {
                 }
                 IngestScreen(
                     clipboardText = clipText,
+                    deviceState = DeviceAuth::currentState,
+                    // Awaited on submit so a first-tap clip enrolls first
+                    // instead of sending a keyless (unsigned) POST.
+                    ensureDeviceState = { DeviceAuth.ensure(container.appDataStore, SyncEngine.PROD_BASE_URL) },
                     onSaveRecipe = { draft ->
                         // Room/outbox writes await here (called from a coroutine)
                         // so a failure surfaces in the Ingest UI instead of a

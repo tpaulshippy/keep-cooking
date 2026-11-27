@@ -153,6 +153,62 @@
         },
         "type": "object"
       },
+      "DeviceEnrollRequest": {
+        "properties": {
+          "deviceId": {
+            "description": "UUIDv4, stable per device",
+            "format": "uuid",
+            "type": "string"
+          },
+          "displayName": {
+            "maxLength": 64,
+            "type": "string"
+          },
+          "publicKey": {
+            "description": "base64 of exactly 32 bytes (Ed25519 public key); the private half never leaves the device",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deviceId",
+          "publicKey"
+        ],
+        "type": "object"
+      },
+      "DeviceEnrollResponse": {
+        "properties": {
+          "deviceId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "enrolledAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deviceId",
+          "enrolledAt"
+        ],
+        "type": "object"
+      },
+      "DeviceRevokeResponse": {
+        "properties": {
+          "deviceId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "revokedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deviceId",
+          "revokedAt"
+        ],
+        "type": "object"
+      },
       "EncryptedEnvelope": {
         "description": "E2E v2 wrapper around a SyncEnvelope. Server stores bytes only; see docs/e2e-v1.md. v1 SyncEnvelope is unchanged.",
         "properties": {
@@ -881,10 +937,22 @@
       }
     },
     "securitySchemes": {
-      "AgentToken": {
-        "description": "Key-derived bearer (base64url of 32 HKDF-SHA256 bytes, domain-separated from the data key \u2014 see docs/agents/). Enroll via POST /agent/enroll, which stores only hex(SHA256(token)). Applies to every v1 route as an alternative to the dev x-user-id/x-role headers: reads are scoped to the enrolled household (out-of-scope reads are 404), writes require an explicit matching householdId (else 403). The /v2 blind sync pipe stays hash-addressed and needs no token.",
+      "DeviceId": {
+        "description": "enrolled device id (UUIDv4, from POST /v2/devices)",
         "in": "header",
-        "name": "x-agent-token",
+        "name": "x-device-id",
+        "type": "apiKey"
+      },
+      "DeviceSig": {
+        "description": "base64 Ed25519 signature over the canonical string METHOD + \"\\n\" + path+query + \"\\n\" + ts + \"\\n\" + hex(SHA256(bodyBytes)) (empty body hashes as hex(SHA256(\"\"))). Required on every POST/PUT/DELETE except POST /v2/devices; GET/HEAD/OPTIONS, /health and /openapi.json stay open. Unknown / stale / revoked keys get 401 (self-revoke = logout).",
+        "in": "header",
+        "name": "x-device-sig",
+        "type": "apiKey"
+      },
+      "DeviceTs": {
+        "description": "millis since epoch, digits only; |now - ts| <= 5 min. Replay window is a documented limitation (no server nonce ledger).",
+        "in": "header",
+        "name": "x-device-ts",
         "type": "apiKey"
       }
     }
@@ -892,7 +960,7 @@
   "info": {
     "description": "Single Hono Worker + D1 + R2. MIT only. See packages/contracts/README.md.",
     "title": "Keep Cooking API",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -976,7 +1044,17 @@
             },
             "description": "parsed recipe"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/export/{id}.html": {
@@ -1112,7 +1190,17 @@
             },
             "description": "created"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/lists/{id}": {
@@ -1127,7 +1215,17 @@
           "204": {
             "description": "deleted"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       },
       "get": {
         "operationId": "getShoppingList",
@@ -1177,7 +1275,17 @@
             },
             "description": "ok"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/mcp": {
@@ -1262,7 +1370,17 @@
             },
             "description": "created"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/menus/{id}": {
@@ -1277,7 +1395,17 @@
           "204": {
             "description": "deleted"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       },
       "get": {
         "operationId": "getMenu",
@@ -1327,7 +1455,17 @@
             },
             "description": "ok"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/openapi.json": {
@@ -1382,7 +1520,17 @@
             },
             "description": "created"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/pantry/{id}": {
@@ -1397,7 +1545,17 @@
           "204": {
             "description": "deleted"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       },
       "put": {
         "operationId": "updatePantryItem",
@@ -1427,7 +1585,17 @@
             },
             "description": "ok"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/plans": {
@@ -1472,7 +1640,17 @@
             },
             "description": "created"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/plans/feed.ics": {
@@ -1504,7 +1682,17 @@
           "204": {
             "description": "deleted"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       },
       "get": {
         "operationId": "getPlan",
@@ -1554,7 +1742,17 @@
             },
             "description": "ok"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/recipes": {
@@ -1604,7 +1802,17 @@
             },
             "description": "created"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/recipes/{id}": {
@@ -1619,7 +1827,17 @@
           "204": {
             "description": "deleted"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       },
       "get": {
         "operationId": "getRecipe",
@@ -1669,7 +1887,17 @@
             },
             "description": "ok"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/recipes/{id}/scale": {
@@ -1711,7 +1939,17 @@
             },
             "description": "scaled ingredient quantities (fraction-rounded display strings)"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/share/cookbook": {
@@ -1757,7 +1995,17 @@
             },
             "description": "share link"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/sync/pull": {
@@ -1820,7 +2068,113 @@
             },
             "description": "server-won conflicts (empty = all accepted)"
           }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
+      }
+    },
+    "/v2/devices": {
+      "post": {
+        "description": "Open enrollment \u2014 no device signature required (this is how devices join). 201 on first enroll, 200 on idempotent re-enroll with the same key, 410 when the id was revoked (gone, enroll a fresh deviceId instead), 409 when the id is already enrolled with a different key, 400 on validation failure. Reads stay open; every other write requires the enrolled key (see DeviceSig).",
+        "operationId": "enrollDevice",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceEnrollRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceEnrollResponse"
+                }
+              }
+            },
+            "description": "already enrolled with the same key (idempotent)"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceEnrollResponse"
+                }
+              }
+            },
+            "description": "enrolled"
+          },
+          "400": {
+            "description": "invalid deviceId / publicKey / displayName"
+          },
+          "409": {
+            "description": "device id already enrolled with a different key"
+          },
+          "410": {
+            "description": "device id was revoked (gone) \u2014 enroll a fresh deviceId instead"
+          }
         }
+      }
+    },
+    "/v2/devices/{id}/revoke": {
+      "parameters": [
+        {
+          "description": "enrolled device id to revoke (self-only)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "description": "Signed revocation (caller signs with its own enrolled key). Revoking your own key is logout \u2014 the next write from that key gets 401 (device revoked). There is no shared token to rotate; enroll a fresh deviceId instead (re-enrolling this revoked id returns 410).",
+        "operationId": "revokeDevice",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceRevokeResponse"
+                }
+              }
+            },
+            "description": "revoked"
+          },
+          "401": {
+            "description": "missing / unknown / stale / bad / revoked device signature"
+          },
+          "403": {
+            "description": "not self (cross-device revoke deferred)"
+          },
+          "404": {
+            "description": "unknown device id"
+          }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/v2/sync/{hash}": {
@@ -1845,7 +2199,17 @@
             },
             "description": "wiped row count"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       },
       "get": {
         "operationId": "e2ePull",
@@ -1924,7 +2288,17 @@
             },
             "description": "stored ids (stale writes are idempotent no-ops)"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     }
   },

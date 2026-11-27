@@ -137,3 +137,14 @@ export const agentEnrollments = sqliteTable('agent_enrollments', {
   verifier: text('verifier').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
+
+// Device keys: 1:1 with drizzle/0003_device_keys.sql (D1). device_id is the
+// PK; re-enroll with the same key is idempotent, a different key for the
+// same device_id is a 409, and re-enrolling a revoked device is a 410.
+export const deviceKeys = sqliteTable('device_keys', {
+  deviceId: text('device_id').primaryKey(),
+  publicKey: text('public_key').notNull(),
+  displayName: text('display_name'),
+  createdAt: text('created_at').notNull(),
+  revokedAt: text('revoked_at'),
+});

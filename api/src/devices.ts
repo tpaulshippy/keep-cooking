@@ -1,0 +1,70 @@
+import type { Context } from 'hono';
+import { authenticateDevice } from './auth';
+import { base64ByteLength } from './e2e';
+import { deviceKeysEqual, decodePublicKeyB64, type Store } from './store';
+
+// POST /v2/devices — device enrollment; POST /v2/devices/:id/revoke —
+// self-revoke (route wiring: createApp in index.ts). Expected enroll body: { deviceId: UUIDv4, publicKey:
+// base64(32B Ed25519), displayName?: <=64 }. Responses: 201 first enroll,
+// 200 idempotent re-enroll (same key), 409 same deviceId with a different
+// key, 410 re-enroll of a revoked device (enroll a fresh deviceId instead —
+// a revoked key stays rejected with 401), 400 validation failure.
+
+const UUIDV4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export async function devicesEnroll(c: Context, store: Store): Promise<Response> {
+  const body = ((await c.req.json().catch(() => ({}))) ?? {}) as {
+    deviceId?: unknown;
+    publicKey?: unknown;
+    displayName?: unknown;
+  };
+  const { deviceId, publicKey, displayName } = body;
+  if (typeof deviceId !== 'string' || !UUIDV4_RE.test(deviceId)) {
+    return c.json({ error: 'deviceId must be UUIDv4' }, 400);
+  }
+  if (typeof publicKey !== 'string' || base64ByteLength(publicKey) !== 32) {
+    return c.json({ error: 'publicKey must be base64 of exactly 32 bytes' }, 400);
+  }
+  if (displayName !== undefined && (typeof displayName !== 'string' || displayName.length > 64)) {
+    return c.json({ error: 'displayName must be a string of at most 64 chars' }, 400);
+  }
+  const incoming = decodePublicKeyB64(publicKey);
+  const existing = await store.getDevice(deviceId);
+  if (existing?.revokedAt) {
+    return c.json({ error: 'device revoked; enroll a fresh deviceId' }, 410);
+  }
+  if (existing && !deviceKeysEqual(existing.publicKey, incoming)) {
+    return c.json({ error: 'device already enrolled with different key' }, 409);
+  }
+  try {
+    const res = await store.enrollDevice({
+      deviceId,
+      publicKeyB64: publicKey,
+      ...(typeof displayName === 'string' ? { displayName } : {}),
+    });
+    return c.json(res, existing ? 200 : 201);
+  } catch (e) {
+    const status = (e as { status?: unknown } | null | undefined)?.status;
+    if (status === 410) return c.json({ error: 'device revoked; enroll a fresh deviceId' }, 410);
+    if (status === 409) return c.json({ error: 'device already enrolled with different key' }, 409);
+    throw e;
+  }
+}
+
+// POST /v2/devices/:id/revoke — self-revoke only (lost/stolen device kill).
+// Ordering: 404 (unknown :id) -> 401 (missing/bad/stale sig, unknown or
+// already-revoked signer) -> 403 (signer != :id) -> 200 { deviceId,
+// revokedAt }. Existence is checked before auth so a signer can learn a
+// 404 for a typo'd id; ids are unguessable UUIDs so this leaks nothing
+// useful. No cross-device revoke, no admin override, no UI.
+export async function devicesRevoke(c: Context, store: Store): Promise<Response> {
+  const target = c.req.param('id') ?? '';
+  const existing = await store.getDevice(target);
+  if (!existing) return c.json({ error: 'device not found' }, 404);
+  await authenticateDevice(c, store); // throws 401
+  const signer = c.req.header('x-device-id') ?? '';
+  if (signer !== target) return c.json({ error: 'can only revoke own device' }, 403);
+  const res = await store.revokeDevice(target);
+  if (!res) return c.json({ error: 'device not found' }, 404);
+  return c.json(res, 200);
+}

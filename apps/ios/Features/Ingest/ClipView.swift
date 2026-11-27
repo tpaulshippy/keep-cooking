@@ -44,9 +44,11 @@ public struct ClipView: View {
     }
 
     private func authedClient() -> ClipClient {
-        ClipClient(baseURL: baseURL,
+        let did = DeviceAuth.currentDeviceId()
+        return ClipClient(baseURL: baseURL,
             betaToken: nil,
-            userId: SyncConfig.userId, deviceId: currentDeviceId())
+            userId: SyncConfig.userId, deviceId: did,
+            signer: DeviceAuth.requestSigner(deviceId: did))
     }
 
     private var stepIndex: Int {
@@ -211,6 +213,10 @@ public struct ClipView: View {
         focused = nil
         let req = ClipRequest(url: urlText.trimmingCharacters(in: .whitespaces), source: .url)
         do {
+            // Enroll before the first signed POST: on a fresh install the
+            // server does not know this key yet and prod rejects the clip
+            // with 401. Re-reads the id afterwards (409 recovery rotates it).
+            await DeviceAuth.enrollIfNeeded(baseURL: baseURL, deviceId: DeviceAuth.currentDeviceId())
             let client = authedClient()
             let rep = try await client.clip(req)
             // PII-safe log: strategy + host + confidence only.
@@ -283,10 +289,7 @@ public struct ClipView: View {
     }
 
     private func currentDeviceId() -> String {
-        #if os(iOS)
-        return UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
-        #else
-        return UUID().uuidString
-        #endif
+        // Persisted UUIDv4 (DeviceAuth); identifierForVendor is display-only.
+        DeviceAuth.currentDeviceId()
     }
 }

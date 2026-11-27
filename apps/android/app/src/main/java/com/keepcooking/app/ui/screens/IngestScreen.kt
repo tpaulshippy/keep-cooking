@@ -42,6 +42,7 @@ import com.keepcooking.app.ingest.cleanTitle
 import com.keepcooking.app.ingest.clipServerErrorMessage
 import com.keepcooking.app.ingest.clipWarningText
 import com.keepcooking.app.ingest.isSavableTitle
+import com.keepcooking.app.sync.DeviceAuthInterceptor
 import kotlinx.coroutines.launch
 
 /**
@@ -67,6 +68,14 @@ fun IngestScreen(
     baseUrl: String = "https://keep-cooking-api.pshippy-245.workers.dev/",
     clipboardText: String? = null,
     onSaveRecipe: suspend (IngestDraft) -> String = { "Saved “${it.title}”" },
+    // Fresh device-auth state per request (enroll may complete after
+    // composition). Signs the mutating clip POST; a null state fails fast in
+    // ClipClient instead of sending an unsigned POST the server rejects.
+    deviceState: () -> DeviceAuthInterceptor.State? = { null },
+    // Suspends until enrollment is ensured (DeviceAuth.ensure): awaited on
+    // submit so a first-tap clip races enrollment instead of sending null.
+    // Falls back to [deviceState] when null (previews/tests).
+    ensureDeviceState: (suspend () -> DeviceAuthInterceptor.State?)? = null,
 ) {
     var tab by remember { mutableStateOf(0) }
     var bannerUrl by remember(clipboardText) {
@@ -96,8 +105,8 @@ fun IngestScreen(
                 }
             }
             when (tab) {
-                0 -> ClipTab(baseUrl = baseUrl, prefill = clipPrefill, onSaveRecipe = onSaveRecipe)
-                1 -> CaptionsTab(baseUrl = baseUrl, onSaveRecipe = onSaveRecipe)
+                0 -> ClipTab(baseUrl = baseUrl, prefill = clipPrefill, onSaveRecipe = onSaveRecipe, deviceState = deviceState, ensureDeviceState = ensureDeviceState)
+                1 -> CaptionsTab(baseUrl = baseUrl, onSaveRecipe = onSaveRecipe, deviceState = deviceState, ensureDeviceState = ensureDeviceState)
                 2 -> OcrTab(onSaveRecipe = onSaveRecipe)
             }
         }
@@ -109,6 +118,8 @@ private fun ClipTab(
     baseUrl: String,
     prefill: String?,
     onSaveRecipe: suspend (IngestDraft) -> String,
+    deviceState: () -> DeviceAuthInterceptor.State? = { null },
+    ensureDeviceState: (suspend () -> DeviceAuthInterceptor.State?)? = null,
 ) {
     var urlText by remember(prefill) { mutableStateOf(prefill ?: "") }
     var report by remember { mutableStateOf<ClipReport?>(null) }
@@ -133,7 +144,12 @@ private fun ClipTab(
                         scope.launch {
                             isLoading = true; error = null; savedMessage = null; reportStale = false
                             try {
-                                val client = ClipClient(baseUrl = baseUrl)
+                                // Await enrollment first: startup enroll runs
+                                // async and a first-tap submit would otherwise
+                                // sample null and fail. Residual null still
+                                // fails fast inside ClipClient (never unsigned).
+                                val auth = ensureDeviceState?.invoke() ?: deviceState()
+                                val client = ClipClient(baseUrl = baseUrl, deviceState = auth)
                                 val rep = client.clip(ClipRequest(url = urlText.trim(), source = ClipSource.URL))
                                 report = rep
                                 title = rep.recipe.title
@@ -187,7 +203,12 @@ private fun ClipTab(
 }
 
 @Composable
-private fun CaptionsTab(baseUrl: String, onSaveRecipe: suspend (IngestDraft) -> String) {
+private fun CaptionsTab(
+    baseUrl: String,
+    onSaveRecipe: suspend (IngestDraft) -> String,
+    deviceState: () -> DeviceAuthInterceptor.State? = { null },
+    ensureDeviceState: (suspend () -> DeviceAuthInterceptor.State?)? = null,
+) {
     var platform by remember { mutableStateOf(ClipSource.TIKTOK) }
     var linkText by remember { mutableStateOf("") }
     var captionText by remember { mutableStateOf("") }
@@ -232,7 +253,10 @@ private fun CaptionsTab(baseUrl: String, onSaveRecipe: suspend (IngestDraft) -> 
                                     caption = captionText,
                                     source = platform,
                                 )
-                                val rep = ClipClient(baseUrl = baseUrl).clip(req)
+                                // Await enrollment first (see ClipTab): a null
+                                // state fails fast in ClipClient, never unsigned.
+                                val auth = ensureDeviceState?.invoke() ?: deviceState()
+                                val rep = ClipClient(baseUrl = baseUrl, deviceState = auth).clip(req)
                                 report = rep
                                 title = rep.recipe.title
                                 val ings = rep.recipe.ingredients ?: emptyList()
