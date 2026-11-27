@@ -57,7 +57,8 @@ Stay-free rules: signed photo URLs (<15 min TTL) instead of proxied bytes,
 - Enroll (open — the only unsigned write):
   `POST /v2/devices { deviceId: UUIDv4, publicKey: base64(32B Ed25519),
   displayName? }` → `201 { deviceId, enrolledAt }` on first enroll,
-  `200` on idempotent re-enroll with the same key, `409` when the id is
+  `200` on idempotent re-enroll with the same key, `410` when the id was
+  revoked (gone — enroll a fresh `deviceId` instead), `409` when the id is
   already enrolled with a different key.
 - Signed writes carry `x-device-id` / `x-device-ts` (millis since epoch) /
   `x-device-sig` (base64 Ed25519 over the canonical string
@@ -75,6 +76,9 @@ Stay-free rules: signed photo URLs (<15 min TTL) instead of proxied bytes,
   In prod `x-role` is **ignored** — the header fallback is forced to
   `viewer`, so header-role escalation is impossible; stored `memberships`
   rows (keyed off the verified device id) can still grant member/owner.
+  First-claim bootstrap: on an empty household the first verified writer
+  becomes `owner`; further devices stay `viewer` (role-checked writes → 403)
+  until an owner grants them a role. No membership seed is applied at deploy.
   Dev (`localhost` / `*.local` / vitest) keeps the header stub with no
   signature checks.
 - Stored `memberships` rows win over the header fallback role (tested).
@@ -96,7 +100,7 @@ DEVICE_ID=$(uuidgen)   # persist one per device; the private half never leaves i
 curl -s -X POST $BASE/v2/devices \
   -H 'content-type: application/json' \
   -d "{\"deviceId\":\"$DEVICE_ID\",\"publicKey\":\"<base64-of-32B-Ed25519-pubkey>\"}"
-# → 201 {"deviceId":"...","enrolledAt":"..."} (200 = same key re-enrolled, 409 = id taken)
+# → 201 {"deviceId":"...","enrolledAt":"..."} (200 = same key re-enrolled, 410 = revoked id, 409 = id taken)
 
 # 2. reads are open — no headers:
 curl -s $BASE/health     # 200, proves boot
@@ -104,13 +108,15 @@ curl -s $BASE/recipes    # 200, no signature
 
 # 3. writes are signed (TS = millis, SIG = Ed25519 over the canonical string;
 #    construction below is schematic — see deviceCanonicalString in api/src/auth.ts):
+BODY='{"title":"probe","servings":2}'
 TS=$(date +%s000)
-CANONICAL=$(printf 'POST\n/recipes\n%s\n%s' "$TS" "$(printf '%s' '{}' | sha256sum | cut -d' ' -f1)")
+CANONICAL=$(printf 'POST\n/recipes\n%s\n%s' "$TS" "$(printf '%s' "$BODY" | sha256sum | cut -d' ' -f1)")
 SIG=$(sign_ed25519 "$CANONICAL" device-private-key)   # Ed25519, base64 output
 curl -s -X POST $BASE/recipes \
   -H 'content-type: application/json' \
   -H "x-device-id: $DEVICE_ID" -H "x-device-ts: $TS" -H "x-device-sig: $SIG" \
-  -d '{"title":"probe","servings":2}'   # 201 as owner/member, 403 as viewer
+  -d "$BODY"   # 201 as first-claim owner on an empty household, else 201 as
+               # granted owner/member, 403 as viewer (needs a grant)
 ```
 
 ## Endpoints (exactly packages/contracts/openapi.yaml, plus 2 photo helpers)

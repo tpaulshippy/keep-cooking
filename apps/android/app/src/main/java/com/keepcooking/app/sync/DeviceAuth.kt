@@ -4,7 +4,8 @@
 // Sketch: every install generates an Ed25519 keypair at first launch
 // (Android Keystore, NEVER the plaintext E2E DataStore file gated in
 // SyncCrypto.kt:384-394), mints a persisted UUIDv4 deviceId, and enrolls once
-// via POST /v2/devices (idempotent: 200/201/409 all mean "enrolled").
+// via POST /v2/devices (unsigned; 200/201 mark enrolled — a 409 means the id
+// is bound to a different key and triggers a fresh-id re-enroll).
 //
 // Every MUTATING request (POST/PUT/DELETE, incl. /sync/push and the /v2/sync
 // PUT) is signed with headers:
@@ -33,9 +34,11 @@
 //
 // Keystore coverage: Ed25519 in the Android Keystore requires recent platform
 // versions; on runtimes without Keystore Ed25519 (plain-JVM unit tests,
-// pre-33 devices) an ephemeral in-memory JCA key is used and enrollment is
-// retried per process. Reads still work everywhere; mutating requests on a
-// keyless runtime throw rather than sending an unsigned write.
+// pre-33 devices) an ephemeral in-memory JCA key is used. Enrollment for an
+// ephemeral key is retried every process and is never persisted (the key dies
+// with the process). Reads still work everywhere; when no key is available at
+// all, mutating requests go out unsigned and the server rejects them — the
+// interceptor never throws, it just cannot sign.
 package com.keepcooking.app.sync
 
 import android.os.Build
@@ -123,8 +126,9 @@ fun deviceSignedHeaders(
 /**
  * OkHttp application interceptor: attaches x-device-id (+ x-user-id) to
  * every request and Ed25519-signs mutating ones. State is a volatile global
- * populated by [DeviceAuth.ensure]; when null (key unavailable) requests
- * proceed with whatever headers the caller set — reads keep working.
+ * populated by [DeviceAuth.ensure]; when null (key unavailable) requests go
+ * out unsigned — reads keep working, mutating writes are rejected by the
+ * server (401).
  */
 class DeviceAuthInterceptor(
     private val stateProvider: () -> State?,
@@ -166,6 +170,13 @@ object DeviceAuth {
 
     @Volatile
     private var sharedInterceptor: DeviceAuthInterceptor? = null
+
+    /**
+     * In-process enrollment markers (see [enrollmentMarker]). Covers ephemeral
+     * keys, which are never persisted, and avoids re-enrolling twice within
+     * one process for an already-enrolled endpoint.
+     */
+    private val enrolledInMemory: MutableSet<String> = mutableSetOf()
 
     /** Current signed state, if the device key is available. */
     fun currentState(): DeviceAuthInterceptor.State? = state
@@ -227,25 +238,40 @@ object DeviceAuth {
      * Ensures the device identity: keypair + idempotent enroll. Returns the
      * signed state (or null when no key is available — reads still work).
      * POST /v2/devices is deliberately UNSIGNED (the server does not know
-     * this key yet) and idempotent (200/201/409 all mark enrolled).
+     * this key yet). 200/201 mark this endpoint enrolled; a 409 means the id
+     * is bound to a different key, so a fresh deviceId is minted and enrolled
+     * once. Enrollment is tracked per (endpoint, deviceId, publicKey) and
+     * retried on every call until it succeeds — a failed first enroll never
+     * sticks.
      */
     suspend fun ensure(dataStore: DataStore<Preferences>, baseUrl: String): DeviceAuthInterceptor.State? {
-        currentState()?.let { return it }
-        val did = deviceId(dataStore)
+        var did = deviceId(dataStore)
         val kp = getOrCreateKeyPair() ?: return null
         val pubB64 = publicKeyB64(kp.public) ?: return null
-        val enrolledFor = dataStore.data.map { it[KEY_ENROLLED_FOR] }.first()
-        if (enrolledFor != did) {
-            val ok = runCatching {
-                val resp = createApiService(baseUrl).enrollDevice(
-                    DeviceEnrollRequest(deviceId = did, publicKey = pubB64, displayName = displayName()),
-                )
-                resp.code() == 200 || resp.code() == 201 || resp.code() == 409
-            }.getOrDefault(false)
-            if (ok) {
-                dataStore.edit { it[KEY_ENROLLED_FOR] = did }
-            } else {
-                Log.w("DeviceAuth", "enroll deferred (offline); retrying on next sync")
+        // Ephemeral (in-memory fallback) keys die with the process: never
+        // trust — or write — the persisted marker for them, or the next launch
+        // would skip enrollment under a fresh key and every signature would
+        // fail verification.
+        val ephemeral = kp === memoryFallbackKey
+        val markerFor = { id: String -> enrollmentMarker(baseUrl, id, pubB64) }
+        if (!isEnrolled(dataStore, markerFor(did), ephemeral)) {
+            when (tryEnroll(baseUrl, did, pubB64)) {
+                EnrollOutcome.Enrolled -> markEnrolled(dataStore, markerFor(did), ephemeral)
+                EnrollOutcome.Conflict -> {
+                    // Same id, different key on the server (rotation is a
+                    // non-goal): mint a fresh id and enroll it once so later
+                    // signatures verify. The old id stays server-bound and is
+                    // simply abandoned.
+                    did = UUID.randomUUID().toString()
+                    dataStore.edit { it[KEY_DEVICE_ID] = did }
+                    if (tryEnroll(baseUrl, did, pubB64) == EnrollOutcome.Enrolled) {
+                        markEnrolled(dataStore, markerFor(did), ephemeral)
+                    } else {
+                        Log.w("DeviceAuth", "enroll conflict retry failed; retrying on next sync")
+                    }
+                }
+                EnrollOutcome.Failed ->
+                    Log.w("DeviceAuth", "enroll deferred (offline); retrying on next sync")
             }
         }
         val st = DeviceAuthInterceptor.State(did) { canonical ->
@@ -258,9 +284,49 @@ object DeviceAuth {
         return st
     }
 
+    /**
+     * Enrollment marker binding endpoint + device id + public key. A key
+     * change (restored DataStore paired with a fresh Keystore key, or a new
+     * ephemeral key each process) or a server switch invalidates any prior
+     * marker, so the device re-enrolls instead of signing with a key the
+     * server has never seen. Legacy values stored only the device id and
+     * never match, forcing exactly one re-enroll after upgrade.
+     */
+    fun enrollmentMarker(baseUrl: String, deviceId: String, publicKeyB64: String): String =
+        "${baseUrl.trim().trimEnd('/')}|$deviceId|$publicKeyB64"
+
+    private suspend fun isEnrolled(dataStore: DataStore<Preferences>, marker: String, ephemeral: Boolean): Boolean {
+        if (synchronized(enrolledInMemory) { enrolledInMemory.contains(marker) }) return true
+        if (ephemeral) return false
+        return dataStore.data.map { it[KEY_ENROLLED_FOR] }.first() == marker
+    }
+
+    private suspend fun markEnrolled(dataStore: DataStore<Preferences>, marker: String, ephemeral: Boolean) {
+        synchronized(enrolledInMemory) { enrolledInMemory.add(marker) }
+        if (!ephemeral) dataStore.edit { it[KEY_ENROLLED_FOR] = marker }
+    }
+
+    private enum class EnrollOutcome { Enrolled, Conflict, Failed }
+
+    private suspend fun tryEnroll(baseUrl: String, deviceId: String, publicKeyB64: String): EnrollOutcome {
+        return try {
+            val resp = createApiService(baseUrl).enrollDevice(
+                DeviceEnrollRequest(deviceId = deviceId, publicKey = publicKeyB64, displayName = displayName()),
+            )
+            when (resp.code()) {
+                200, 201 -> EnrollOutcome.Enrolled
+                409 -> EnrollOutcome.Conflict
+                else -> EnrollOutcome.Failed
+            }
+        } catch (t: Exception) {
+            EnrollOutcome.Failed
+        }
+    }
+
     /** Test seam: resets the volatile state (unit tests only). */
     fun resetForTests() {
         state = null
         memoryFallbackKey = null
+        synchronized(enrolledInMemory) { enrolledInMemory.clear() }
     }
 }

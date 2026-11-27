@@ -134,9 +134,11 @@ produce or verify plaintext.
      `api/wrangler.toml [vars]` when provided, deploys the Worker, then
      curls `/health` on the actual published URL.
    - No shared-secret gate: writes are authorized by per-device Ed25519
-     signatures (see `api/README.md` Auth). To authorize a device, enroll
-     its key (`POST /v2/devices { deviceId, publicKey, displayName? }`) —
-     there is no token to mint, store, or paste. (Historical note, deferred:
+     signatures (see `api/README.md` Auth). Enrollment is open, not a
+     gate — anyone reaching the Worker can enroll a key
+     (`POST /v2/devices { deviceId, publicKey, displayName? }`), so do
+     not treat enrollment as an access control. There is no token to
+     mint, store, or paste. (Historical note, deferred:
      pass 1 used an `INTERNAL_BETA_TOKEN` bearer gate; device signatures
      replaced it — do not reintroduce token enrollment.)
 3. The script prints the Worker URL, e.g.
@@ -149,9 +151,12 @@ produce or verify plaintext.
 5. FIRST join or create the household key in Settings → End-to-end
    encryption (paste the invite bundle on a second device, or create a new
    household), and eyeball-match `kid` / `hashPrefix8` across devices.
-6. ONLY THEN enroll this device's signing key (`POST /v2/devices` — the
-   in-app Beta-token field / client Beta UI is deferred, so enrollment is
-   API-side for now), back in Settings → Server (BYO backend) → Save &
+6. ONLY THEN let the app enroll this device's signing key: the app
+   auto-enrolls on launch via `POST /v2/devices` with no UI export of
+   `deviceId` / `publicKey` (client Beta UI is deferred, so there is no
+   in-app enroll screen or key display). Manual `POST /v2/devices` with
+   curl is operators-only (debugging a fresh backend, not a normal setup
+   step). Then, back in Settings → Server (BYO backend) → Save &
    sync now. From this point recipe sync travels as E2E v2 envelopes
    written under the enrolled device key; the legacy plaintext pipes stay
    unused for recipe content.

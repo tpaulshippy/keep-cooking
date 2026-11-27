@@ -117,7 +117,7 @@ export interface ShareLink {
   expiresAt: string;
 }
 
-// ---------- Device keys (Ed25519 enroll; Pass 1 sketch) ----------
+// ---------- Device keys (Ed25519 enrollment) ----------
 
 /** Device identity: Ed25519 public key (32B) + optional revocation timestamp. */
 export interface DeviceKey {
@@ -196,6 +196,8 @@ export interface Store {
   ensureHousehold(id: string, name?: string): Promise<Household>;
   getMembership(householdId: string, userId: string): Promise<Membership | null>;
   setMembership(householdId: string, userId: string, role: Role): Promise<void>;
+  // Membership count for a household (first-claim bootstrap in auth.ts).
+  countMemberships(householdId: string): Promise<number>;
   // recipes
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   listRecipes(householdId?: string): Promise<Recipe[]>;
@@ -317,6 +319,11 @@ export class MemoryStore implements Store {
   async setMembership(householdId: string, userId: string, role: Role): Promise<void> {
     await this.ensureHousehold(householdId);
     this.memberships.set(`${householdId}|${userId}`, { householdId, userId, role });
+  }
+  async countMemberships(householdId: string): Promise<number> {
+    let n = 0;
+    for (const m of this.memberships.values()) if (m.householdId === householdId) n++;
+    return n;
   }
 
   private toRecipe(r: RecipeRow & { ingredients: Ingredient[]; steps: Step[] }): Recipe {
@@ -667,6 +674,9 @@ export class MemoryStore implements Store {
     if (bytes.length !== 32) throw httpError(400, 'publicKey must decode to exactly 32 bytes');
     const existing = this.devices.get(input.deviceId);
     if (existing) {
+      if (existing.revokedAt) {
+        throw httpError(410, 'device revoked; enroll a fresh deviceId');
+      }
       if (!deviceKeysEqual(existing.publicKey, bytes)) {
         throw httpError(409, 'device already enrolled with different key');
       }

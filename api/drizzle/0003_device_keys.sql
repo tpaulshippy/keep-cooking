@@ -1,4 +1,4 @@
--- Device keys for Ed25519 enroll (POST /v2/devices, Pass 1 sketch).
+-- Device keys for Ed25519 enrollment (POST /v2/devices).
 -- public_key is standard base64 of the 32-byte Ed25519 public key.
 -- No-clobber: device_id is the PK; re-enroll with the same key is
 -- idempotent, a different key for the same device_id is a 409 (enforced

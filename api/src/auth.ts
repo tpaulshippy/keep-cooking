@@ -57,7 +57,9 @@ export const DEVICE_TS_SKEW_MS = 5 * 60 * 1000;
 /** DER prefix wrapping a 32-byte raw Ed25519 key as SPKI (for node:crypto). */
 const ED25519_SPKI_DER_PREFIX_HEX = '302a300506032b6570032100';
 
-/** Strict standard-base64 decode (null on any malformation). */
+/** Strict standard-base64 decode (null on any malformation). Both branches
+ * re-encode to confirm strictness: unpadded or whitespace-containing input
+ * is rejected on Workers (atob) exactly as on Node (Buffer). */
 function base64ToBytes(s: string): Uint8Array | null {
   try {
     if (typeof Buffer !== 'undefined') {
@@ -67,6 +69,13 @@ function base64ToBytes(s: string): Uint8Array | null {
       return new Uint8Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
     }
     const bin = atob(s);
+    const g = globalThis as unknown as { btoa?: (s: string) => string };
+    if (typeof g.btoa === 'function') {
+      // Re-encode check matching the Buffer branch above.
+      if (g.btoa(bin) !== s) return null;
+    } else if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$/.test(s)) {
+      return null;
+    }
     const out = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
     return out;
@@ -242,33 +251,59 @@ export async function resolveRole(
   return user.role;
 }
 
-/** Block viewers from all mutations. Members and owners may CRUD. */
+/** Block viewers from all mutations. Members and owners may CRUD.
+ * First-claim bootstrap (fresh-deploy P1): a household with zero
+ * memberships has no owner yet, so the first writer that would otherwise
+ * fall back to viewer claims the owner seat (persisted, then allowed).
+ * Later devices still need a grant (403 until then). In prod the gate
+ * guarantees the claimant holds a valid device signature. */
 export async function requireWriteRole(
   c: Context,
   store: Store,
   householdId: string | undefined,
 ): Promise<Role> {
   const role = await resolveRole(c, store, householdId);
-  if (role === 'viewer') {
-    const err = new Error('viewer role is read-only') as Error & { status?: number };
-    err.status = 403;
-    throw err;
-  }
-  return role;
+  if (role !== 'viewer') return role;
+  if (await maybeFirstClaim(c, store, householdId)) return 'owner';
+  const err = new Error('viewer role is read-only') as Error & { status?: number };
+  err.status = 403;
+  throw err;
 }
 
-/** Owner-only actions: share links / invites / household deletes. */
+/** Owner-only actions: share links / invites / household deletes.
+ * Same first-claim bootstrap as requireWriteRole: an empty household's
+ * first writer becomes owner. */
 export async function requireOwnerRole(
   c: Context,
   store: Store,
   householdId: string | undefined,
 ): Promise<void> {
   const role = await resolveRole(c, store, householdId);
-  if (role !== 'owner') {
-    const err = new Error('owner role required') as Error & { status?: number };
-    err.status = 403;
-    throw err;
+  if (role === 'owner') return;
+  if (await maybeFirstClaim(c, store, householdId)) return;
+  const err = new Error('owner role required') as Error & { status?: number };
+  err.status = 403;
+  throw err;
+}
+
+/**
+ * First-claim: when a household has no memberships at all, persist the
+ * caller as owner and report true. Returns false when there is nothing to
+ * claim (household unknown/undefined, already populated, or the count
+ * lookup failed) — callers then enforce the resolved role as usual.
+ */
+async function maybeFirstClaim(c: Context, store: Store, householdId: string | undefined): Promise<boolean> {
+  if (!householdId) return false;
+  let n: number;
+  try {
+    n = await store.countMemberships(householdId);
+  } catch {
+    return false;
   }
+  if (n !== 0) return false;
+  const user = getUser(c);
+  await store.setMembership(householdId, user.id, 'owner');
+  return true;
 }
 
 /** Hono middleware: attach authed user to context. Never logs identity. */

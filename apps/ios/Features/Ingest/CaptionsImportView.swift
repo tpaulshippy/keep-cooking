@@ -233,6 +233,9 @@ public struct CaptionsImportView: View {
         )
         do {
             #if os(iOS)
+            // Enroll before the first signed POST (fresh installs would get
+            // 401 in prod). Re-read afterwards — 409 recovery rotates the id.
+            await DeviceAuth.enrollIfNeeded(baseURL: baseURL, deviceId: DeviceAuth.currentDeviceId())
             let clipDeviceId = DeviceAuth.currentDeviceId()
             #else
             let clipDeviceId = UUID().uuidString

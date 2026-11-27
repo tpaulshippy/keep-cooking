@@ -3,17 +3,18 @@ import { authenticateDevice } from './auth';
 import { base64ByteLength } from './e2e';
 import { deviceKeysEqual, decodePublicKeyB64, type Store } from './store';
 
-// POST /v2/devices — device enrollment (Pass 1 sketch).
-// NOT wired into createApp here: route wiring is owned by the api-auth lane.
-// Expected body: { deviceId: UUIDv4, publicKey: base64(32B Ed25519), displayName?: <=64 }.
-// Responses: 201 { deviceId, enrolledAt } on first enroll,
-// 200 { deviceId, enrolledAt } on idempotent re-enroll (same key),
-// 409 on same deviceId with a different key, 400 on validation failure.
+// POST /v2/devices — device enrollment; POST /v2/devices/:id/revoke —
+// self-revoke. Route wiring lives in the api-auth lane (createApp in
+// index.ts). Expected enroll body: { deviceId: UUIDv4, publicKey:
+// base64(32B Ed25519), displayName?: <=64 }. Responses: 201 first enroll,
+// 200 idempotent re-enroll (same key), 409 same deviceId with a different
+// key, 410 re-enroll of a revoked device (enroll a fresh deviceId instead —
+// a revoked key stays rejected with 401), 400 validation failure.
 
 const UUIDV4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function devicesEnroll(c: Context, store: Store): Promise<Response> {
-  const body = (await c.req.json().catch(() => ({}))) as {
+  const body = ((await c.req.json().catch(() => ({}))) ?? {}) as {
     deviceId?: unknown;
     publicKey?: unknown;
     displayName?: unknown;
@@ -30,6 +31,9 @@ export async function devicesEnroll(c: Context, store: Store): Promise<Response>
   }
   const incoming = decodePublicKeyB64(publicKey);
   const existing = await store.getDevice(deviceId);
+  if (existing?.revokedAt) {
+    return c.json({ error: 'device revoked; enroll a fresh deviceId' }, 410);
+  }
   if (existing && !deviceKeysEqual(existing.publicKey, incoming)) {
     return c.json({ error: 'device already enrolled with different key' }, 409);
   }
@@ -42,6 +46,7 @@ export async function devicesEnroll(c: Context, store: Store): Promise<Response>
     return c.json(res, existing ? 200 : 201);
   } catch (e) {
     const status = (e as { status?: unknown } | null | undefined)?.status;
+    if (status === 410) return c.json({ error: 'device revoked; enroll a fresh deviceId' }, 410);
     if (status === 409) return c.json({ error: 'device already enrolled with different key' }, 409);
     throw e;
   }

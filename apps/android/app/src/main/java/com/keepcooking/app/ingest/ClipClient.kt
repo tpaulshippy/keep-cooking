@@ -19,6 +19,8 @@ sealed class ClipClientError(message: String) : IOException(message) {
     class BadUrl(url: String) : ClipClientError("bad clip url: $url")
     class HttpStatus(val status: Int) : ClipClientError("clip failed with status $status")
     class Decode(cause: Throwable) : ClipClientError("clip decode failed: ${cause.message}")
+    /** Thrown before any network call when no device key is available to sign the mutating POST. */
+    class NoDeviceKey : ClipClientError("clip requires an enrolled device key (enrollment incomplete)")
 }
 
 /**
@@ -27,14 +29,14 @@ sealed class ClipClientError(message: String) : IOException(message) {
  *
  * Device auth: pass the current [DeviceAuthInterceptor.State] (e.g.
  * `DeviceAuth::currentState`) to Ed25519-sign the mutating POST (see
- * sync/DeviceAuth.kt). Without it the POST sends identity headers only
- * (legacy behavior); reads are unaffected.
+ * sync/DeviceAuth.kt). A null state fails fast with [ClipClientError.NoDeviceKey]:
+ * an unsigned POST is rejected by the server (401), so it is never sent.
+ * Reads are unaffected.
  */
 class ClipClient(
     private val baseUrl: String,
     private val betaToken: String? = null,
     private val userId: String = "beta-user",
-    private val deviceId: String = "app",
     private val http: OkHttpClient = OkHttpClient(),
     private val deviceState: DeviceAuthInterceptor.State? = null,
 ) {
@@ -42,21 +44,22 @@ class ClipClient(
 
     /** POST /clip with ClipRequest{url, caption, source}. Returns decoded ClipReport. */
     suspend fun clip(request: ClipRequest): ClipReport = withContext(Dispatchers.IO) {
+        // Fail fast: without a key the POST would go out unsigned and prod
+        // rejects it with 401. Never send a keyless mutating request.
+        val signingState = deviceState ?: throw ClipClientError.NoDeviceKey()
         val url = (baseUrl.trimEnd('/') + "/clip")
         val body = json.encodeToString(request).toRequestBody("application/json".toMediaType())
         val builder = Request.Builder()
             .url(url)
             .post(body)
             .header("x-user-id", userId)
-            .header("x-device-id", deviceState?.deviceId ?: deviceId)
+            .header("x-device-id", signingState.deviceId)
             .apply { if (!betaToken.isNullOrEmpty()) header("Authorization", "Bearer $betaToken") }
-        deviceState?.let { state ->
-            // Signing failures throw IOException (fail loudly) — computed
-            // outside the transport try/catch so they are never misreported
-            // as a bad URL below.
-            val raw = Buffer().also { body.writeTo(it) }.readByteArray()
-            for ((k, v) in deviceSignedHeaders("POST", url, raw, state)) builder.header(k, v)
-        }
+        // Signing failures throw IOException (fail loudly) — computed
+        // outside the transport try/catch so they are never misreported
+        // as a bad URL below.
+        val raw = Buffer().also { body.writeTo(it) }.readByteArray()
+        for ((k, v) in deviceSignedHeaders("POST", url, raw, signingState)) builder.header(k, v)
         val req = builder.build()
         try {
             http.newCall(req).execute().use { resp ->

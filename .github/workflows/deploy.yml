@@ -54,11 +54,13 @@ jobs:
           npm ci
           cd api
           # Schema uses CREATE TABLE IF NOT EXISTS, so this is safe to re-run
-          # on every deploy. Seed data (drizzle/seed.sql) is a one-time manual
-          # step for demo content, not applied here.
-          npx wrangler d1 execute keep-cooking --remote --file=./drizzle/0001_init.sql
-          npx wrangler d1 execute keep-cooking --remote --file=./drizzle/0002_e2e_blobs.sql
-          npx wrangler d1 execute keep-cooking --remote --file=./drizzle/0003_device_keys.sql
+          # on every deploy. Single source for the migration chain: api/package.json
+          # db:apply:remote (add future 0004+ there, not here).
+          # Seed data (drizzle/seed.sql) is a one-time manual step for demo
+          # content, not applied here — and no membership seed is applied
+          # either: first verified writer on an empty household becomes owner
+          # via first-claim bootstrap in code.
+          npm run db:apply:remote
           # No custom domain yet: publishes to the out-of-the-box
           # https://keep-cooking-api.<account>.workers.dev URL.
           npx wrangler deploy

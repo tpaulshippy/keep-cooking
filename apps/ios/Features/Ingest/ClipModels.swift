@@ -161,7 +161,8 @@ public struct ClipClient: Sendable {
     /// POST /clip with ClipRequest{url, caption, source}.
     /// Returns decoded ClipReport; caller logs ClipLogEvent only.
     /// The POST is Ed25519-signed when `signer` is set (see DeviceAuth.swift);
-    /// without a signer it sends identity headers only (legacy behavior).
+    /// without a signer it sends identity headers only (unsigned — the
+    /// production server rejects it with 401).
     public func clip(_ request: ClipRequest) async throws -> ClipReport {
         let url = baseURL.appendingPathComponent("/clip")
         var req = URLRequest(url: url)

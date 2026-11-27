@@ -253,4 +253,96 @@ describe('device-signature gate (prod)', () => {
     });
     expect(res.status).toBe(201);
   });
+
+  it('enroll with JSON null body -> 400 (not a 500 TypeError)', async () => {
+    const { app } = await prodApp();
+    const res = await app.request('/v2/devices', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: 'null',
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('re-enrolling a revoked device -> 410 (same or different key)', async () => {
+    const { app, store, dev } = await prodApp();
+    await store.setMembership('hh-demo', dev.id, 'owner');
+    const path = `/v2/devices/${dev.id}/revoke`;
+    const revoked = await app.request(path, {
+      method: 'POST',
+      headers: signedHeaders({ deviceId: dev.id, privateKey: dev.privateKey, method: 'POST', path, body: '' }),
+    });
+    expect(revoked.status).toBe(200);
+
+    const sameKey = await app.request('/v2/devices', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ deviceId: dev.id, publicKey: dev.publicKeyB64 }),
+    });
+    expect(sameKey.status).toBe(410);
+    expect(await sameKey.json()).toEqual({ error: expect.stringContaining('fresh deviceId') });
+
+    const other = makeDevice();
+    const diffKey = await app.request('/v2/devices', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ deviceId: dev.id, publicKey: other.publicKeyB64 }),
+    });
+    expect(diffKey.status).toBe(410);
+  });
+
+  it('first-claim bootstrap: empty household -> first writer 201 as owner, second device 403', async () => {
+    const { app, store, dev } = await prodApp();
+    const hh = `hh-first-claim-${crypto.randomUUID()}`;
+    const body = JSON.stringify({ title: 'First Stew', servings: 2, householdId: hh });
+
+    const first = await app.request('/recipes', {
+      method: 'POST',
+      headers: signedHeaders({ deviceId: dev.id, privateKey: dev.privateKey, method: 'POST', path: '/recipes', body }),
+      body,
+    });
+    expect(first.status).toBe(201);
+    expect(await store.getMembership(hh, dev.id)).toEqual({ householdId: hh, userId: dev.id, role: 'owner' });
+
+    const second = await enrollDevice(store);
+    const body2 = JSON.stringify({ title: 'Second Stew', servings: 2, householdId: hh });
+    const denied = await app.request('/recipes', {
+      method: 'POST',
+      headers: signedHeaders({
+        deviceId: second.id,
+        privateKey: second.privateKey,
+        method: 'POST',
+        path: '/recipes',
+        body: body2,
+      }),
+      body: body2,
+    });
+    expect(denied.status).toBe(403);
+  });
+
+  it('gate scoping: non-POST /v2/devices still needs a signature', async () => {
+    const { app } = await prodApp();
+    const res = await app.request('/v2/devices', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it('revoke exemption: unknown target -> 404 even with missing/bad signature', async () => {
+    const { app, dev } = await prodApp();
+    const target = crypto.randomUUID();
+    const path = `/v2/devices/${target}/revoke`;
+    const missing = await app.request(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(missing.status).toBe(404);
+    const badSig = await app.request(path, {
+      method: 'POST',
+      headers: signedHeaders({ deviceId: dev.id, privateKey: dev.privateKey, method: 'POST', path, body: '{"tampered":true}' }),
+    });
+    expect(badSig.status).toBe(404);
+  });
 });

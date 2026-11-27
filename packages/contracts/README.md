@@ -1,4 +1,4 @@
-# Contracts v0.1.0 — source of truth. No lane changes without orchestrator approval.
+# Contracts v0.2.0 — source of truth. No lane changes without orchestrator approval.
 
 Ownership: orchestrator only. Lanes consume, never edit.
 

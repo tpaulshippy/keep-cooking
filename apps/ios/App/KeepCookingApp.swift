@@ -325,13 +325,15 @@ final class SyncCoordinator {
         // Device identity: persisted UUIDv4 + Ed25519 key (DeviceAuth.swift).
         // identifierForVendor is a display hint only — the device key is the
         // identity. Enrollment is idempotent and best-effort (offline safe).
+        // Re-read the id afterwards: 409 recovery rotates it.
         let did = DeviceAuth.currentDeviceId()
         await DeviceAuth.enrollIfNeeded(baseURL: base, deviceId: did)
-        let signer = DeviceAuth.requestSigner(deviceId: did)
+        let enrolledId = DeviceAuth.currentDeviceId()
+        let signer = DeviceAuth.requestSigner(deviceId: enrolledId)
         let auth = SyncAuth(betaToken: nil,
-                            userId: SyncConfig.userId, deviceId: did)
+                            userId: SyncConfig.userId, deviceId: enrolledId)
         let transport = APISyncTransport(baseURL: base, auth: auth, signer: signer)
-        let engine = SyncEngine(deviceId: did, transport: transport)
+        let engine = SyncEngine(deviceId: enrolledId, transport: transport)
         do {
             for env in try collectEnvelopes(ctx: ctx) {
                 await engine.enqueue(env)
@@ -397,7 +399,7 @@ enum SyncConfig {
 
     static var baseURLString: String { baseURL?.absoluteString ?? prodBaseURL }
 
-    /// Shared household identity (device key is the identity).
+    /// Shared household identity (beta default beta-user; no login).
     static var userId: String {
         let s = UserDefaults.standard.string(forKey: "smidgen.userId") ?? ""
         return s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "beta-user" : s

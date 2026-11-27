@@ -71,7 +71,8 @@ interface ApiService {
     /**
      * POST /v2/devices {deviceId, publicKey (standard b64, 32B), displayName?}.
      * Deliberately UNSIGNED (the server does not know this key yet).
-     * 200/201/409 all mean "enrolled"; same deviceId + different key is a 409.
+     * 200/201 mark enrolled; a 409 means the deviceId is bound to a different
+     * key (rotation is a non-goal) — see DeviceAuth.ensure for recovery.
      */
     @POST("v2/devices")
     suspend fun enrollDevice(@Body body: DeviceEnrollRequest): Response<JsonObject>
@@ -146,8 +147,9 @@ fun createApiService(
 ): ApiService {
     val logging = HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC }
     val builder = OkHttpClient.Builder()
-    // Device identity first so the signature covers the final request and
-    // logging shows the exact headers sent.
+    // Device identity first so the signed headers are on the request before
+    // it is sent. BASIC logging records only request/response lines, never
+    // header values.
     if (deviceAuth != null) builder.addInterceptor(deviceAuth)
     builder.addInterceptor(logging)
     val client = builder.build()

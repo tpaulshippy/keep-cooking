@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createHash, generateKeyPairSync, sign, type KeyObject } from 'node:crypto';
 import { createApp } from '../src/index';
 import { MemoryStore } from '../src/store';
+import { D1Store } from '../src/d1store';
 
 // POST /v2/devices/:id/revoke (self-revoke only):
 // - 200 { deviceId, revokedAt } on valid self-signed revoke; the revoked
@@ -132,5 +133,147 @@ describe('device self-revoke', () => {
       headers: signedHeaders({ deviceId: dev.id, privateKey: dev.privateKey, method: 'POST', path, body: '' }),
     });
     expect(second.status).toBe(401);
+  });
+
+  it('revokedAt is stable: a concurrent revoke keeps the first timestamp', async () => {
+    const { app, store, dev } = await prodApp();
+    const path = `/v2/devices/${dev.id}/revoke`;
+    const first = await app.request(path, {
+      method: 'POST',
+      headers: signedHeaders({ deviceId: dev.id, privateKey: dev.privateKey, method: 'POST', path, body: '' }),
+    });
+    expect(first.status).toBe(200);
+    const ts1 = (await store.getDevice(dev.id))?.revokedAt;
+    expect(typeof ts1).toBe('string');
+    // A direct second revoke (bypassing the revoked-signer 401) is idempotent.
+    const again = await store.revokeDevice(dev.id);
+    expect(again).toEqual({ deviceId: dev.id, revokedAt: ts1 });
+  });
+});
+
+// Minimal in-memory D1 fake: only the device_keys statements used by
+// D1Store.getDevice/enrollDevice/revokeDevice are implemented.
+function fakeD1(state: {
+  winnerB64: string | null;
+  winnerCreatedAt?: string;
+  winnerRevokedAt?: string | null;
+  failReads?: boolean;
+  failWrites?: boolean;
+  seenSql?: string[];
+}) {
+  const run = async (sql: string, params: unknown[]) => {
+    state.seenSql?.push(sql);
+    if (state.failWrites) throw new Error('D1 write failed');
+    return {};
+  };
+  return {
+    prepare(sql: string) {
+      return {
+        bind(...params: unknown[]) {
+          return {
+            first: async () => {
+              if (state.failReads) throw new Error('D1 read failed');
+              if (sql.startsWith('SELECT device_id, public_key, created_at FROM device_keys')) {
+                if (!state.winnerB64) return null;
+                return {
+                  device_id: 'd1-test-device',
+                  public_key: state.winnerB64,
+                  created_at: state.winnerCreatedAt ?? '2026-01-01T00:00:00.000Z',
+                };
+              }
+              if (sql.startsWith('SELECT device_id, public_key, display_name, created_at, revoked_at')) {
+                if (!state.winnerB64) return null;
+                return {
+                  device_id: 'd1-test-device',
+                  public_key: state.winnerB64,
+                  display_name: null,
+                  created_at: state.winnerCreatedAt ?? '2026-01-01T00:00:00.000Z',
+                  revoked_at: state.winnerRevokedAt ?? null,
+                };
+              }
+              if (sql.startsWith('SELECT public_key FROM device_keys')) {
+                if (!state.winnerB64) return null;
+                return { public_key: state.winnerB64 };
+              }
+              if (sql.startsWith('SELECT COUNT(*)')) return { n: 0 };
+              return null;
+            },
+            run: () => run(sql, params),
+            all: async () => ({ results: [] }),
+          };
+        },
+        all: async () => ({ results: [] }),
+      };
+    },
+  };
+}
+
+describe('D1 device-key durability', () => {
+  it('lost-race 409 clears the rejected key: later D1 reads see the winner', async () => {
+    const loser = makeDevice();
+    const winner = makeDevice();
+    // Pre-check sees no winner, our key is cached by super.enrollDevice, then
+    // the post-insert re-read finds a concurrent winner with another key.
+    let phase = 0;
+    const phased = {
+      prepare(sql: string) {
+        return {
+          bind(...params: unknown[]) {
+            return {
+              first: async () => {
+                if (sql.startsWith('SELECT device_id, public_key, created_at FROM device_keys')) {
+                  return phase === 0 ? null : { device_id: 'd1-test-device', public_key: winner.publicKeyB64, created_at: '2026-01-01T00:00:00.000Z' };
+                }
+                if (sql.startsWith('SELECT public_key FROM device_keys')) {
+                  return { public_key: winner.publicKeyB64 };
+                }
+                if (sql.startsWith('SELECT device_id, public_key, display_name, created_at, revoked_at')) {
+                  return {
+                    device_id: 'd1-test-device',
+                    public_key: winner.publicKeyB64,
+                    display_name: null,
+                    created_at: '2026-01-01T00:00:00.000Z',
+                    revoked_at: null,
+                  };
+                }
+                return null;
+              },
+              run: async () => {
+                phase = 1; // insert landed; a concurrent winner beats us after this
+                return {};
+              },
+              all: async () => ({ results: [] }),
+            };
+          },
+          all: async () => ({ results: [] }),
+        };
+      },
+    };
+    const phasedStore = new D1Store(phased as never);
+    await expect(
+      phasedStore.enrollDevice({ deviceId: 'd1-test-device', publicKeyB64: loser.publicKeyB64 }),
+    ).rejects.toMatchObject({ status: 409 });
+    // D1 is now unreachable: the fallback must serve the D1 winner, never
+    // the rejected loser key.
+    (phasedStore as unknown as { db: unknown }).db = fakeD1({ winnerB64: winner.publicKeyB64, failReads: true }) as never;
+    const got = await phasedStore.getDevice('d1-test-device');
+    expect(got).not.toBeNull();
+    expect(Buffer.from(got!.publicKey).toString('base64')).toBe(winner.publicKeyB64);
+  });
+
+  it('revoke is first-write-wins (COALESCE) and reports the D1 timestamp', async () => {
+    const seenSql: string[] = [];
+    const store = new D1Store(
+      fakeD1({ winnerB64: makeDevice().publicKeyB64, winnerRevokedAt: '2026-05-01T00:00:00.000Z', seenSql }) as never,
+    );
+    const res = await store.revokeDevice('d1-test-device');
+    expect(res).toEqual({ deviceId: 'd1-test-device', revokedAt: '2026-05-01T00:00:00.000Z' });
+    expect(seenSql.some((s) => s.includes('COALESCE(revoked_at'))).toBe(true);
+  });
+
+  it('revoke fails (no 200) when D1 cannot persist', async () => {
+    const key = makeDevice();
+    const store = new D1Store(fakeD1({ winnerB64: key.publicKeyB64, failWrites: true }) as never);
+    await expect(store.revokeDevice('d1-test-device')).rejects.toThrow('D1 write failed');
   });
 });

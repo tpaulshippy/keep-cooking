@@ -39,6 +39,9 @@ const VERSION = '0.1.0';
 export function redactE2EPath(path: string): string {
   const m = path.match(/^(\/v2\/sync\/)([0-9a-fA-F]{16,})(.*)$/);
   if (m) return `${m[1]}${m[2]!.slice(0, HASH_LOG_PREFIX_LEN)}…`;
+  // Device ids are user ids in prod (see auth.ts) — never log them.
+  const d = path.match(/^(\/v2\/devices\/)[^/?#]+(.*)$/);
+  if (d) return `${d[1]}…${d[2]}`;
   return path;
 }
 
@@ -85,6 +88,9 @@ export function createApp(
   // Device-signature gate.
   // Open (no sig): GET/HEAD/OPTIONS on any route, plus /health,
   // /openapi.json, and POST /v2/devices (enrollment — how devices join).
+  // POST /v2/devices/:id/revoke is also exempt here so devicesRevoke can
+  // return 404 for unknown targets before auth (it re-verifies the
+  // signature itself, keeping dev/prod consistent).
   // Everything else: dev (!prod) passes through to the getUser() header
   // stub; prod requires a valid Ed25519 device signature (401 otherwise).
   // v2 writes are sig-only; v1 writes additionally enforce household RBAC
@@ -95,7 +101,8 @@ export function createApp(
     const m = c.req.method;
     if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return next();
     if (pathname === '/health' || pathname === '/openapi.json') return next();
-    if (pathname === '/v2/devices') return next();
+    if (pathname === '/v2/devices' && m === 'POST') return next();
+    if (m === 'POST' && /^\/v2\/devices\/[^/]+\/revoke$/.test(pathname)) return next();
     if (!prod) return next(); // dev header stub
     await authenticateDevice(c, store); // throws 401
     return next();
@@ -121,12 +128,11 @@ export function createApp(
   // 201 first enroll / 200 idempotent re-enroll / 409 key conflict.
   app.post('/v2/devices', async (c) => devicesEnroll(c, getStore()));
 
-  // ---------- device self-revoke (sig required; NOT covered by the exact-match
-  // '/v2/devices' exemption above, so prod falls through to authenticateDevice
-  // in the gate middleware — plus devicesRevoke re-verifies, keeping dev/prod
-  // consistent). x-device-id must equal :id (403 otherwise); unknown :id is
-  // 404; bad/missing/stale sig is 401. Revoked devices fail all later writes
-  // with 401 via authenticateDevice.
+  // ---------- device self-revoke (sig verified by the handler, not the
+  // gate: the '/v2/devices/:id/revoke' exemption above lets devicesRevoke
+  // check existence first — 404 unknown :id -> 401 missing/bad/stale sig
+  // -> 403 signer != :id -> 200 { deviceId, revokedAt }). Revoked devices
+  // fail all later writes with 401 via authenticateDevice.
   app.post('/v2/devices/:id/revoke', async (c) => devicesRevoke(c, getStore()));
 
   // ---------- health / openapi ----------

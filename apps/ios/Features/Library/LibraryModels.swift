@@ -143,12 +143,12 @@ public struct CookbookShareLink: Sendable, Codable, Identifiable {
     }
 }
 
-// MARK: - Share API client (views call this; no auth/sync changes)
+// MARK: - Share API client (views call this; cookbook share POST is device-signed)
 
 /// Minimal client for Lane 1 share/export routes. Base URL is injected so
 /// previews/tests never hit the network. The POST is Ed25519-signed when
 /// `signer` is set (see DeviceAuth.swift); without one it sends identity
-/// headers only (legacy behavior).
+/// headers only (unsigned — the production server rejects it with 401).
 public struct ShareAPIClient: Sendable {
     public var baseURL: URL
     public var betaToken: String?

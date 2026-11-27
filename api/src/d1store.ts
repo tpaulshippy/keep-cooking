@@ -261,6 +261,19 @@ export class D1Store extends MemoryStore implements Store {
       householdId, userId, role,
     );
   }
+  override async countMemberships(householdId: string): Promise<number> {
+    try {
+      const row = await this.db
+        .prepare('SELECT COUNT(*) AS n FROM memberships WHERE household_id = ?')
+        .bind(householdId)
+        .first();
+      const n = Number(row?.['n']);
+      if (Number.isFinite(n)) return n;
+    } catch {
+      // D1 unreachable / pre-migration: memory fallback below.
+    }
+    return super.countMemberships(householdId);
+  }
 
   // ---------- Device keys (D1 device_keys; memory fallback) ----------
   // D1 is the cross-isolate source of truth for no-clobber: the winner is
@@ -367,6 +380,16 @@ export class D1Store extends MemoryStore implements Store {
             same = true; // unreadable winner: don't false-409 our own write
           }
           if (!same) {
+            // Lost race: our key was rejected by D1's winner. Drop it from
+            // the memory cache before surfacing 409 — otherwise a later D1
+            // failure would fall back to the cache and authenticate a key
+            // the enrollment rejected. Re-warm from the D1 winner instead.
+            this.devices.delete(input.deviceId);
+            try {
+              await this.getDevice(input.deviceId);
+            } catch {
+              // Keep the cache cleared; the next read retries D1.
+            }
             const err = new Error('device already enrolled with different key') as Error & { status: number };
             err.status = 409;
             throw err;
@@ -382,17 +405,38 @@ export class D1Store extends MemoryStore implements Store {
 
   // Revoke: D1 UPDATE wins cross-isolate, memory mirrors. getDevice warms a
   // fresh isolate's memory from the D1 row first, so revoke works without a
-  // prior hydrate. Idempotent: an already-set revoked_at is kept (never
-  // bumped). persist() swallows pre-migration/unreachable errors — memory
-  // still reflects the revoke locally.
+  // prior hydrate. Idempotent: the write is first-write-wins via
+  // COALESCE(revoked_at, ?) and the reported timestamp is re-read from D1,
+  // so concurrent revokes all observe the original timestamp. A D1 failure
+  // fails the request (500) instead of acking a local-only revoke as 200 —
+  // except pre-migration DBs (no device_keys table), which keep the memory
+  // fallback.
   override async revokeDevice(deviceId: string): Promise<{ deviceId: string; revokedAt: string } | null> {
     const known = await this.getDevice(deviceId);
     if (!known) return null;
     const revokedAt = known.revokedAt ?? nowIso();
-    await this.persist('UPDATE device_keys SET revoked_at = ? WHERE device_id = ?', revokedAt, deviceId);
+    try {
+      await this.db
+        .prepare('UPDATE device_keys SET revoked_at = COALESCE(revoked_at, ?) WHERE device_id = ?')
+        .bind(revokedAt, deviceId)
+        .run();
+    } catch (e) {
+      if (e instanceof Error && /no such table/i.test(e.message)) {
+        const mem = this.devices.get(deviceId);
+        if (mem) mem.revokedAt = mem.revokedAt ?? revokedAt;
+        return { deviceId, revokedAt: mem?.revokedAt ?? revokedAt };
+      }
+      // D1 persist failed: do not mark local-only state as revoked, do not
+      // return 200 — surface the failure so the caller retries (500).
+      throw e;
+    }
+    // Re-read the winner: COALESCE may have kept an older timestamp from a
+    // concurrent isolate's revoke.
+    const winner = await this.getDevice(deviceId);
+    const finalTs = winner?.revokedAt ?? revokedAt;
     const mem = this.devices.get(deviceId);
-    if (mem) mem.revokedAt = revokedAt;
-    return { deviceId, revokedAt };
+    if (mem) mem.revokedAt = finalTs;
+    return { deviceId, revokedAt: finalTs };
   }
 
   override async createRecipe(input: any, meta: { deviceId: string; id?: string; updatedAt?: string }): Promise<Recipe> {

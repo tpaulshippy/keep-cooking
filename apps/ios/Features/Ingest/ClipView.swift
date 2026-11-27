@@ -213,6 +213,10 @@ public struct ClipView: View {
         focused = nil
         let req = ClipRequest(url: urlText.trimmingCharacters(in: .whitespaces), source: .url)
         do {
+            // Enroll before the first signed POST: on a fresh install the
+            // server does not know this key yet and prod rejects the clip
+            // with 401. Re-reads the id afterwards (409 recovery rotates it).
+            await DeviceAuth.enrollIfNeeded(baseURL: baseURL, deviceId: DeviceAuth.currentDeviceId())
             let client = authedClient()
             let rep = try await client.clip(req)
             // PII-safe log: strategy + host + confidence only.

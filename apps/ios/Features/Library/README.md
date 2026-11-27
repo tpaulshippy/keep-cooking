@@ -67,7 +67,6 @@ Merge (`planMerge`): survivor = most ingredients → has photo → highest ratin
 ## Not Yet (unfinished = removed, nothing dead shipped)
 
 - Server-side household membership/invite redemption (`POST /households/:id/invites` + `POST /invites/redeem`) — invites are local + out-of-band only. Every button in `HouseholdInvitesView` works against that local model.
-- Device-key auth on `ShareAPIClient` (Lane 1 dev store accepts owner role without it; documented in code, not hidden).
 - Actual widget/watch screenshots — no `.xcodeproj` exists in the repo so nothing can be screenshotted here; see `Widgets/PREVIEW_NOTES.md` and `watch/PREVIEW_NOTES.md` for the exact preview configuration to capture them from.
 - Cookbook cover art, drag-reorder of cookbook members, full-text stemming/stop-words (substring matching only).
 - Export to Paprika/Mela formats (JSON/Markdown/Schema.org HTML only, per contract).

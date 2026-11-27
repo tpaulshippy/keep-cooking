@@ -79,9 +79,11 @@ class SyncEngine(
 
     /**
      * Transport for this run: Advanced custom-server override or the built-in
-     * server. Enroll-once runs first (unsigned, idempotent, best-effort) and
-     * every transport carries the device interceptor, which signs mutating
-     * requests (POST/PUT/DELETE) and leaves reads unsigned.
+     * server. Enrollment runs first on every call (unsigned, idempotent,
+     * best-effort) and retries until this endpoint's marker persists, so a
+     * failed first enroll never sticks. Every transport carries the device
+     * interceptor, which signs mutating requests (POST/PUT/DELETE) and
+     * leaves reads unsigned.
      */
     private val overrideApiCache = mutableMapOf<String, ApiService>()
 

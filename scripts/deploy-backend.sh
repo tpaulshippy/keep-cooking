@@ -95,6 +95,13 @@ for migration in "$API_DIR/drizzle/0001_init.sql" "$API_DIR/drizzle/0002_e2e_blo
 done
 
 echo "==> 4/6 vars"
+# Photo signed URLs fall back to a dev-only default when the secret is unset,
+# so a fresh Worker without it signs URLs with public 'dev-only-change-me'.
+# Operators who previously set BETTER_AUTH_SECRET must re-set it under the
+# new name — the old name is no longer read.
+echo "    NOTE: if 'wrangler secret list' does not show PHOTOS_SIGNING_SECRET,"
+echo "    run once per Worker: wrangler secret put PHOTOS_SIGNING_SECRET"
+echo "    (without it, photo URLs are signed with a dev-only default)."
 if [ -n "$BASE_URL" ]; then
   if grep -qE '^[[:space:]]*PUBLIC_BASE_URL[[:space:]]*=' "$API_DIR/wrangler.toml"; then
     sed -i.bak -E "s|^[[:space:]]*PUBLIC_BASE_URL[[:space:]]*=.*|PUBLIC_BASE_URL = \"$BASE_URL\"|" "$API_DIR/wrangler.toml"

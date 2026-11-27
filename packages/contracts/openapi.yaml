@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Keep Cooking API
-  version: 0.1.0
+  version: 0.2.0
   description: Single Hono Worker + D1 + R2. MIT only. See packages/contracts/README.md.
 servers:
   - url: https://api.keepcooking.local
@@ -492,9 +492,10 @@ paths:
       description: >-
         Open enrollment — no device signature required (this is how devices
         join). 201 on first enroll, 200 on idempotent re-enroll with the same
-        key, 409 when the id is already enrolled with a different key, 400 on
-        validation failure. Reads stay open; every other write requires the
-        enrolled key (see DeviceSig).
+        key, 410 when the id was revoked (gone, enroll a fresh deviceId
+        instead), 409 when the id is already enrolled with a different key,
+        400 on validation failure. Reads stay open; every other write requires
+        the enrolled key (see DeviceSig).
       requestBody:
         required: true
         content:
@@ -515,6 +516,8 @@ paths:
           description: invalid deviceId / publicKey / displayName
         '409':
           description: device id already enrolled with a different key
+        '410':
+          description: device id was revoked (gone) — enroll a fresh deviceId instead
   /v2/devices/{id}/revoke:
     parameters:
       - name: id
@@ -528,7 +531,7 @@ paths:
         Signed revocation (caller signs with its own enrolled key). Revoking
         your own key is logout — the next write from that key gets 401
         (device revoked). There is no shared token to rotate; enroll a fresh
-        key instead.
+        deviceId instead (re-enrolling this revoked id returns 410).
       security:
         - DeviceId: []
           DeviceTs: []

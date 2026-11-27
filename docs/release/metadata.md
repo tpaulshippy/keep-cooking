@@ -69,7 +69,7 @@ TODO — Keep Cooking keywords unknown (e.g. recipes,cookbook,scan,... — confi
 
 ## App Review Notes (for reviewer)
 - No login needed: TODO — confirm app opens without login; describe first-run state (verseloop opened to demo verses).
-- Device-key gate (was: beta-token gate — removed, no token enrollment):
+- Device-key gate:
   TODO — Keep Cooking review build behavior behind the device-key gate unknown.
   Document the gate for the reviewer: there is no shared-secret bearer gate —
   reads plus `POST /v2/devices` (enrollment) stay open, every other write must

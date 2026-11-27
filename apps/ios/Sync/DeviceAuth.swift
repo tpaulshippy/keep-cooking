@@ -3,8 +3,10 @@
 //
 // Sketch: every install generates an Ed25519 keypair at first launch
 // (Keychain, separate from the syncCode/E2EKeyStore entries in
-// SyncCrypto.swift), mints a persisted UUIDv4 deviceId, and enrolls once via
-// POST /v2/devices (idempotent: 200/201/409 all mean "enrolled").
+// SyncCrypto.swift), mints a persisted UUIDv4 deviceId bound to that key in
+// the Keychain, and enrolls once per API endpoint via
+// POST /v2/devices (200/201 mean "enrolled"; 409 means the server holds a
+// different key for this id — the client rotates the id and re-enrolls).
 //
 // Every MUTATING request (POST/PUT/DELETE, incl. /sync/push and the /v2/sync
 // PUT) is signed with headers:
@@ -18,17 +20,19 @@
 //
 // Contract notes (match the api lane: MemoryStore.enrollDevice):
 //   - publicKey is STANDARD base64 (padded) of exactly 32 bytes.
-//   - Re-enroll with the same key is idempotent; same deviceId + different
-//     key is a 409 (server keeps the first key — rotation is a non-goal).
+//   - Re-enroll with the same key is idempotent (200/201); same deviceId +
+//     different key is a 409 (server keeps the first key — the client mints
+//     a fresh deviceId bound to its key and enrolls that instead).
 //
 // Non-goals (Pass 1): rotation UI, Keychain sync opt-in, photo routes.
-// `userId` ("beta-user") and identifierForVendor are display hints only —
-// the device key is the identity.
+// `userId` ("beta-user") is a display hint only — the device key is the
+// identity. identifierForVendor is never sent (it survives reinstalls).
 //
-// Ordering limitation (Pass 1): enrollment is best-effort async (offline
-// safe). A mutating request fired before the first successful enroll goes
-// out signed-but-unknown and the server rejects it; enrollment is retried on
-// every app sync / launch, so a retry succeeds.
+// Ordering: direct POST views (clip/caption/share) enroll before sending.
+// Sync enrollment is best-effort async (offline safe): a mutating sync
+// fired before the first successful enroll goes out signed-but-unknown and
+// the server rejects it; enrollment is retried on every app sync / launch,
+// so a retry succeeds.
 
 import CryptoKit
 import Foundation
@@ -139,20 +143,58 @@ public enum DeviceAuth {
     static let deviceIdKey = "smidgen.device.id"
     static let enrolledFlagPrefix = "smidgen.device.enrolled."
 
-    /// Persisted UUIDv4 device id (stable across launches). identifierForVendor
-    /// is NOT used here — it is a display hint only (see `displayHint()`).
+    /// Persisted UUIDv4 device id, BOUND to the Keychain seed. The id and the
+    /// seed are kept together in the Keychain: after a device restore the
+    /// Keychain seed is gone while UserDefaults survives, so reusing the old
+    /// id would skip enrollment with a fresh (server-unknown) key and every
+    /// mutating request would fail signature verification. A missing seed
+    /// with a surviving id (restore) therefore mints a FRESH id; a missing
+    /// seed with no id (fresh install) creates both.
     public static func currentDeviceId(defaults: UserDefaults = .standard) -> String {
-        if let s = defaults.string(forKey: deviceIdKey), !s.isEmpty { return s }
+        let stored = defaults.string(forKey: deviceIdKey)
+        if loadSeed() != nil {
+            if let bound = loadKeyedDeviceId(), !bound.isEmpty {
+                if bound != stored { defaults.set(bound, forKey: deviceIdKey) }
+                return bound
+            }
+            // Pre-binding seed (written before the id binding existed):
+            // bind the surviving id so this install keeps its identity.
+            if let s = stored, !s.isEmpty {
+                saveKeyedDeviceId(s)
+                return s
+            }
+            let fresh = UUID().uuidString
+            defaults.set(fresh, forKey: deviceIdKey)
+            saveKeyedDeviceId(fresh)
+            return fresh
+        }
+        // No seed: fresh install (no stored id) or restore (stale stored id).
+        // Either way the old id must NOT be reused with the new key.
         let fresh = UUID().uuidString
         defaults.set(fresh, forKey: deviceIdKey)
+        if loadOrGenerateSeed() != nil { saveKeyedDeviceId(fresh) }
+        return fresh
+    }
+
+    /// Mints a fresh deviceId bound to the CURRENT seed (409 recovery: the
+    /// server holds a different key for the old id). Updates both the
+    /// Keychain binding and UserDefaults so the next signer/enrollment uses
+    /// it. Callers must re-read `currentDeviceId()` after enrollment.
+    @discardableResult
+    public static func rotateDeviceId(defaults: UserDefaults = .standard) -> String {
+        let fresh = UUID().uuidString
+        defaults.set(fresh, forKey: deviceIdKey)
+        saveKeyedDeviceId(fresh)
         return fresh
     }
 
     /// Display hint for enrollment (≤64 chars server-side). Not an identity.
+    /// Sends nothing identifying (no IDFV — it survives reinstalls and would
+    /// undercut the per-install device id): the device model name only.
     public static func displayHint() -> String {
         #if os(iOS)
-        let vendor = UIDevice.current.identifierForVendor?.uuidString ?? "device"
-        return String("iOS \(vendor)".prefix(64))
+        let model = UIDevice.current.model // "iPhone"/"iPad" — same for all installs
+        return String("iOS \(model)".prefix(64))
         #else
         return "iOS device"
         #endif
@@ -187,44 +229,113 @@ public enum DeviceAuth {
         return Data(key.publicKey.rawRepresentation).base64EncodedString()
     }
 
-    /// POST /v2/devices {deviceId, publicKey, displayName?} — idempotent.
-    /// 200/201/409 all mark the device enrolled; offline errors retry on the
-    /// next launch/sync (reads keep working meanwhile).
+    /// Enrolled flag for one (deviceId, endpoint) pair. The base URL is part
+    /// of the key: switching endpoints must enroll there too instead of
+    /// skipping with a key that server has never seen (signed writes would
+    /// 401).
+    static func enrolledFlag(deviceId: String, baseURL: URL) -> String {
+        let flat = baseURL.absoluteString.lowercased().map {
+            $0.isLetter || $0.isNumber ? String($0) : "-"
+        }.joined()
+        return enrolledFlagPrefix + deviceId + "." + flat
+    }
+
+    /// POST /v2/devices {deviceId, publicKey, displayName?} — idempotent for
+    /// the same key. 200/201 mark this (deviceId, endpoint) enrolled; offline
+    /// errors retry on the next launch/sync (reads keep working meanwhile).
+    /// 409 means the server holds a DIFFERENT key for this deviceId, so it is
+    /// never treated as success: the client mints a fresh deviceId bound to
+    /// the current seed and enrolls that instead (one retry). Callers holding
+    /// a deviceId must re-read `currentDeviceId()` afterwards.
     public static func enrollIfNeeded(
         baseURL: URL,
         session: URLSession = .shared,
         deviceId: String,
         defaults: UserDefaults = .standard
     ) async {
-        let flag = enrolledFlagPrefix + deviceId
-        if defaults.bool(forKey: flag) { return }
-        guard let publicKey = publicKeyB64() else { return }
-        let payload: [String: String] = [
-            "deviceId": deviceId,
-            "publicKey": publicKey,
-            "displayName": displayHint(),
-        ]
-        guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        var req = URLRequest(url: baseURL.appendingPathComponent("/v2/devices"))
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        // Enrollment is deliberately UNSIGNED: the server does not know this
-        // key yet, so there is nothing to verify a signature against.
-        // x-device-id rides along for logging correlation only.
-        req.setValue(deviceId, forHTTPHeaderField: "x-device-id")
-        req.httpBody = body
-        do {
-            let (_, resp) = try await session.data(for: req)
-            let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
-            if code == 200 || code == 201 || code == 409 {
-                defaults.set(true, forKey: flag)
+        var did = deviceId
+        for attempt in 0 ..< 2 {
+            let flag = enrolledFlag(deviceId: did, baseURL: baseURL)
+            if defaults.bool(forKey: flag) { return }
+            guard let publicKey = publicKeyB64() else { return }
+            let payload: [String: String] = [
+                "deviceId": did,
+                "publicKey": publicKey,
+                "displayName": displayHint(),
+            ]
+            guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
+            var req = URLRequest(url: baseURL.appendingPathComponent("/v2/devices"))
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            // Enrollment is deliberately UNSIGNED: the server does not know this
+            // key yet, so there is nothing to verify a signature against.
+            // x-device-id rides along for logging correlation only.
+            req.setValue(did, forHTTPHeaderField: "x-device-id")
+            req.httpBody = body
+            do {
+                let (_, resp) = try await session.data(for: req)
+                let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
+                if code == 200 || code == 201 {
+                    defaults.set(true, forKey: flag)
+                    return
+                }
+                if code == 409, attempt == 0 {
+                    // Conflict: server-bound to a different key for this id —
+                    // rotate the id and re-enroll, never mark enrolled.
+                    did = rotateDeviceId(defaults: defaults)
+                    continue
+                }
+                return
+            } catch {
+                // Offline — retry next launch/sync.
+                return
             }
-        } catch {
-            // Offline — retry next launch/sync.
         }
     }
 
-    // MARK: Keychain (Ed25519 seed only)
+    // MARK: Keychain (Ed25519 seed + bound device id)
+
+    static let keyedIdAccount = "smidgen.device.keyed-id"
+
+    /// Device id bound to the Keychain seed (kept together: a seed without
+    /// its id, or an id without its seed, triggers recovery in
+    /// `currentDeviceId()` instead of silent signature failures).
+    static func loadKeyedDeviceId() -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: keyedIdAccount,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data,
+              let id = String(data: data, encoding: .utf8),
+              !id.isEmpty
+        else { return nil }
+        return id
+    }
+
+    @discardableResult
+    static func saveKeyedDeviceId(_ id: String) -> Bool {
+        guard let data = id.data(using: .utf8) else { return false }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: keyedIdAccount,
+        ]
+        let updateStatus = SecItemUpdate(
+            query as CFDictionary,
+            [kSecValueData as String: data] as CFDictionary
+        )
+        if updateStatus == errSecSuccess { return true }
+        guard updateStatus == errSecItemNotFound else { return false }
+        var add = query
+        add[kSecValueData as String] = data
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
+    }
 
     static func loadSeed() -> Data? {
         let query: [String: Any] = [

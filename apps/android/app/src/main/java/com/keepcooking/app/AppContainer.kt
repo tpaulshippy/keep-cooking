@@ -16,7 +16,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import okhttp3.OkHttpClient
 
 private val Context.prefsDataStore by preferencesDataStore(name = "keepcooking")
 
@@ -35,15 +34,6 @@ class AppContainer(private val context: Context) {
     }
 
     val api: ApiService by lazy { createApiService(deviceAuth = DeviceAuth.interceptor()) }
-
-    /**
-     * Shared OkHttp for direct (non-Retrofit) clients (ClipClient). Carries
-     * the device interceptor so mutating POSTs are Ed25519-signed; reads stay
-     * unsigned. Prefer this over a bare OkHttpClient() for new clients.
-     */
-    val deviceHttp: OkHttpClient by lazy {
-        OkHttpClient.Builder().addInterceptor(DeviceAuth.interceptor()).build()
-    }
 
     val syncEngine: SyncEngine by lazy {
         SyncEngine(
