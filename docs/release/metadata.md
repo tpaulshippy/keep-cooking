@@ -69,9 +69,14 @@ TODO — Keep Cooking keywords unknown (e.g. recipes,cookbook,scan,... — confi
 
 ## App Review Notes (for reviewer)
 - No login needed: TODO — confirm app opens without login; describe first-run state (verseloop opened to demo verses).
-- Beta-token gate: TODO — Keep Cooking review build behavior behind the beta-token gate unknown.
-  Document the gate for the reviewer: where it triggers, what token/unlock to use, demo token
-  value or bypass steps, and which features are gated vs open.
+- Device-key gate:
+  TODO — Keep Cooking review build behavior behind the device-key gate unknown.
+  Document the gate for the reviewer: there is no shared-secret bearer gate —
+  reads plus `POST /v2/devices` (enrollment) stay open, every other write must
+  carry `x-device-id` / `x-device-ts` / `x-device-sig` from an enrolled Ed25519
+  key (see api/README.md Auth). Record which enrolled device/key the review
+  build uses, how to re-enroll, and which features are gated vs open. Client
+  Beta UI (in-app enroll / revoke) is deferred — enrollment is API-side for now.
 - UGC position: TODO — Keep Cooking handles user-supplied content (scanned cookbook pages, recipes,
   photos?). State the position: is content private to the device/user, is there any sharing/
   public display, moderation/reporting/blocking mechanisms if user content is shared between users.

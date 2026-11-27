@@ -117,6 +117,49 @@ export interface ShareLink {
   expiresAt: string;
 }
 
+// ---------- Device keys (Ed25519 enrollment) ----------
+
+/** Device identity: Ed25519 public key (32B) + optional revocation timestamp. */
+export interface DeviceKey {
+  deviceId: string;
+  publicKey: Uint8Array;
+  revokedAt: string | null;
+}
+
+const B64_STD_RE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$/;
+
+function httpError(status: number, message: string): Error & { status: number } {
+  const err = new Error(message) as Error & { status: number };
+  err.status = status;
+  return err;
+}
+
+/** Strict standard-base64 decode (no url-safe alphabet). Throws 400 on malformed input. */
+export function decodePublicKeyB64(b64: string): Uint8Array {
+  if (typeof b64 !== 'string' || b64.length === 0 || b64.length % 4 !== 0 || !B64_STD_RE.test(b64)) {
+    throw httpError(400, 'publicKey must be standard base64');
+  }
+  let bin: string;
+  const g = globalThis as unknown as { Buffer?: { from(s: string, enc: string): Uint8Array } };
+  if (g.Buffer?.from) return new Uint8Array(g.Buffer.from(b64, 'base64'));
+  try {
+    bin = atob(b64);
+  } catch {
+    throw httpError(400, 'publicKey must be standard base64');
+  }
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i) & 0xff;
+  return out;
+}
+
+/** Constant-time-ish byte equality (lengths compared first). */
+export function deviceKeysEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= (a[i] as number) ^ (b[i] as number);
+  return diff === 0;
+}
+
 export interface SyncEnvelopeWire {
   id: string;
   updatedAt: string;
@@ -153,6 +196,8 @@ export interface Store {
   ensureHousehold(id: string, name?: string): Promise<Household>;
   getMembership(householdId: string, userId: string): Promise<Membership | null>;
   setMembership(householdId: string, userId: string, role: Role): Promise<void>;
+  // Membership count for a household (first-claim bootstrap in auth.ts).
+  countMemberships(householdId: string): Promise<number>;
   // recipes
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   listRecipes(householdId?: string): Promise<Recipe[]>;
@@ -211,6 +256,14 @@ export interface Store {
   e2ePut(hash: string, env: EncryptedEnvelope): Promise<boolean>;
   e2eList(hash: string, since: string): Promise<EncryptedEnvelope[]>;
   e2eWipe(hash: string): Promise<number>;
+  // device keys (Ed25519 enroll; no-clobber: same deviceId + different key
+  // throws with status 409; identical re-enroll is idempotent)
+  getDevice(deviceId: string): Promise<DeviceKey | null>;
+  enrollDevice(input: { deviceId: string; publicKeyB64: string; displayName?: string }): Promise<{ deviceId: string; enrolledAt: string }>;
+  // Revoke a device key. Sets revokedAt (idempotent: already-revoked keeps
+  // its original timestamp); returns null when the device is unknown.
+  // authenticateDevice rejects revoked devices with 401 (see auth.ts).
+  revokeDevice(deviceId: string): Promise<{ deviceId: string; revokedAt: string } | null>;
 }
 
 // ---------- shared assemblers (used by both stores) ----------
@@ -250,6 +303,7 @@ export class MemoryStore implements Store {
   plans = new Map<string, Plan>();
   menus = new Map<string, Menu>();
   shares = new Map<string, ShareLink>();
+  devices = new Map<string, { deviceId: string; publicKeyB64: string; publicKey: Uint8Array; displayName: string | null; createdAt: string; revokedAt: string | null }>();
 
   async ensureHousehold(id: string, name = id): Promise<Household> {
     let h = this.households.get(id);
@@ -265,6 +319,11 @@ export class MemoryStore implements Store {
   async setMembership(householdId: string, userId: string, role: Role): Promise<void> {
     await this.ensureHousehold(householdId);
     this.memberships.set(`${householdId}|${userId}`, { householdId, userId, role });
+  }
+  async countMemberships(householdId: string): Promise<number> {
+    let n = 0;
+    for (const m of this.memberships.values()) if (m.householdId === householdId) n++;
+    return n;
   }
 
   private toRecipe(r: RecipeRow & { ingredients: Ingredient[]; steps: Step[] }): Recipe {
@@ -598,6 +657,49 @@ export class MemoryStore implements Store {
     const n = bucket.size;
     this.e2eBlobs.delete(hash);
     return n;
+  }
+
+  async getDevice(deviceId: string): Promise<DeviceKey | null> {
+    const d = this.devices.get(deviceId);
+    if (!d) return null;
+    return { deviceId: d.deviceId, publicKey: d.publicKey.slice(), revokedAt: d.revokedAt };
+  }
+
+  async enrollDevice(input: { deviceId: string; publicKeyB64: string; displayName?: string }): Promise<{ deviceId: string; enrolledAt: string }> {
+    if (!input.deviceId || typeof input.deviceId !== 'string') throw httpError(400, 'deviceId is required');
+    if (input.displayName !== undefined && (typeof input.displayName !== 'string' || input.displayName.length > 64)) {
+      throw httpError(400, 'displayName must be a string of at most 64 chars');
+    }
+    const bytes = decodePublicKeyB64(input.publicKeyB64);
+    if (bytes.length !== 32) throw httpError(400, 'publicKey must decode to exactly 32 bytes');
+    const existing = this.devices.get(input.deviceId);
+    if (existing) {
+      if (existing.revokedAt) {
+        throw httpError(410, 'device revoked; enroll a fresh deviceId');
+      }
+      if (!deviceKeysEqual(existing.publicKey, bytes)) {
+        throw httpError(409, 'device already enrolled with different key');
+      }
+      return { deviceId: existing.deviceId, enrolledAt: existing.createdAt };
+    }
+    const createdAt = nowIso();
+    this.devices.set(input.deviceId, {
+      deviceId: input.deviceId,
+      publicKeyB64: input.publicKeyB64,
+      publicKey: bytes,
+      displayName: input.displayName ?? null,
+      createdAt,
+      revokedAt: null,
+    });
+    return { deviceId: input.deviceId, enrolledAt: createdAt };
+  }
+
+  async revokeDevice(deviceId: string): Promise<{ deviceId: string; revokedAt: string } | null> {
+    const d = this.devices.get(deviceId);
+    if (!d) return null;
+    const revokedAt = d.revokedAt ?? nowIso();
+    d.revokedAt = revokedAt;
+    return { deviceId: d.deviceId, revokedAt };
   }
 
   async pullSince(since: string): Promise<SyncEnvelopeWire[]> {

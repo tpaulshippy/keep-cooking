@@ -183,6 +183,7 @@ targets:
       - path: Core/Models.swift
       - path: Sync/SyncCrypto.swift
       - path: Sync/SyncEngine.swift
+      - path: Sync/DeviceAuth.swift
       - path: App/BYOE2E.swift
       - path: Features/Ingest/IngredientParser.swift
       - path: Features/Ingest/ClipModels.swift

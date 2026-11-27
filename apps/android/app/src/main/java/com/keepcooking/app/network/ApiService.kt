@@ -2,9 +2,11 @@ package com.keepcooking.app.network
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
+import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import retrofit2.http.Body
@@ -64,6 +66,17 @@ interface ApiService {
     @GET("health")
     suspend fun health(): JsonObject
 
+    // --- Device identity (Pass 1 Ed25519 enroll; idempotent) ---
+
+    /**
+     * POST /v2/devices {deviceId, publicKey (standard b64, 32B), displayName?}.
+     * Deliberately UNSIGNED (the server does not know this key yet).
+     * 200/201 mark enrolled; a 409 means the deviceId is bound to a different
+     * key (rotation is a non-goal) — see DeviceAuth.ensure for recovery.
+     */
+    @POST("v2/devices")
+    suspend fun enrollDevice(@Body body: DeviceEnrollRequest): Response<JsonObject>
+
     // --- Share (POST /share/cookbook — parity with ShareAPIClient) ---
 
     @POST("share/cookbook")
@@ -81,6 +94,14 @@ data class SyncEnvelopeDto(
     val deleted: Boolean = false,
     val entity: String, // recipe | ingredient | step | list | pantryItem | plan | menu
     val payload: JsonObject,
+)
+
+/** POST /v2/devices request body: device enroll (idempotent per deviceId). */
+@kotlinx.serialization.Serializable
+data class DeviceEnrollRequest(
+    val deviceId: String,
+    val publicKey: String, // standard base64 (padded) of the 32-byte Ed25519 key
+    val displayName: String? = null, // display hint, max 64 chars; never an identity
 )
 
 /** Wire shape for PUT/GET/DELETE /v2/sync/:hash (1:1 with openapi EncryptedEnvelope). */
@@ -120,9 +141,18 @@ data class ShareLinkDto(
     val expiresAt: String = "",
 )
 
-fun createApiService(baseUrl: String = "https://keep-cooking-api.pshippy-245.workers.dev/"): ApiService {
+fun createApiService(
+    baseUrl: String = "https://keep-cooking-api.pshippy-245.workers.dev/",
+    deviceAuth: Interceptor? = null,
+): ApiService {
     val logging = HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC }
-    val client = OkHttpClient.Builder().addInterceptor(logging).build()
+    val builder = OkHttpClient.Builder()
+    // Device identity first so the signed headers are on the request before
+    // it is sent. BASIC logging records only request/response lines, never
+    // header values.
+    if (deviceAuth != null) builder.addInterceptor(deviceAuth)
+    builder.addInterceptor(logging)
+    val client = builder.build()
     val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
     return Retrofit.Builder()
         .baseUrl(if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/")
