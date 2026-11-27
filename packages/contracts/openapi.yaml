@@ -27,6 +27,10 @@ paths:
           description: OpenAPI JSON (must match packages/contracts/openapi.json)
   /clip:
     post:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
       operationId: clipRecipe
       requestBody:
         required: true
@@ -55,6 +59,10 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/Recipe' }
     post:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
       operationId: createRecipe
       requestBody:
         required: true
@@ -78,6 +86,10 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Recipe' }
     put:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
       operationId: updateRecipe
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       requestBody:
@@ -92,12 +104,20 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Recipe' }
     delete:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
       operationId: deleteRecipe
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       responses:
         '204': { description: deleted }
   /recipes/{id}/scale:
     post:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
       operationId: scaleRecipe
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       requestBody:
@@ -127,6 +147,10 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/ShoppingList' }
     post:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
       operationId: createShoppingList
       requestBody:
         required: true
@@ -150,6 +174,10 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ShoppingList' }
     put:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
       operationId: updateShoppingList
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       requestBody:
@@ -164,6 +192,10 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ShoppingList' }
     delete:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
       operationId: deleteShoppingList
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       responses:
@@ -180,6 +212,10 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/PantryItem' }
     post:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
       operationId: createPantryItem
       requestBody:
         required: true
@@ -194,6 +230,10 @@ paths:
               schema: { $ref: '#/components/schemas/PantryItem' }
   /pantry/{id}:
     put:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
       operationId: updatePantryItem
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       requestBody:
@@ -208,6 +248,10 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/PantryItem' }
     delete:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
       operationId: deletePantryItem
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       responses:
@@ -224,6 +268,10 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/Plan' }
     post:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
       operationId: createPlan
       requestBody:
         required: true
@@ -247,6 +295,10 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Plan' }
     put:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
       operationId: updatePlan
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       requestBody:
@@ -261,6 +313,10 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Plan' }
     delete:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
       operationId: deletePlan
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       responses:
@@ -277,6 +333,10 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/Menu' }
     post:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
       operationId: createMenu
       requestBody:
         required: true
@@ -300,6 +360,10 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Menu' }
     put:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
       operationId: updateMenu
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       requestBody:
@@ -314,6 +378,10 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Menu' }
     delete:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
       operationId: deleteMenu
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       responses:
@@ -329,6 +397,10 @@ paths:
               schema: { type: string }
   /share/cookbook:
     post:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
       operationId: shareCookbook
       requestBody:
         required: true
@@ -394,6 +466,10 @@ paths:
                 items: { $ref: '#/components/schemas/SyncEnvelope' }
   /sync/push:
     post:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
       operationId: syncPush
       requestBody:
         required: true
@@ -410,6 +486,65 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/SyncEnvelope' }
+  /v2/devices:
+    post:
+      operationId: enrollDevice
+      description: >-
+        Open enrollment — no device signature required (this is how devices
+        join). 201 on first enroll, 200 on idempotent re-enroll with the same
+        key, 409 when the id is already enrolled with a different key, 400 on
+        validation failure. Reads stay open; every other write requires the
+        enrolled key (see DeviceSig).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeviceEnrollRequest' }
+      responses:
+        '201':
+          description: enrolled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceEnrollResponse' }
+        '200':
+          description: already enrolled with the same key (idempotent)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceEnrollResponse' }
+        '400':
+          description: invalid deviceId / publicKey / displayName
+        '409':
+          description: device id already enrolled with a different key
+  /v2/devices/{id}/revoke:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: enrolled device id to revoke (self-only)
+    post:
+      operationId: revokeDevice
+      description: >-
+        Signed revocation (caller signs with its own enrolled key). Revoking
+        your own key is logout — the next write from that key gets 401
+        (device revoked). There is no shared token to rotate; enroll a fresh
+        key instead.
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
+      responses:
+        '200':
+          description: revoked
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceRevokeResponse' }
+        '401':
+          description: missing / unknown / stale / bad / revoked device signature
+        '403':
+          description: not self (cross-device revoke deferred)
+        '404':
+          description: unknown device id
   /v2/sync/{hash}:
     parameters:
       - name: hash
@@ -432,6 +567,10 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/EncryptedEnvelope' }
     put:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
       operationId: e2ePush
       requestBody:
         required: true
@@ -451,6 +590,10 @@ paths:
                 properties:
                   stored: { type: array, items: { type: string } }
     delete:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
       operationId: e2eWipe
       responses:
         '200':
@@ -473,7 +616,47 @@ components:
       name: householdId
       in: query
       schema: { type: string }
+  securitySchemes:
+    DeviceId:
+      type: apiKey
+      in: header
+      name: x-device-id
+      description: enrolled device id (UUIDv4, from POST /v2/devices)
+    DeviceTs:
+      type: apiKey
+      in: header
+      name: x-device-ts
+      description: millis since epoch, digits only; |now - ts| <= 5 min. Replay window is a documented limitation (no server nonce ledger).
+    DeviceSig:
+      type: apiKey
+      in: header
+      name: x-device-sig
+      description: >-
+        base64 Ed25519 signature over the canonical string METHOD + "\n" +
+        path+query + "\n" + ts + "\n" + hex(SHA256(bodyBytes)) (empty body
+        hashes as hex(SHA256(""))). Required on every POST/PUT/DELETE except
+        POST /v2/devices; GET/HEAD/OPTIONS, /health and /openapi.json stay
+        open. Unknown / stale / revoked keys get 401 (self-revoke = logout).
   schemas:
+    DeviceEnrollRequest:
+      type: object
+      required: [deviceId, publicKey]
+      properties:
+        deviceId: { type: string, format: uuid, description: "UUIDv4, stable per device" }
+        publicKey: { type: string, description: base64 of exactly 32 bytes (Ed25519 public key); the private half never leaves the device }
+        displayName: { type: string, maxLength: 64 }
+    DeviceEnrollResponse:
+      type: object
+      required: [deviceId, enrolledAt]
+      properties:
+        deviceId: { type: string, format: uuid }
+        enrolledAt: { type: string, format: date-time }
+    DeviceRevokeResponse:
+      type: object
+      required: [deviceId, revokedAt]
+      properties:
+        deviceId: { type: string, format: uuid }
+        revokedAt: { type: string, format: date-time }
     SyncEnvelope:
       type: object
       required: [id, updatedAt, deviceId]
