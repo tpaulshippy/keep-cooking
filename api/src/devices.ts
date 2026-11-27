@@ -4,8 +4,7 @@ import { base64ByteLength } from './e2e';
 import { deviceKeysEqual, decodePublicKeyB64, type Store } from './store';
 
 // POST /v2/devices — device enrollment; POST /v2/devices/:id/revoke —
-// self-revoke. Route wiring lives in the api-auth lane (createApp in
-// index.ts). Expected enroll body: { deviceId: UUIDv4, publicKey:
+// self-revoke (route wiring: createApp in index.ts). Expected enroll body: { deviceId: UUIDv4, publicKey:
 // base64(32B Ed25519), displayName?: <=64 }. Responses: 201 first enroll,
 // 200 idempotent re-enroll (same key), 409 same deviceId with a different
 // key, 410 re-enroll of a revoked device (enroll a fresh deviceId instead —
