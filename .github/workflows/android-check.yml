@@ -30,12 +30,10 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-
-      - name: Install platform + build-tools
-        run: |
-          sdkmanager --install "platforms;android-34" "build-tools;34.0.0" \
-            | grep -v = || true
-          yes | sdkmanager --licenses > /dev/null || true
+        with:
+          # Default packages ('tools platform-tools') reference the long-removed
+          # 'tools' package and fail; install exactly what AGP 8.3 needs.
+          packages: platform-tools "platforms;android-34" "build-tools;34.0.0"
 
       # Caches Gradle + dependencies between runs. The repo ships a real
       # wrapper pinning Gradle 8.7 (apps/android/gradlew) — no system Gradle.
