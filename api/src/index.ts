@@ -120,11 +120,18 @@ export function createApp(
   // re-derives the deterministic token, so legit clients and rotation are
   // unaffected; label-squatters without the syncCode get 409). Same-hash
   // re-enroll rotates the token verifier without rotating the data key.
+  // A proven re-bind to a different hash additionally revokes the old
+  // hash's enrollment, so the previous token stops authenticating.
   // Never receives key material — only hashes/labels.
   app.post('/agent/enroll', async (c) => {
     const body = parseOrThrow(agentEnrollSchema, await c.req.json().catch(() => ({})));
     const bound = await getStore().agentGetByLabel(body.householdId);
-    if (bound && bound.householdHash !== body.householdHash) {
+    // Re-binding a label to a DIFFERENT hash revokes the old hash's
+    // enrollment (D1 row + memory indexes): the previous token must stop
+    // authenticating, or it would keep full plaintext access to the same
+    // householdId. Same-hash re-enroll skips this (plain verifier rotation).
+    const rebinds = !!bound && bound.householdHash !== body.householdHash;
+    if (rebinds) {
       const presented = c.req.header(AGENT_TOKEN_HEADER);
       const verifier = presented ? await agentVerifierFor(presented) : null;
       if (!verifier || verifier !== bound.verifier) {
@@ -134,6 +141,7 @@ export function createApp(
         err.status = 409;
         throw err;
       }
+      await getStore().agentRevokeByHash(bound.householdHash);
     }
     await getStore().ensureHousehold(body.householdId, body.householdId);
     const e = await getStore().agentEnroll({ ...body, updatedAt: new Date().toISOString() });

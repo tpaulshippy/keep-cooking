@@ -283,7 +283,13 @@ const handlers: Record<string, Handler> = {
       const r = await store.getRecipe(m[1]!);
       if (r && r.householdId !== agent.householdId) throw httpError(403, 'photo is outside the enrolled household');
     }
+    // Contract (mcp-tools.json) promises integer ttl in [1, 899] (photos.ts
+    // MAX_SIGNED_URL_TTL_SECONDS - 1): enforce it here so ttl 0 / negative
+    // (already-expired URL) or fractional values never reach signKey.
     const ttl = typeof p['ttl'] === 'number' ? p['ttl'] : undefined;
+    if (ttl !== undefined && (!Number.isInteger(ttl) || ttl < 1 || ttl > 899)) {
+      throw httpError(400, "ttl must be an integer in [1, 899]");
+    }
     return signKey(key, { secret: opts.secret, baseUrl: opts.baseUrl, ...(ttl !== undefined ? { ttlSeconds: ttl } : {}) });
   },
 };
@@ -311,8 +317,11 @@ export async function handleMcp(
   const method = String(req.method);
 
   if (method === 'notifications/initialized' || method.startsWith('notifications/')) {
-    // Streamable HTTP: notifications get 202 with NO body (null lets the
-    // route send an empty response instead of JSON).
+    // Streamable HTTP: bare notifications get 202 with NO body (null lets the
+    // route send an empty response instead of JSON). A notification carrying
+    // an `id` is acknowledged with an empty result (200) — real clients send
+    // id-bearing notifications and must not hang waiting for a reply.
+    if (req.id !== undefined && req.id !== null) return rpcOk(req.id as string | number, {});
     return { status: 202, body: null };
   }
   if (method === 'initialize') {

@@ -10,7 +10,7 @@
 // Local check: BASE=http://127.0.0.1:8787 node docs/agents/demo.mjs
 // (with `wrangler dev` running in api/). Uses a scratch household label so
 // it never touches real data. Exits non-zero on any unexpected status.
-import { deriveAll, encryptEnvelope, decryptEnvelope, enroll, agentFetch } from './lib.mjs';
+import { deriveAll, encryptEnvelope, decryptEnvelope, enroll, agentFetch, canonicalE2EUpdatedAt } from './lib.mjs';
 
 const BASE = (process.env.BASE || 'http://127.0.0.1:8787').replace(/\/$/, '');
 const KEY = process.env.KEEPCOOKING_KEY;
@@ -75,12 +75,13 @@ const list = check(
 );
 
 // 5. blind sync round-trip: encrypt locally, push bytes, pull bytes, decrypt
+// (whole-second updatedAt: the agent timestamp rule both apps reproduce).
 const env = await encryptEnvelope(d.dataKey, {
   kid: d.kid,
   householdHash: d.householdHash,
   id: recipe.id,
   entity: 'recipe',
-  updatedAt: new Date().toISOString(),
+  updatedAt: canonicalE2EUpdatedAt(new Date().toISOString()),
   deviceId: `agent-${d.hashPrefix8}`,
   payload: { ...recipe, householdId: HOUSEHOLD },
 });

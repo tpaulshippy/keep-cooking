@@ -9,7 +9,7 @@ touch the wire. Test vectors use the published dummy syncCode
 ```bash
 export BASE=https://<your-worker>
 export HH=hh-agent-demo
-export KEY='<paste syncCode from the app recovery kit>'   # required: never sent, only derives locally
+read -rs -p 'syncCode: ' KEY && export KEY   # paste from the app recovery kit; not echoed, never a literal (stays out of shell history)
 # derive with node (prints token/verifier/hash):
 node -e "
 import('./docs/agents/lib.mjs').then(async ({deriveAll}) => {

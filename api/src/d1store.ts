@@ -237,9 +237,9 @@ export class D1Store extends MemoryStore implements Store {
   // memory) and is applied to D1 before memory.
 
   override async agentEnroll(e: AgentEnrollment): Promise<AgentEnrollment> {
-    // Same-household verifier reuse is a 409 in memory (unique verifier
-    // index in D1) — reject before touching D1 so a conflicting write never
-    // lands in either store.
+    // A verifier already bound to a different household hash is a 409
+    // (unique verifier index in D1) — reject before touching D1 so a
+    // conflicting write never lands in either store.
     const clash = await this.agentGetByVerifier(e.verifier);
     if (clash && clash.householdHash !== e.householdHash) {
       const err = new Error('verifier is already bound to a different household hash') as Error & { status?: number };
@@ -304,6 +304,19 @@ export class D1Store extends MemoryStore implements Store {
       };
       if (e.householdHash && e.householdId && e.verifier) await super.agentEnroll(e);
     }
+  }
+
+  /** Revoke one hash's enrollment: delete the D1 row, then clear the memory
+   * indexes (D1 is durable, memory is the read path — both must forget the
+   * old token or it keeps authenticating on some isolate). A missing table
+   * (pre-migration DB) still clears memory so the token dies everywhere. */
+  override async agentRevokeByHash(householdHash: string): Promise<boolean> {
+    try {
+      await this.db.prepare('DELETE FROM agent_enrollments WHERE household_hash = ?').bind(householdHash).run();
+    } catch (e) {
+      if (!(e instanceof Error) || !/no such table/i.test(e.message)) throw e;
+    }
+    return super.agentRevokeByHash(householdHash);
   }
 
   override async createRecipe(input: any, meta: { deviceId: string; id?: string; updatedAt?: string }): Promise<Recipe> {

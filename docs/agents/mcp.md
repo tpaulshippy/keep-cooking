@@ -2,10 +2,12 @@
 
 `POST /mcp` speaks JSON-RPC 2.0 with the Streamable-HTTP subset:
 `initialize`, `tools/list`, `tools/call`, `ping` (plus `notifications/*`,
-which are tolerated). `tools/list`, `tools/call`, and `ping` authenticate
-per-request via `x-agent-token` — `initialize` and `notifications/*` do not
-(they expose nothing privileged); there are no sessions, so any isolate can
-serve any call. No new
+which are tolerated: bare notifications get `202` with no body, while a
+notification carrying an `id` is acknowledged with `200` and an empty
+`result` so the client doesn't hang). `tools/list`, `tools/call`, and
+`ping` authenticate per-request via `x-agent-token` — `initialize` and
+`notifications/*` do not (they expose nothing privileged); there are no
+sessions, so any isolate can serve any call. No new
 dependencies, no Durable Objects, no extra hosting: handlers delegate to the
 same `Store` methods as the REST routes.
 

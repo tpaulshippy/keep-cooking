@@ -14,6 +14,18 @@
 //
 // Wire encodings: envelope nonce/ciphertext are STANDARD base64 with padding
 // (server schema requires it); kid/token are base64url without padding.
+//
+// AGENT TIMESTAMP RULE (app interop): agent-sealed envelopes MUST use a
+// whole-SECOND updatedAt (ms=000, wire `...T..:..:.000Z`). The two apps
+// disagree on nonzero-millis envelopes — iOS `e2eHeaderAD` binds whole
+// MILLISECONDS (SyncCrypto.swift) while Android `canonicalE2EMillis` floors
+// to whole SECONDS (SyncCrypto.kt), so a nonzero-ms envelope sealed by one
+// side fails AD authentication on the other (and Android's pull has no
+// per-envelope error handling, so one bad envelope blocks the household).
+// Flooring to whole seconds in the agent makes both formulas agree
+// (floor(ms) == ms when ms=000), so agent envelopes open on BOTH current
+// implementations. Do NOT touch apps/ to "fix" this here — the app-side gap
+// is out of scope; the agent just never emits fractional seconds.
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -83,6 +95,11 @@ export const E2E_AD_CONTEXT = 'smidgen-e2e-ad-v1';
  * householdHash, id, updatedAtMillis, deviceId, deletedFlag, entity].
  * `updatedAt` binds whole MILLISECONDS parsed from the exact wire string —
  * the same value both sides recompute after the JSON round-trip.
+ *
+ * AGENT RULE: callers MUST pass a whole-second wire string here (see
+ * `canonicalE2EUpdatedAt`). Whole-second input makes the iOS millisecond
+ * formula and the Android floor-to-seconds formula produce the SAME value,
+ * so the envelope authenticates on both current app implementations.
  */
 export function e2eHeaderAD({ v = 2, alg = 'AES-GCM-256', kid, householdHash, id, updatedAt, deviceId, deleted = false, entity }) {
   const millis = Math.floor(Date.parse(updatedAt));
@@ -90,13 +107,25 @@ export function e2eHeaderAD({ v = 2, alg = 'AES-GCM-256', kid, householdHash, id
   return enc.encode(JSON.stringify(parts));
 }
 
+/** Floor any timestamp to a whole-second ISO-8601 wire string (`...000Z`).
+ * Agent envelopes MUST be sealed with this form (see the header rule above):
+ * nonzero millis would bind an AD value Android's floor-to-seconds
+ * `canonicalE2EMillis` can never reproduce. */
+export function canonicalE2EUpdatedAt(updatedAt) {
+  return new Date(Math.floor(Date.parse(updatedAt) / 1000) * 1000).toISOString();
+}
+
 /** AES-GCM-256 encrypt a v1 SyncEnvelope payload into an EncryptedEnvelope.
  * Wire format mirrors the apps exactly: ONLY `payload` is sealed; the header
  * stays plaintext and is bound via `e2eHeaderAD` as AES-GCM associated data,
- * so iOS/Android open agent-sealed envelopes (and vice versa). */
+ * so iOS/Android open agent-sealed envelopes (and vice versa).
+ * `updatedAt` is canonicalized to whole seconds before sealing (agent rule
+ * above), so the wire header and the bound AD always carry a `.000Z` value
+ * both app implementations reproduce. */
 export async function encryptEnvelope(dataKey, { kid, householdHash, id, entity, updatedAt, deviceId, deleted = false, payload }) {
+  const wireUpdatedAt = canonicalE2EUpdatedAt(updatedAt);
   const key = await crypto.subtle.importKey('raw', dataKey, 'AES-GCM', false, ['encrypt']);
-  const ad = e2eHeaderAD({ kid, householdHash, id, updatedAt, deviceId, deleted, entity });
+  const ad = e2eHeaderAD({ kid, householdHash, id, updatedAt: wireUpdatedAt, deviceId, deleted, entity });
   const nonce = crypto.getRandomValues(new Uint8Array(12));
   const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce, additionalData: ad }, key, enc.encode(JSON.stringify(payload)));
   return {
@@ -106,7 +135,7 @@ export async function encryptEnvelope(dataKey, { kid, householdHash, id, entity,
     householdHash,
     id,
     entity,
-    updatedAt,
+    updatedAt: wireUpdatedAt,
     deviceId,
     deleted,
     nonce: bytesToB64(nonce),
@@ -117,7 +146,11 @@ export async function encryptEnvelope(dataKey, { kid, householdHash, id, entity,
 /** Decrypt an EncryptedEnvelope back to the v1 SyncEnvelope wire object
  * ({id, updatedAt, deviceId, deleted, entity, payload}): rebuilds the header
  * AD from the envelope and passes it as associated data, so boxes sealed
- * without it (or under a tampered header) fail authentication. */
+ * without it (or under a tampered header) fail authentication.
+ * Decryption logic is unchanged by the agent whole-second rule — it binds
+ * whatever wire string the envelope carries. Agent envelopes always carry
+ * `.000Z` (see `encryptEnvelope`), which is what makes them open on both
+ * the iOS millisecond and Android floor-to-seconds AD formulas. */
 export async function decryptEnvelope(dataKey, env) {
   const key = await crypto.subtle.importKey('raw', dataKey, 'AES-GCM', false, ['decrypt']);
   const ad = e2eHeaderAD({

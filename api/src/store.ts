@@ -219,6 +219,11 @@ export interface Store {
   // Plaintext householdId label -> enrollment (the label is non-secret; the
   // hash binding is what a re-bind must prove, see POST /agent/enroll).
   agentGetByLabel(label: string): Promise<AgentEnrollment | null>;
+  // Revoke the enrollment for one household hash (label re-bind to a new
+  // hash must kill the old token: D1 row gone + memory indexes cleared so
+  // the previous token stops authenticating on every isolate). Returns true
+  // when an enrollment was removed.
+  agentRevokeByHash(householdHash: string): Promise<boolean>;
 }
 
 // ---------- shared assemblers (used by both stores) ----------
@@ -615,6 +620,17 @@ export class MemoryStore implements Store {
     const hash = this.agentByLabel.get(label);
     if (!hash) return null;
     return this.agentByHash.get(hash) ?? null;
+  }
+
+  async agentRevokeByHash(householdHash: string): Promise<boolean> {
+    const prev = this.agentByHash.get(householdHash);
+    if (!prev) return false;
+    this.agentByHash.delete(householdHash);
+    // Clear secondary indexes only when they still point at this hash (a
+    // newer enrollment may already have re-pointed them).
+    if (this.agentByVerifier.get(prev.verifier) === householdHash) this.agentByVerifier.delete(prev.verifier);
+    if (this.agentByLabel.get(prev.householdId) === householdHash) this.agentByLabel.delete(prev.householdId);
+    return true;
   }
 
   async e2ePut(hash: string, env: EncryptedEnvelope): Promise<boolean> {

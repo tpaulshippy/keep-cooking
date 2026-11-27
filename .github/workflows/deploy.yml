@@ -56,8 +56,11 @@ jobs:
           cd api
           # Schema uses CREATE TABLE IF NOT EXISTS, so this is safe to re-run
           # on every deploy. Seed data (drizzle/seed.sql) is a one-time manual
-          # step for demo content, not applied here.
+          # step for demo content, not applied here. Chain order matters:
+          # 0001 (base) → 0002 (e2e blobs) → 0003 (agent enrollments).
           npx wrangler d1 execute keep-cooking --remote --file=./drizzle/0001_init.sql
+          npx wrangler d1 execute keep-cooking --remote --file=./drizzle/0002_e2e_blobs.sql
+          npx wrangler d1 execute keep-cooking --remote --file=./drizzle/0003_agent_enrollments.sql
           # Rotate the internal-TestFlight beta gate secret from the repo secret
           # (set once via `gh secret set INTERNAL_BETA_TOKEN`).
           if [ -n "$INTERNAL_BETA_TOKEN" ]; then

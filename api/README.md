@@ -56,7 +56,10 @@ not a D1 range read); enrollments
 are one D1 row per household written once (re-enroll only rotates the
 verifier). Blind `/v2` envelopes cost the same rows as the app sync the agent
 replaces — no double sync. Agent pull/push traffic counts against the D1
-rows-read budget above (each `sync_pull` reads the household's full row set).
+rows-read budget above (each `sync_pull` reads the household's full row set,
+and each `sync_push` envelope reloads it again — a batch of N envelopes
+costs N row-set reads on D1, since `e2ePut` merges the latest D1 snapshot
+per envelope before LWW).
 
 ## Auth / RBAC
 

@@ -10,7 +10,7 @@ import { MemoryStore } from '../src/store';
 import { D1Store } from '../src/d1store';
 import { householdHash, type EncryptedEnvelope } from '../src/e2e';
 import { AGENT_TOKEN_HEADER } from '../src/agent';
-import { deriveAll as deriveAllDocs, encryptEnvelope as docsEncrypt, decryptEnvelope as docsDecrypt } from '../../docs/agents/lib.mjs';
+import { deriveAll as deriveAllDocs, encryptEnvelope as docsEncrypt, decryptEnvelope as docsDecrypt, canonicalE2EUpdatedAt } from '../../docs/agents/lib.mjs';
 import mcpTools from '../../packages/contracts/mcp-tools.json';
 
 // ---------- fixed test vectors (syncCode is a published dummy, never real) ----------
@@ -193,6 +193,35 @@ describe('agent KDF vectors (docs/agents parity)', () => {
       kid: params.kid, householdHash: params.householdHash, id: params.id, entity: 'recipe', title: 'Interop Stew',
     });
     expect((await docsDecrypt(doc.dataKey, viaLocal)).payload.title).toBe('Interop Stew');
+  });
+
+  it('agent envelopes bind whole-second timestamps both apps reproduce', async () => {
+    // Agent rule (docs/agents/lib.mjs header): iOS binds whole MILLISECONDS
+    // while Android floors to whole SECONDS, so a nonzero-ms envelope fails
+    // AD auth on one side. Agent sealing floors to seconds up front, making
+    // both formulas agree — pin that here with a nonzero-ms input.
+    expect(canonicalE2EUpdatedAt('2026-11-27T12:00:00.456Z')).toBe('2026-11-27T12:00:00.000Z');
+    expect(canonicalE2EUpdatedAt('2026-11-27T12:00:00.000Z')).toBe('2026-11-27T12:00:00.000Z');
+    const d = await deriveAll(SYNC_CODE, HH);
+    const doc = await deriveAllDocs(SYNC_CODE, HH);
+    const env = await docsEncrypt(doc.dataKey, {
+      kid: d.kid,
+      householdHash: d.householdHash,
+      id: '11111111-1111-4111-8111-111111111112',
+      entity: 'recipe',
+      updatedAt: '2026-11-27T12:00:00.456Z', // nonzero millis in…
+      deviceId: 'agent-test',
+      payload: { id: 'x', title: 'Whole Second Stew', servings: 2, householdId: HH, ingredients: [], steps: [] },
+    });
+    expect(env.updatedAt).toBe('2026-11-27T12:00:00.000Z'); // …whole seconds out
+    // iOS formula (floor ms) and Android formula (floor to seconds) agree on
+    // agent envelopes — the envelope opens on both implementations.
+    const iosMillis = Math.floor(Date.parse(env.updatedAt));
+    const androidMillis = Math.floor(Date.parse(env.updatedAt) / 1000) * 1000;
+    expect(iosMillis).toBe(androidMillis);
+    // …and the sealed box still opens (AD over the canonicalized header).
+    expect((await docsDecrypt(doc.dataKey, env)).payload.title).toBe('Whole Second Stew');
+    expect(await decryptTitle(d.dataKey, env as unknown as EncryptedEnvelope)).toBe('Whole Second Stew');
   });
 });
 
@@ -386,6 +415,53 @@ describe('agent enroll + key-only REST', () => {
     expect(re.status).toBe(201);
     expect((await app.request('/agent/status', { headers: agentHeaders(AGENT_TOKEN) })).status).toBe(401);
     expect((await app.request('/agent/status', { headers: agentHeaders(token2) })).status).toBe(200);
+  });
+
+  it('re-binding a label to a new hash revokes the old token', async () => {
+    const { app, store } = agentApp();
+    await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
+    const newHash = 'd'.repeat(64);
+    const token2 = await randomToken();
+    const verifier2 = createHash('sha256').update(Buffer.from(token2, 'base64url')).digest('hex');
+    // Proven re-bind (existing token presented) succeeds and moves the label.
+    const rebind = await app.request('/agent/enroll', {
+      method: 'POST',
+      headers: { ...agentHeaders(AGENT_TOKEN), 'content-type': 'application/json' },
+      body: JSON.stringify({ householdHash: newHash, householdId: HH, verifier: verifier2 }),
+    });
+    expect(rebind.status).toBe(201);
+    // Old token no longer authenticates; new one does.
+    expect((await app.request('/agent/status', { headers: agentHeaders(AGENT_TOKEN) })).status).toBe(401);
+    expect((await app.request('/agent/status', { headers: agentHeaders(token2) })).status).toBe(200);
+    // No trace of the old binding: verifier, hash, and label indexes moved.
+    expect(await store.agentGetByVerifier(AGENT_VERIFIER)).toBeNull();
+    expect(await store.agentGetByLabel(HH)).toMatchObject({ householdHash: newHash, verifier: verifier2 });
+  });
+
+  it('agentRevokeByHash deletes the D1 row and clears memory indexes', async () => {
+    const deleted: string[] = [];
+    const fakeDb = {
+      prepare(sql: string) {
+        return {
+          bind: (...args: unknown[]) => ({
+            run: async () => {
+              if (/DELETE FROM agent_enrollments/.test(sql)) deleted.push(String(args[0]));
+              return { meta: { changes: 1 } };
+            },
+            all: async () => ({ results: [] as unknown[] }),
+            first: async () => null,
+          }),
+        };
+      },
+    };
+    const store = new D1Store(fakeDb as never);
+    await store.agentEnroll({ householdHash: HOUSEHOLD_HASH, householdId: HH, verifier: AGENT_VERIFIER, updatedAt: new Date().toISOString() });
+    expect(await store.agentGetByVerifier(AGENT_VERIFIER)).toMatchObject({ householdId: HH });
+    expect(await store.agentRevokeByHash(HOUSEHOLD_HASH)).toBe(true);
+    expect(deleted).toEqual([HOUSEHOLD_HASH]);
+    expect(await store.agentGetByVerifier(AGENT_VERIFIER)).toBeNull();
+    expect(await store.agentGetByLabel(HH)).toBeNull();
+    expect(await store.agentRevokeByHash(HOUSEHOLD_HASH)).toBe(false);
   });
 
   it('legacy v1 sync pull/push honor the enrolled household', async () => {
@@ -671,6 +747,34 @@ describe('MCP on the same Worker', () => {
     expect(await note.text()).toBe('');
   });
 
+  it('notifications carrying an id are acknowledged, not dropped', async () => {
+    const { app } = agentApp();
+    await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
+    // Real clients send id-bearing notifications: ack with an empty result
+    // (200) so nobody hangs waiting for a reply.
+    const note = await call(app, { jsonrpc: '2.0', id: 7, method: 'notifications/initialized' }, AGENT_TOKEN);
+    expect(note.status).toBe(200);
+    expect(await note.json()).toEqual({ jsonrpc: '2.0', id: 7, result: {} });
+  });
+
+  it('photos_sign enforces the integer ttl contract [1, 899]', async () => {
+    const { app } = agentApp();
+    await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
+    for (const ttl of [0, -5, 1.5, 900, 100000]) {
+      const res = (await (
+        await call(app, rpc('tools/call', { name: 'photos_sign', arguments: { key: 'photos/x/thumb.jpg', ttl } }), AGENT_TOKEN)
+      ).json()) as { result: { isError: boolean; content: { text: string }[] } };
+      expect(res.result.isError).toBe(true);
+      expect(res.result.content[0]!.text).toContain('ttl');
+    }
+    // In-range ttl signs fine.
+    const ok = (await (
+      await call(app, rpc('tools/call', { name: 'photos_sign', arguments: { key: 'photos/x/thumb.jpg', ttl: 60 } }), AGENT_TOKEN)
+    ).json()) as { result: { isError?: boolean; content: { text: string }[] } };
+    expect(ok.result.isError ?? false).toBe(false);
+    expect(JSON.parse(ok.result.content[0]!.text)).toMatchObject({ key: 'photos/x/thumb.jpg' });
+  });
+
   it('sync_push validation failures carry field details', async () => {
     const { app } = agentApp();
     await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
@@ -717,5 +821,29 @@ describe('MCP on the same Worker', () => {
   it('GET /mcp is 405', async () => {
     const { app } = agentApp();
     expect((await app.request('/mcp')).status).toBe(405);
+  });
+});
+
+describe('0003 migration is wired into every deploy path', () => {
+  it('deploy.yml, package.json scripts, and deploy-backend.sh all apply 0003', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join, dirname } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+    // CI deploy: canonical chain 0001 → 0002 → 0003, in order.
+    const deployYml = readFileSync(join(root, '.github/workflows/deploy.yml'), 'utf8');
+    const i1 = deployYml.indexOf('0001_init.sql');
+    const i2 = deployYml.indexOf('0002_e2e_blobs.sql');
+    const i3 = deployYml.indexOf('0003_agent_enrollments.sql');
+    expect(i1).toBeGreaterThanOrEqual(0);
+    expect(i2).toBeGreaterThan(i1);
+    expect(i3).toBeGreaterThan(i2);
+    // Local/remote one-shot applies.
+    const pkg = JSON.parse(readFileSync(join(root, 'api/package.json'), 'utf8')) as { scripts: Record<string, string> };
+    for (const s of ['db:apply:local', 'db:apply:remote']) {
+      expect(pkg.scripts[s]).toContain('0003_agent_enrollments.sql');
+    }
+    // Fresh BYO-backend script.
+    expect(readFileSync(join(root, 'scripts/deploy-backend.sh'), 'utf8')).toContain('0003_agent_enrollments.sql');
   });
 });
