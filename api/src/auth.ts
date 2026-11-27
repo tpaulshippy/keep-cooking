@@ -44,7 +44,14 @@ export const DEVICE_ID_HEADER = 'x-device-id';
 export const DEVICE_TS_HEADER = 'x-device-ts';
 export const DEVICE_SIG_HEADER = 'x-device-sig';
 
-/** Max clock skew for x-device-ts (5 minutes either direction). */
+/** Max clock skew for x-device-ts (5 minutes either direction).
+ * Known limitation (no nonce/replay cache by design): a captured signed
+ * request still verifies until its timestamp ages out of this window.
+ * Accepted because sync/e2e writes are LWW-idempotent (stored wins ties),
+ * so a replayed write cannot reorder state — it re-applies the same
+ * envelope. A durable nonce cache would be the fix if non-idempotent
+ * endpoints ever require signatures; an in-memory cache is NOT one
+ * (isolates don't share it), so none is shipped. */
 export const DEVICE_TS_SKEW_MS = 5 * 60 * 1000;
 
 /** DER prefix wrapping a 32-byte raw Ed25519 key as SPKI (for node:crypto). */

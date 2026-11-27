@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { authenticateDevice } from './auth';
 import { base64ByteLength } from './e2e';
 import { deviceKeysEqual, decodePublicKeyB64, type Store } from './store';
 
@@ -44,4 +45,22 @@ export async function devicesEnroll(c: Context, store: Store): Promise<Response>
     if (status === 409) return c.json({ error: 'device already enrolled with different key' }, 409);
     throw e;
   }
+}
+
+// POST /v2/devices/:id/revoke — self-revoke only (lost/stolen device kill).
+// Ordering: 404 (unknown :id) -> 401 (missing/bad/stale sig, unknown or
+// already-revoked signer) -> 403 (signer != :id) -> 200 { deviceId,
+// revokedAt }. Existence is checked before auth so a signer can learn a
+// 404 for a typo'd id; ids are unguessable UUIDs so this leaks nothing
+// useful. No cross-device revoke, no admin override, no UI.
+export async function devicesRevoke(c: Context, store: Store): Promise<Response> {
+  const target = c.req.param('id') ?? '';
+  const existing = await store.getDevice(target);
+  if (!existing) return c.json({ error: 'device not found' }, 404);
+  await authenticateDevice(c, store); // throws 401
+  const signer = c.req.header('x-device-id') ?? '';
+  if (signer !== target) return c.json({ error: 'can only revoke own device' }, 403);
+  const res = await store.revokeDevice(target);
+  if (!res) return c.json({ error: 'device not found' }, 404);
+  return c.json(res, 200);
 }

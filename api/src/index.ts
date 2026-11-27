@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { MemoryStore, newId, type Store, type SyncEnvelopeWire } from './store';
 import { D1Store } from './d1store';
 import { authAttach, authenticateDevice, getUser, isProdBaseUrl, requireOwnerRole, requireWriteRole } from './auth';
-import { devicesEnroll } from './devices';
+import { devicesEnroll, devicesRevoke } from './devices';
 import { clipRecipe } from './clip';
 import { scaleRecipe } from './scale';
 import { signKey, variantKeys, DEFAULT_SIGNED_URL_TTL_SECONDS } from './photos';
@@ -120,6 +120,14 @@ export function createApp(
   // POST { deviceId: UUIDv4, publicKey: base64(32B), displayName? } ->
   // 201 first enroll / 200 idempotent re-enroll / 409 key conflict.
   app.post('/v2/devices', async (c) => devicesEnroll(c, getStore()));
+
+  // ---------- device self-revoke (sig required; NOT covered by the exact-match
+  // '/v2/devices' exemption above, so prod falls through to authenticateDevice
+  // in the gate middleware — plus devicesRevoke re-verifies, keeping dev/prod
+  // consistent). x-device-id must equal :id (403 otherwise); unknown :id is
+  // 404; bad/missing/stale sig is 401. Revoked devices fail all later writes
+  // with 401 via authenticateDevice.
+  app.post('/v2/devices/:id/revoke', async (c) => devicesRevoke(c, getStore()));
 
   // ---------- health / openapi ----------
   app.get('/health', (c) => c.json({ ok: true, version }));

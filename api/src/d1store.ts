@@ -380,6 +380,21 @@ export class D1Store extends MemoryStore implements Store {
     return res;
   }
 
+  // Revoke: D1 UPDATE wins cross-isolate, memory mirrors. getDevice warms a
+  // fresh isolate's memory from the D1 row first, so revoke works without a
+  // prior hydrate. Idempotent: an already-set revoked_at is kept (never
+  // bumped). persist() swallows pre-migration/unreachable errors — memory
+  // still reflects the revoke locally.
+  override async revokeDevice(deviceId: string): Promise<{ deviceId: string; revokedAt: string } | null> {
+    const known = await this.getDevice(deviceId);
+    if (!known) return null;
+    const revokedAt = known.revokedAt ?? nowIso();
+    await this.persist('UPDATE device_keys SET revoked_at = ? WHERE device_id = ?', revokedAt, deviceId);
+    const mem = this.devices.get(deviceId);
+    if (mem) mem.revokedAt = revokedAt;
+    return { deviceId, revokedAt };
+  }
+
   override async createRecipe(input: any, meta: { deviceId: string; id?: string; updatedAt?: string }): Promise<Recipe> {
     const r = await super.createRecipe(input, meta);
     await this.persist(

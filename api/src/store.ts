@@ -258,6 +258,10 @@ export interface Store {
   // throws with status 409; identical re-enroll is idempotent)
   getDevice(deviceId: string): Promise<DeviceKey | null>;
   enrollDevice(input: { deviceId: string; publicKeyB64: string; displayName?: string }): Promise<{ deviceId: string; enrolledAt: string }>;
+  // Revoke a device key. Sets revokedAt (idempotent: already-revoked keeps
+  // its original timestamp); returns null when the device is unknown.
+  // authenticateDevice rejects revoked devices with 401 (see auth.ts).
+  revokeDevice(deviceId: string): Promise<{ deviceId: string; revokedAt: string } | null>;
 }
 
 // ---------- shared assemblers (used by both stores) ----------
@@ -678,6 +682,14 @@ export class MemoryStore implements Store {
       revokedAt: null,
     });
     return { deviceId: input.deviceId, enrolledAt: createdAt };
+  }
+
+  async revokeDevice(deviceId: string): Promise<{ deviceId: string; revokedAt: string } | null> {
+    const d = this.devices.get(deviceId);
+    if (!d) return null;
+    const revokedAt = d.revokedAt ?? nowIso();
+    d.revokedAt = revokedAt;
+    return { deviceId: d.deviceId, revokedAt };
   }
 
   async pullSince(since: string): Promise<SyncEnvelopeWire[]> {
