@@ -184,7 +184,7 @@ public enum SyncTransportError: Error, Sendable {
 /// - `betaToken`: legacy, unused — callers pass nil (open access, no token
 ///   enrollment). The transport still honors it if ever set, so old call
 ///   sites stay source-compatible.
-/// - `userId`: shared household identity (beta: "beta-user"; pass 2 = Apple id).
+/// - `userId`: shared household identity (beta: "beta-user"; device key is the identity).
 public struct SyncAuth: Sendable {
     public var betaToken: String?
     public var userId: String

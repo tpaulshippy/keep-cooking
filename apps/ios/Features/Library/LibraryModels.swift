@@ -147,8 +147,8 @@ public struct CookbookShareLink: Sendable, Codable, Identifiable {
 
 /// Minimal client for Lane 1 share/export routes. Base URL is injected so
 /// previews/tests never hit the network. Auth headers intentionally absent:
-/// Lane 1 dev store accepts owner role without Better Auth (see api/README);
-/// wiring Better Auth tokens is a Not-Yet item, not a silent omission.
+/// Lane 1 dev store accepts owner role without a device key (see api/README);
+/// wiring device-key auth tokens is a Not-Yet item, not a silent omission.
 public struct ShareAPIClient: Sendable {
     public var baseURL: URL
     public var betaToken: String?

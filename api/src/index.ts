@@ -27,7 +27,7 @@ export interface Env {
   PHOTOS?: unknown;
   APP_VERSION?: string;
   PUBLIC_BASE_URL?: string;
-  BETTER_AUTH_SECRET?: string; // reserved for pass 2 (real Apple auth); unused by the beta gate
+  PHOTOS_SIGNING_SECRET?: string; // HMAC for photo signed URLs only; not auth
   INTERNAL_BETA_TOKEN?: string; // required in prod: `wrangler secret put INTERNAL_BETA_TOKEN`
 }
 
@@ -470,7 +470,7 @@ export default {
     const app = createApp(store, {
       version: env.APP_VERSION ?? VERSION,
       baseUrl: env.PUBLIC_BASE_URL ?? 'https://api.keepcooking.local',
-      secret: env.BETTER_AUTH_SECRET ?? 'dev-only-change-me',
+      secret: env.PHOTOS_SIGNING_SECRET ?? 'dev-only-change-me',
       betaToken: env.INTERNAL_BETA_TOKEN,
       // prod derived from PUBLIC_BASE_URL via isProdBaseUrl (workers.dev => prod)
     });

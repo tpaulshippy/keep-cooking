@@ -1,7 +1,7 @@
 # Keep Cooking API — Lane 1
 
 One Hono Worker on Cloudflare: D1 (via Drizzle schema + parameterized SQL) + R2 photos.
-Better Auth (email + Apple stub via headers, production wiring documented below).
+Single device-key auth (open auth, header stub in dev; device encryption key is the credential).
 Households + RBAC (owner/member/viewer). Zod-validated inputs. **PII is never logged**
 (access log records method + pathname + status + ms only).
 
@@ -49,12 +49,11 @@ Stay-free rules: signed photo URLs (<15 min TTL) instead of proxied bytes,
 
 ## Auth / RBAC
 
-- Production: Better Auth (email + Apple) verifies the session; `src/auth.ts`
-  `getUser()` is the single swap point (currently trusts `x-user-id` /
-  `x-user-email` / `x-role` headers as a dev stub — **never enable header auth
-  in production**; set `BETTER_AUTH_SECRET` via `wrangler secret put`).
-  `BETTER_AUTH_SECRET` is currently **unused** (reserved for pass 2 real Apple
-  auth); the TestFlight gate uses `INTERNAL_BETA_TOKEN` instead.
+- Auth: single device encryption key (open auth, no login); `src/auth.ts`
+  `getUser()` trusts `x-user-id` /
+  `x-user-email` / `x-role` headers as a dev stub — the device key is the
+  credential, there is no password or interactive login; set
+  `PHOTOS_SIGNING_SECRET` via `wrangler secret put` for photo URL signing.
 - Internal TestFlight gate (pass 1): when `PUBLIC_BASE_URL` is a deployed host
   (`*.workers.dev` or any non-local domain), every route except `GET /health`
   requires `Authorization: Bearer <INTERNAL_BETA_TOKEN>` (else `401
@@ -78,8 +77,8 @@ openssl rand -hex 32 | gh secret set INTERNAL_BETA_TOKEN --repo tpaulshippy/keep
 membership exists, so the iOS app's sync (x-user-id `beta-user`) can write.
 Manual alternative: `npx wrangler secret put INTERNAL_BETA_TOKEN`.
 
-# Reserved for pass 2, unused by the beta gate:
-# npx wrangler secret put BETTER_AUTH_SECRET
+# Reserved for photo URL signing, unused by auth:
+# npx wrangler secret put PHOTOS_SIGNING_SECRET
 
 # D1: wrangler.toml still has `database_id = "local-keepcooking-placeholder"` —
 # replace it with the real id from `npx wrangler d1 create keep-cooking` before deploy.

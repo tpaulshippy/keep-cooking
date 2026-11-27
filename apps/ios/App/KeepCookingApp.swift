@@ -393,7 +393,7 @@ enum SyncConfig {
 
     static var baseURLString: String { baseURL?.absoluteString ?? prodBaseURL }
 
-    /// Shared household identity (pass 2 = Apple id).
+    /// Shared household identity (device key is the identity).
     static var userId: String {
         let s = UserDefaults.standard.string(forKey: "smidgen.userId") ?? ""
         return s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "beta-user" : s

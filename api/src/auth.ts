@@ -1,7 +1,7 @@
 import type { Context, Next } from 'hono';
 import type { Store } from './store';
 
-// Better Auth stub — PASS 2 will verify the real Apple session cookie/JWT here.
+// Auth: single device encryption key (open auth, no login).
 // The app works out of the box against the deployed backend: there is no
 // beta-token enrollment. E2E household data stays blind (opaque hash buckets);
 // the beta gate below is a passthrough kept only to set the `prod` context
@@ -24,7 +24,6 @@ const VALID_ROLES: Role[] = ['owner', 'member', 'viewer'];
  * True when baseUrl looks like a deployed host (prod).
  * Dev hosts (`localhost`, `127.0.0.1`, `*.local`, `test`) stay on the stub.
  * Anything else — including `*.workers.dev` and custom domains — is prod.
- * (Pass 2 replaces the stub with Apple auth.)
  */
 export function isProdBaseUrl(baseUrl: string | undefined): boolean {
   if (!baseUrl) return false;
