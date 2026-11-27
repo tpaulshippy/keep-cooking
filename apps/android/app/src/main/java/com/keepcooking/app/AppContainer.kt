@@ -10,11 +10,13 @@ import com.keepcooking.app.data.SeedLoader
 import com.keepcooking.app.export.RecipeExporter
 import com.keepcooking.app.network.ApiService
 import com.keepcooking.app.network.createApiService
+import com.keepcooking.app.sync.DeviceAuth
 import com.keepcooking.app.sync.SyncEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
 
 private val Context.prefsDataStore by preferencesDataStore(name = "keepcooking")
 
@@ -32,7 +34,16 @@ class AppContainer(private val context: Context) {
             .build()
     }
 
-    val api: ApiService by lazy { createApiService() }
+    val api: ApiService by lazy { createApiService(deviceAuth = DeviceAuth.interceptor()) }
+
+    /**
+     * Shared OkHttp for direct (non-Retrofit) clients (ClipClient). Carries
+     * the device interceptor so mutating POSTs are Ed25519-signed; reads stay
+     * unsigned. Prefer this over a bare OkHttpClient() for new clients.
+     */
+    val deviceHttp: OkHttpClient by lazy {
+        OkHttpClient.Builder().addInterceptor(DeviceAuth.interceptor()).build()
+    }
 
     val syncEngine: SyncEngine by lazy {
         SyncEngine(
@@ -60,6 +71,12 @@ class AppContainer(private val context: Context) {
     fun seedIfNeeded() {
         scope.launch(Dispatchers.IO) {
             SeedLoader(context, db).seedIfNeeded()
+        }
+        // Device identity enroll-once (unsigned, idempotent, best-effort):
+        // warms the interceptor state so the first sync/clip is already
+        // signed. SyncEngine.activeApi() re-ensures per run regardless.
+        scope.launch(Dispatchers.IO) {
+            runCatching { DeviceAuth.ensure(appDataStore, SyncEngine.PROD_BASE_URL) }
         }
     }
 }

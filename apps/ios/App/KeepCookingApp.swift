@@ -322,10 +322,15 @@ final class SyncCoordinator {
             lastResult = "sync unavailable — check connection"
             return
         }
-        let did = currentDeviceId()
+        // Device identity: persisted UUIDv4 + Ed25519 key (DeviceAuth.swift).
+        // identifierForVendor is a display hint only — the device key is the
+        // identity. Enrollment is idempotent and best-effort (offline safe).
+        let did = DeviceAuth.currentDeviceId()
+        await DeviceAuth.enrollIfNeeded(baseURL: base, deviceId: did)
+        let signer = DeviceAuth.requestSigner(deviceId: did)
         let auth = SyncAuth(betaToken: nil,
                             userId: SyncConfig.userId, deviceId: did)
-        let transport = APISyncTransport(baseURL: base, auth: auth)
+        let transport = APISyncTransport(baseURL: base, auth: auth, signer: signer)
         let engine = SyncEngine(deviceId: did, transport: transport)
         do {
             for env in try collectEnvelopes(ctx: ctx) {
@@ -340,7 +345,7 @@ final class SyncCoordinator {
             _ = e2eEnsureIdentity(householdId: household)
             let res = try await engine.syncRouted(
                 route: resolveSyncRoute(),
-                e2eTransport: APIE2ETransport(baseURL: base, auth: auth),
+                e2eTransport: APIE2ETransport(baseURL: base, auth: auth, signer: signer),
                 applyRemote: { box.append($0) })
             for env in box.all { applyEnvelope(env, ctx: ctx) }
             try? ctx.save()
@@ -365,12 +370,11 @@ final class SyncCoordinator {
 
     func describe() async -> String { lastResult }
 
+    /// Persisted UUIDv4 device id (DeviceAuth). identifierForVendor is a
+    /// display hint only (see DeviceAuth.displayHint) — the device key is
+    /// the identity.
     private func currentDeviceId() -> String {
-        #if os(iOS)
-        return UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
-        #else
-        return UUID().uuidString
-        #endif
+        DeviceAuth.currentDeviceId()
     }
 }
 

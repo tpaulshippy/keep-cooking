@@ -386,11 +386,7 @@ public struct OCRScanView: View {
     }
 
     private func save() {
-        #if os(iOS)
-        let deviceId = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
-        #else
-        let deviceId = UUID().uuidString
-        #endif
+        let deviceId = DeviceAuth.currentDeviceId()
         let recipe = Recipe(householdId: "hh-demo", title: cleanTitle(title),
                             source: "ocr", deviceId: deviceId)
         context.insert(recipe)

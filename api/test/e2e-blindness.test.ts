@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { createHash } from 'node:crypto';
+import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { createApp } from '../src/index';
 import { MemoryStore } from '../src/store';
 import { D1Store, type D1 } from '../src/d1store';
@@ -235,18 +235,59 @@ describe('e2e v1 blind blob pipe', () => {
     expect(await pull.json()).toEqual([]);
   });
 
-  it('/v2 is open without any token (no enrollment)', async () => {
+  it('/v2 reads are open but writes require a device signature (no bearer tokens)', async () => {
     const store = new MemoryStore();
+    const deviceId = crypto.randomUUID();
+    const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+    const spki: Buffer = publicKey.export({ format: 'der', type: 'spki' });
+    const raw = new Uint8Array(spki.subarray(spki.length - 32));
+    await store.enrollDevice({ deviceId, publicKeyB64: Buffer.from(raw).toString('base64') });
     const app = createApp(store, {
       baseUrl: 'https://keep-cooking-api.pshippy-245.workers.dev',
       secret: 'test-secret',
     });
+    // Same canonical signing as api/test/beta-gate.test.ts:
+    // METHOD + "\n" + path+query + "\n" + ts + "\n" + hex(SHA256(bodyBytes)).
+    const signReq = (method: string, path: string, body: string) => {
+      const ts = Date.now().toString();
+      const bodyHash = createHash('sha256').update(body, 'utf8').digest('hex');
+      const sig = sign(null, new TextEncoder().encode(`${method}\n${path}\n${ts}\n${bodyHash}`), privateKey);
+      return {
+        'content-type': 'application/json',
+        'x-device-id': deviceId,
+        'x-device-ts': ts,
+        'x-device-sig': sig.toString('base64'),
+      };
+    };
     const anon = { 'content-type': 'application/json' };
-    expect((await app.request(`/v2/sync/${HASH}`, { headers: anon })).status).toBe(200);
+    const putPath = `/v2/sync/${HASH}`;
+    // Reads stay open without any signature.
+    expect((await app.request(putPath, { headers: anon })).status).toBe(200);
+    // Unsigned writes are rejected (legacy bearer tokens don't help either).
+    const putBody = JSON.stringify([env({ id: uid(100) })]);
+    expect((await app.request(putPath, { method: 'PUT', headers: anon, body: putBody })).status).toBe(401);
     expect(
-      (await app.request(`/v2/sync/${HASH}`, { method: 'PUT', headers: anon, body: JSON.stringify([]) })).status,
-    ).toBe(200);
-    expect((await app.request(`/v2/sync/${HASH}`, { method: 'DELETE', headers: anon })).status).toBe(200);
+      (
+        await app.request(putPath, {
+          method: 'PUT',
+          headers: { ...anon, Authorization: 'Bearer legacy-secret' },
+          body: putBody,
+        })
+      ).status,
+    ).toBe(401);
+    expect((await app.request(putPath, { method: 'DELETE', headers: anon })).status).toBe(401);
+    // Signed writes succeed — and stay blind: the opaque envelope round-trips
+    // byte-identical through the server (pull returns exactly what was PUT).
+    const put = await app.request(putPath, { method: 'PUT', headers: signReq('PUT', putPath, putBody), body: putBody });
+    expect(put.status).toBe(200);
+    expect(await put.json()).toEqual({ stored: [uid(100)] });
+    const pull = await app.request(putPath, { headers: anon });
+    expect(pull.status).toBe(200);
+    expect(await pull.json()).toEqual([env({ id: uid(100) })]);
+    const wipe = await app.request(putPath, { method: 'DELETE', headers: signReq('DELETE', putPath, '') });
+    expect(wipe.status).toBe(200);
+    expect(await wipe.json()).toEqual({ wiped: 1 });
+    expect(await (await app.request(putPath, { headers: anon })).json()).toEqual([]);
   });
 
   it('logs never include ciphertext-adjacent plaintext (hash prefix only)', async () => {

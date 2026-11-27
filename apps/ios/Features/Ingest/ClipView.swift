@@ -44,9 +44,11 @@ public struct ClipView: View {
     }
 
     private func authedClient() -> ClipClient {
-        ClipClient(baseURL: baseURL,
+        let did = DeviceAuth.currentDeviceId()
+        return ClipClient(baseURL: baseURL,
             betaToken: nil,
-            userId: SyncConfig.userId, deviceId: currentDeviceId())
+            userId: SyncConfig.userId, deviceId: did,
+            signer: DeviceAuth.requestSigner(deviceId: did))
     }
 
     private var stepIndex: Int {
@@ -283,10 +285,7 @@ public struct ClipView: View {
     }
 
     private func currentDeviceId() -> String {
-        #if os(iOS)
-        return UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
-        #else
-        return UUID().uuidString
-        #endif
+        // Persisted UUIDv4 (DeviceAuth); identifierForVendor is display-only.
+        DeviceAuth.currentDeviceId()
     }
 }

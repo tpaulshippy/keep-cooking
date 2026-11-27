@@ -148,27 +148,33 @@ public struct ClipClient: Sendable {
     public var betaToken: String?
     public var userId: String
     public var deviceId: String
+    public var signer: DeviceRequestSigner?
 
     public init(baseURL: URL, session: URLSession = .shared,
-                betaToken: String? = nil, userId: String = "beta-user", deviceId: String = "app") {
+                betaToken: String? = nil, userId: String = "beta-user", deviceId: String = "app",
+                signer: DeviceRequestSigner? = nil) {
         self.baseURL = baseURL; self.session = session
         self.betaToken = betaToken; self.userId = userId; self.deviceId = deviceId
+        self.signer = signer
     }
 
     /// POST /clip with ClipRequest{url, caption, source}.
     /// Returns decoded ClipReport; caller logs ClipLogEvent only.
+    /// The POST is Ed25519-signed when `signer` is set (see DeviceAuth.swift);
+    /// without a signer it sends identity headers only (legacy behavior).
     public func clip(_ request: ClipRequest) async throws -> ClipReport {
         let url = baseURL.appendingPathComponent("/clip")
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let enc = JSONEncoder()
+        req.httpBody = try enc.encode(request)
         if let token = betaToken, !token.isEmpty {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         req.setValue(userId, forHTTPHeaderField: "x-user-id")
         req.setValue(deviceId, forHTTPHeaderField: "x-device-id")
-        let enc = JSONEncoder()
-        req.httpBody = try enc.encode(request)
+        if let signer { req = signer.signedRequest(req) }
         let (data, resp) = try await session.data(for: req)
         guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
             throw ClipClientError.httpStatus((resp as? HTTPURLResponse)?.statusCode ?? -1)

@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import { MemoryStore, newId, type Store, type SyncEnvelopeWire } from './store';
 import { D1Store } from './d1store';
-import { authAttach, createBetaGate, getUser, isProdBaseUrl, requireOwnerRole, requireWriteRole } from './auth';
+import { authAttach, authenticateDevice, getUser, isProdBaseUrl, requireOwnerRole, requireWriteRole } from './auth';
+import { devicesEnroll } from './devices';
 import { clipRecipe } from './clip';
 import { scaleRecipe } from './scale';
 import { signKey, variantKeys, DEFAULT_SIGNED_URL_TTL_SECONDS } from './photos';
@@ -28,7 +29,6 @@ export interface Env {
   APP_VERSION?: string;
   PUBLIC_BASE_URL?: string;
   PHOTOS_SIGNING_SECRET?: string; // HMAC for photo signed URLs only; not auth
-  INTERNAL_BETA_TOKEN?: string; // required in prod: `wrangler secret put INTERNAL_BETA_TOKEN`
 }
 
 const VERSION = '0.1.0';
@@ -63,7 +63,7 @@ export function resolveStore(env: Env): Store {
 
 export function createApp(
   store: Store,
-  opts: { version?: string; baseUrl?: string; secret?: string; betaToken?: string; prod?: boolean } = {},
+  opts: { version?: string; baseUrl?: string; secret?: string; prod?: boolean } = {},
 ) {
   const app = new Hono<{ Variables: { store: Store } }>();
   const version = opts.version ?? VERSION;
@@ -72,7 +72,6 @@ export function createApp(
   // Prod detection: explicit override wins, else derived from baseUrl
   // (workers.dev / any non-local host => prod). Dev keeps the header stub.
   const prod = opts.prod ?? isProdBaseUrl(baseUrl);
-  const betaToken = opts.betaToken;
 
   // PII-safe access log: method + pathname + status + ms only.
   // Never log headers (Authorization, x-user-*, cookies) or bodies.
@@ -83,10 +82,24 @@ export function createApp(
     const path = redactE2EPath(new URL(c.req.url).pathname);
     console.log(JSON.stringify({ m: c.req.method, p: path, s: c.res.status, ms: Date.now() - t0 }));
   });
-  // Prod beta gate (passthrough): /health stays open and everything else
-  // proceeds to authAttach with no token enrollment. E2E buckets stay blind;
-  // v1 routes still enforce household RBAC below.
-  app.use('*', createBetaGate({ betaToken, prod }));
+  // Device-signature gate.
+  // Open (no sig): GET/HEAD/OPTIONS on any route, plus /health,
+  // /openapi.json, and POST /v2/devices (enrollment — how devices join).
+  // Everything else: dev (!prod) passes through to the getUser() header
+  // stub; prod requires a valid Ed25519 device signature (401 otherwise).
+  // v2 writes are sig-only; v1 writes additionally enforce household RBAC
+  // with user.id = the verified device id (see getUser in auth.ts).
+  app.use('*', async (c, next) => {
+    c.set('prod' as never, prod as never);
+    const pathname = new URL(c.req.url).pathname;
+    const m = c.req.method;
+    if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return next();
+    if (pathname === '/health' || pathname === '/openapi.json') return next();
+    if (pathname === '/v2/devices') return next();
+    if (!prod) return next(); // dev header stub
+    await authenticateDevice(c, store); // throws 401
+    return next();
+  });
   app.use('*', authAttach);
   app.use('*', async (c, next) => {
     c.set('store' as never, store as never);
@@ -101,6 +114,12 @@ export function createApp(
   });
 
   const getStore = (): Store => store;
+
+  // ---------- device enrollment (public; no sig — this is how devices join) ----------
+  // devicesEnroll is owned by the enroll-store lane (api/src/devices.ts):
+  // POST { deviceId: UUIDv4, publicKey: base64(32B), displayName? } ->
+  // 201 first enroll / 200 idempotent re-enroll / 409 key conflict.
+  app.post('/v2/devices', async (c) => devicesEnroll(c, getStore()));
 
   // ---------- health / openapi ----------
   app.get('/health', (c) => c.json({ ok: true, version }));
@@ -471,7 +490,6 @@ export default {
       version: env.APP_VERSION ?? VERSION,
       baseUrl: env.PUBLIC_BASE_URL ?? 'https://api.keepcooking.local',
       secret: env.PHOTOS_SIGNING_SECRET ?? 'dev-only-change-me',
-      betaToken: env.INTERNAL_BETA_TOKEN,
       // prod derived from PUBLIC_BASE_URL via isProdBaseUrl (workers.dev => prod)
     });
     return app.fetch(request);

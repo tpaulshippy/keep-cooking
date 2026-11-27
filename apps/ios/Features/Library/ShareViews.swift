@@ -137,11 +137,8 @@ public struct CookbookShareView: View {
     }
 
     private var currentDeviceId: String {
-        #if os(iOS)
-        return UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
-        #else
-        return UUID().uuidString
-        #endif
+        // Persisted UUIDv4 (DeviceAuth); identifierForVendor is display-only.
+        DeviceAuth.currentDeviceId()
     }
 
     private func createShare() async {
@@ -155,7 +152,8 @@ public struct CookbookShareView: View {
         do {
             let client = ShareAPIClient(baseURL: base,
                 betaToken: nil,
-                userId: SyncConfig.userId, deviceId: currentDeviceId)
+                userId: SyncConfig.userId, deviceId: currentDeviceId,
+                signer: DeviceAuth.requestSigner(deviceId: currentDeviceId))
             link = try await client.createCookbookShare(
                 householdId: cookbook.householdId, recipeIds: cookbook.recipeIds)
             error = nil

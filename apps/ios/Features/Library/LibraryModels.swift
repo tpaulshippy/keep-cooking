@@ -146,18 +146,21 @@ public struct CookbookShareLink: Sendable, Codable, Identifiable {
 // MARK: - Share API client (views call this; no auth/sync changes)
 
 /// Minimal client for Lane 1 share/export routes. Base URL is injected so
-/// previews/tests never hit the network. Auth headers intentionally absent:
-/// Lane 1 dev store accepts owner role without a device key (see api/README);
-/// wiring device-key auth tokens is a Not-Yet item, not a silent omission.
+/// previews/tests never hit the network. The POST is Ed25519-signed when
+/// `signer` is set (see DeviceAuth.swift); without one it sends identity
+/// headers only (legacy behavior).
 public struct ShareAPIClient: Sendable {
     public var baseURL: URL
     public var betaToken: String?
     public var userId: String
     public var deviceId: String
+    public var signer: DeviceRequestSigner?
     public init(baseURL: URL, betaToken: String? = nil,
-                userId: String = "beta-user", deviceId: String = "app") {
+                userId: String = "beta-user", deviceId: String = "app",
+                signer: DeviceRequestSigner? = nil) {
         self.baseURL = baseURL
         self.betaToken = betaToken; self.userId = userId; self.deviceId = deviceId
+        self.signer = signer
     }
 
     public func createCookbookShare(householdId: String, recipeIds: [String], expiresInDays: Int = 30) async throws -> CookbookShareLink {
@@ -174,6 +177,7 @@ public struct ShareAPIClient: Sendable {
             "recipeIds": AnyCodable(recipeIds),
             "expiresInDays": AnyCodable(expiresInDays),
         ])
+        if let signer { req = signer.signedRequest(req) }
         let (data, resp) = try await URLSession.shared.data(for: req)
         guard (resp as? HTTPURLResponse)?.statusCode == 201 else {
             throw ShareAPIError.httpStatus((resp as? HTTPURLResponse)?.statusCode ?? -1)

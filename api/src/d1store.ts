@@ -5,6 +5,8 @@ import {
   nowIso,
   newId,
   e2eIsNewer,
+  decodePublicKeyB64,
+  deviceKeysEqual,
   type Store,
   type Recipe,
   type ShoppingList,
@@ -13,6 +15,7 @@ import {
   type Menu,
   type Membership,
   type Household,
+  type DeviceKey,
 } from './store';
 import { envelopeHeader, type EncryptedEnvelope } from './e2e';
 
@@ -193,6 +196,37 @@ export class D1Store extends MemoryStore implements Store {
       newer(this.pantry, prev.pantry);
       newer(this.plans, prev.plans);
       newer(this.menus, prev.menus);
+      // Device keys: D1 is the source of truth; merge rows into memory so a
+      // fresh isolate sees enrollments. Isolated try/catch: pre-migration
+      // DBs have no device_keys table and must not disturb the maps above.
+      try {
+        const drows = await q('SELECT device_id, public_key, display_name, created_at, revoked_at FROM device_keys');
+        for (const r of drows) {
+          const id = String(r['device_id'] ?? '');
+          if (!id) continue;
+          let bytes: Uint8Array;
+          try {
+            bytes = decodePublicKeyB64(String(r['public_key'] ?? ''));
+          } catch {
+            continue;
+          }
+          if (bytes.length !== 32) continue;
+          const createdAt = String(r['created_at'] ?? nowIso());
+          const mem = this.devices.get(id);
+          if (!mem) {
+            this.devices.set(id, {
+              deviceId: id,
+              publicKeyB64: String(r['public_key'] ?? ''),
+              publicKey: bytes,
+              displayName: r['display_name'] == null ? null : String(r['display_name']),
+              createdAt,
+              revokedAt: r['revoked_at'] == null ? null : String(r['revoked_at']),
+            });
+          }
+        }
+      } catch {
+        // pre-migration DB: no device_keys table — memory fallback stays.
+      }
       this.hydrated = true;
     } catch (e) {
       // Fresh DB (tables may not exist until migration runs): stay empty.
@@ -226,6 +260,124 @@ export class D1Store extends MemoryStore implements Store {
       "INSERT INTO memberships (household_id, user_id, role) VALUES (?, ?, ?) ON CONFLICT(household_id, user_id) DO UPDATE SET role = excluded.role",
       householdId, userId, role,
     );
+  }
+
+  // ---------- Device keys (D1 device_keys; memory fallback) ----------
+  // D1 is the cross-isolate source of truth for no-clobber: the winner is
+  // checked before the memory write, and the insert is DO NOTHING so a
+  // concurrent winner with a different key keeps its row. A post-insert
+  // re-read detects that lost race and surfaces 409.
+
+  override async getDevice(deviceId: string): Promise<DeviceKey | null> {
+    try {
+      const row = await this.db
+        .prepare('SELECT device_id, public_key, display_name, created_at, revoked_at FROM device_keys WHERE device_id = ?')
+        .bind(deviceId)
+        .first();
+      if (row) {
+        let bytes: Uint8Array;
+        try {
+          bytes = decodePublicKeyB64(String(row['public_key'] ?? ''));
+        } catch {
+          return super.getDevice(deviceId);
+        }
+        if (bytes.length !== 32) return super.getDevice(deviceId);
+        const revokedAt = row['revoked_at'] == null ? null : String(row['revoked_at']);
+        if (!this.devices.get(deviceId)) {
+          this.devices.set(deviceId, {
+            deviceId,
+            publicKeyB64: String(row['public_key'] ?? ''),
+            publicKey: bytes,
+            displayName: row['display_name'] == null ? null : String(row['display_name']),
+            createdAt: String(row['created_at'] ?? nowIso()),
+            revokedAt,
+          });
+        }
+        return { deviceId, publicKey: bytes, revokedAt };
+      }
+    } catch {
+      // pre-migration DB or unreachable: memory fallback.
+    }
+    return super.getDevice(deviceId);
+  }
+
+  override async enrollDevice(input: { deviceId: string; publicKeyB64: string; displayName?: string }): Promise<{ deviceId: string; enrolledAt: string }> {
+    // Cross-isolate no-clobber check against the D1 winner first.
+    try {
+      const row = await this.db
+        .prepare('SELECT device_id, public_key, created_at FROM device_keys WHERE device_id = ?')
+        .bind(input.deviceId)
+        .first();
+      if (row) {
+        const storedB64 = String(row['public_key'] ?? '');
+        let same = false;
+        try {
+          same = deviceKeysEqual(decodePublicKeyB64(storedB64), decodePublicKeyB64(input.publicKeyB64));
+        } catch {
+          // Malformed input: let super.enrollDevice raise the 400 below.
+          return super.enrollDevice(input);
+        }
+        if (!same) {
+          const err = new Error('device already enrolled with different key') as Error & { status: number };
+          err.status = 409;
+          throw err;
+        }
+        if (!this.devices.get(input.deviceId)) {
+          try {
+            const bytes = decodePublicKeyB64(storedB64);
+            this.devices.set(input.deviceId, {
+              deviceId: input.deviceId,
+              publicKeyB64: storedB64,
+              publicKey: bytes,
+              displayName: input.displayName ?? null,
+              createdAt: String(row['created_at'] ?? nowIso()),
+              revokedAt: null,
+            });
+          } catch {
+            // fall through to super for validation
+          }
+        }
+        return { deviceId: input.deviceId, enrolledAt: String(row['created_at'] ?? nowIso()) };
+      }
+    } catch (e) {
+      const status = (e as { status?: unknown } | null | undefined)?.status;
+      if (status === 409) throw e;
+      // D1 unreachable / pre-migration: memory fallback below.
+    }
+    const res = await super.enrollDevice(input);
+    await this.persist(
+      'INSERT INTO device_keys (device_id, public_key, display_name, created_at, revoked_at) VALUES (?, ?, ?, ?, NULL) ON CONFLICT(device_id) DO NOTHING',
+      input.deviceId, input.publicKeyB64, input.displayName ?? null, res.enrolledAt,
+    );
+    // Lost-race detect: another isolate may have won with a different key
+    // between our check and insert (DO NOTHING kept their row). Re-read the
+    // winner; a different key is a 409. Missing table/unreachable: keep res.
+    try {
+      const win = await this.db
+        .prepare('SELECT public_key FROM device_keys WHERE device_id = ?')
+        .bind(input.deviceId)
+        .first();
+      if (win) {
+        const winB64 = String(win['public_key'] ?? '');
+        if (winB64 !== input.publicKeyB64) {
+          let same = true;
+          try {
+            same = deviceKeysEqual(decodePublicKeyB64(winB64), decodePublicKeyB64(input.publicKeyB64));
+          } catch {
+            same = true; // unreadable winner: don't false-409 our own write
+          }
+          if (!same) {
+            const err = new Error('device already enrolled with different key') as Error & { status: number };
+            err.status = 409;
+            throw err;
+          }
+        }
+      }
+    } catch (e) {
+      const status = (e as { status?: unknown } | null | undefined)?.status;
+      if (status === 409) throw e;
+    }
+    return res;
   }
 
   override async createRecipe(input: any, meta: { deviceId: string; id?: string; updatedAt?: string }): Promise<Recipe> {
