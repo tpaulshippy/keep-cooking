@@ -1,0 +1,57 @@
+import { readFileSync, existsSync, mkdirSync, cpSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const pub = join(root, "public");
+const dist = join(root, "dist");
+const failures = [];
+const check = (name, cond) => {
+  console.log(`${cond ? "PASS" : "FAIL"}  ${name}`);
+  if (!cond) failures.push(name);
+};
+
+const index = readFileSync(join(pub, "index.html"), "utf8");
+
+// Required sections (issue #29 scope)
+for (const s of ["tour", "how", "free", "get", "faq", "contact"]) {
+  check(`section #${s} present`, index.includes(`id="${s}"`));
+}
+check("hero section present", index.includes('class="hero"') && index.includes('id="hero-title"'));
+// Feature tour coverage: clip/cook/organize/shop/plan/sync
+for (const w of ["Clip anything", "Cook hands-free", "Plan the week", "Shop &amp; pantry", "Organize your way", "Sync &amp; share"]) {
+  check(`tour card "${w}"`, index.includes(w));
+}
+// Copy accuracy vs README: free/MIT, no invented pricing
+check("no invented pricing", !/\$\d+\.\d+|\/mo|per month/i.test(index.replace("Paprika 4 Premium ($14.99/yr)", "")));
+check("MIT mentioned", index.includes("MIT"));
+check("GitHub link", index.includes("https://github.com/tpaulshippy/keep-cooking"));
+check("/app CTA link", index.includes('href="/app"'));
+check("store placeholders marked", index.includes("placeholder"));
+check("privacy stub linked", index.includes("/privacy.html"));
+check("JSON-LD SoftwareApplication", index.includes("SoftwareApplication"));
+check("OG tags", index.includes("og:image") && index.includes("og-image.svg"));
+check("alt text on images", !/img(?![^>]*alt=)/.test(index));
+check("no heavy client JS (only nav.js)", !/react|vue|next|alpine|jquery/i.test(index));
+// Path-collision: no /api or /app files of our own
+check("no api dir in public", !existsSync(join(pub, "api")));
+check("no app dir in public", !existsSync(join(pub, "app")));
+for (const f of ["index.html", "privacy.html", "styles.css", "nav.js", "favicon.svg", "og-image.svg", "robots.txt", "sitemap.xml"]) {
+  check(`asset ${f} exists`, existsSync(join(pub, f)));
+}
+
+// Build: copy public/ -> dist/
+mkdirSync(dist, { recursive: true });
+cpSync(pub, dist, { recursive: true });
+writeFileSync(join(dist, "_routes.json"), JSON.stringify({
+  version: 1,
+  include: ["/*"],
+  exclude: ["/api/*", "/app/*"],
+}, null, 2) + "\n");
+console.log("dist/ written (with _routes.json excluding /api/* and /app/*)");
+
+if (failures.length) {
+  console.error(`\n${failures.length} check(s) failed`);
+  process.exit(1);
+}
+console.log("\nAll marketing checks green.");

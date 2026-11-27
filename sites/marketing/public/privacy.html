@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy — Keep Cooking</title>
+  <meta name="description" content="Keep Cooking privacy stub: what the marketing site and the app collect (as little as possible).">
+  <link rel="canonical" href="https://keepcooking.app/privacy.html">
+  <meta property="og:title" content="Privacy — Keep Cooking">
+  <meta property="og:description" content="What Keep Cooking collects: as little as possible.">
+  <meta property="og:url" content="https://keepcooking.app/privacy.html">
+  <meta property="og:image" content="https://keepcooking.app/og-image.svg">
+  <meta name="theme-color" content="#1a3c34">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <nav aria-label="Primary">
+      <a class="brand" href="/">Keep Cooking</a>
+      <ul class="nav-links" id="nav-links" style="display:flex">
+        <li><a href="/#tour">Features</a></li>
+        <li><a href="/#faq">FAQ</a></li>
+        <li><a class="btn btn-small" href="/#get">Get the app</a></li>
+      </ul>
+      <button class="nav-toggle" aria-expanded="false" aria-controls="nav-links" type="button"><span class="sr-only">Menu</span><span aria-hidden="true">☰</span></button>
+    </nav>
+  </header>
+  <main id="main">
+    <section aria-labelledby="privacy-title">
+      <p class="eyebrow">Last updated November 2026 · placeholder stub, not legal advice</p>
+      <h1 id="privacy-title">Privacy</h1>
+      <p>This page is a plain-language stub until final legal copy is ready. The short version: we collect as little as possible.</p>
+      <h2>This marketing site</h2>
+      <ul>
+        <li><strong>No analytics, no cookies, no trackers.</strong> This site is static files on Cloudflare; we chose to run zero analytics rather than a "privacy-respecting" one, so there is nothing to opt out of.</li>
+        <li>Standard server logs (IP address, pages fetched) exist briefly for operations and abuse prevention, then rotate.</li>
+      </ul>
+      <h2>The Keep Cooking app</h2>
+      <ul>
+        <li>Your recipes live on your devices and sync to your household's backend so your phone and iPad agree. We don't sell data, show ads, or share your library with third parties.</li>
+        <li>Photos you add are stored in your household's storage bucket; share links you explicitly create are signed and expire (default under 15 minutes for direct photo URLs).</li>
+        <li>Self-host the backend and your data never touches our servers at all — the code is MIT licensed.</li>
+      </ul>
+      <h2>Export &amp; deletion</h2>
+      <p>Export your library anytime (JSON, Markdown, HTML). To delete your data, delete it in the app or contact us via <a href="https://github.com/tpaulshippy/keep-cooking">GitHub</a> and we'll help.</p>
+      <p><a href="/">← Back home</a></p>
+    </section>
+  </main>
+  <footer>
+    <nav aria-label="Footer">
+      <a href="https://github.com/tpaulshippy/keep-cooking">GitHub</a>
+      <a href="/app">Web app</a>
+      <a href="/privacy.html">Privacy</a>
+    </nav>
+    <p>© 2026 Keep Cooking · MIT License</p>
+  </footer>
+  <script src="/nav.js" defer></script>
+</body>
+</html>
