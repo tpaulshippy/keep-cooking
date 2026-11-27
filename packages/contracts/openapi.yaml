@@ -671,6 +671,11 @@ paths:
                 required: [stored]
                 properties:
                   stored: { type: array, items: { type: string } }
+        '413':
+          description: >-
+            batch exceeds E2E_MAX_PUSH_BATCH (500 envelopes) — chunk and
+            retry. Native outboxes must split large backlog drains into
+            <=500-envelope pushes.
     delete:
       security:
         - DeviceId: []
