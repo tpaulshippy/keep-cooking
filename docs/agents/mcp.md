@@ -10,8 +10,9 @@ notification carrying an `id` is acknowledged with `200` and an empty
 `ping` authenticate per-request via `x-agent-token`; `initialize`,
 `server/discover`, and `notifications/*` accept requests without a token
 (they expose nothing privileged) — but a present-but-unknown token is
-rejected with `401` for every method by the header middleware before
-dispatch, so omit the header instead of guessing. There are no
+rejected with a plain `401 {"error": "..."}` body for every method by the
+header middleware before dispatch (not a JSON-RPC `-32001`), so omit the
+header instead of guessing. There are no
 sessions, so any isolate can serve any call. No new
 dependencies, no Durable Objects, no extra hosting: handlers delegate to the
 same `Store` methods as the REST routes.

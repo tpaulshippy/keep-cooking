@@ -87,8 +87,8 @@ reads).
   different key. Plus the agent exceptions: `POST /agent/enroll` (agent
   enrollment — how agents join; same trust as the unguessable `/v2` bucket)
   and `POST /mcp` (per-method auth lives in the JSON-RPC dispatcher —
-  `initialize`/`notifications` stay usable for handshake, every tool call
-  needs a valid `x-agent-token`). A valid `x-agent-token` is an alternative
+  `initialize`/`server/discover`/`notifications` stay usable for handshake,
+  `ping`/`tools/list`/`tools/call` need a valid `x-agent-token`). A valid `x-agent-token` is an alternative
   credential to the device signature on mutating routes (prod) — see the
   agent bullet above.
 - Signed writes carry `x-device-id` / `x-device-ts` (millis since epoch) /
@@ -128,7 +128,8 @@ reads).
 BASE=https://keep-cooking-api.pshippy-245.workers.dev
 DEVICE_ID=$(uuidgen)   # persist one per device; the private half never leaves it
 
-# 1. enroll (open — the only unsigned write):
+# 1. enroll (open unsigned write — agent enroll + MCP handshake are also
+#    open; see agent exceptions above):
 curl -s -X POST $BASE/v2/devices \
   -H 'content-type: application/json' \
   -d "{\"deviceId\":\"$DEVICE_ID\",\"publicKey\":\"<base64-of-32B-Ed25519-pubkey>\"}"

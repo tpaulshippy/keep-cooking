@@ -543,7 +543,8 @@ export function createApp(
   });
   // GET /photos/dl serves R2 bytes for a signed URL (GET /photos/sign only
   // mints). The HMAC exp/sig is verified first — 400 on missing params, 403
-  // on bad/expired — then the object streams with image/jpeg. 404 when no
+  // on bad/expired — then the object streams with its stored contentType
+  // (image/jpeg for recipe photos). 404 when no
   // fetcher is wired (dev without R2) or the key does not exist.
   app.get('/photos/dl', async (c) => {
     const key = c.req.query('key') ?? '';

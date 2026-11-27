@@ -832,9 +832,10 @@ describe('MCP on the same Worker', () => {
     expect(init.result.protocolVersion).toBe('2026-07-28');
     // tools/list carries the same cache fields alongside the tools array.
     const list = (await (await call(app, rpc('tools/list'), AGENT_TOKEN)).json()) as {
-      result: { tools: unknown[]; ttlMs: number; cacheScope: string };
+      result: { resultType: string; tools: unknown[]; ttlMs: number; cacheScope: string };
     };
     expect(Array.isArray(list.result.tools)).toBe(true);
+    expect(list.result.resultType).toBe('complete');
     expect(list.result.ttlMs).toBe(3600000);
     expect(list.result.cacheScope).toBe('private');
   });
@@ -1094,7 +1095,8 @@ describe('MCP on the same Worker', () => {
     const signed = (await (
       await app.request(`/photos/sign?key=${encodeURIComponent('photos/r1/thumb.jpg')}`)
     ).json()) as { url: string };
-    expect(signed.url).toContain('/photos/sign?');
+    expect(signed.url).toContain('/photos/dl?');
+    expect(signed.url).not.toContain('/photos/sign?');
     const q = new URL(signed.url).search;
     const good = await app.request(`/photos/dl${q}`);
     expect(good.status).toBe(200);

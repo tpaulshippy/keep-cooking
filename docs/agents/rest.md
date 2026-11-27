@@ -59,12 +59,14 @@ curl -s -X POST $BASE/plans "${A[@]}" \
 
 curl -s -X POST $BASE/lists "${A[@]}" \
   -d '{"name":"Week groceries","householdId":"'"$HH"'","items":[{"name":"tomatoes","quantity":"800 g tomatoes"}]}'  # 201
+```
 
 > These v1 routes are plaintext: the server sees titles, ingredients, steps,
 > and plans in full (legacy design, out-of-scope for zero-knowledge — see
 > `docs/e2e-v1.md`). For private content use the encrypted `/v2/sync` pipe
 > below (Blind sync) instead: the server then stores only opaque bytes.
 
+```bash
 curl -s "$BASE/recipes?householdId=$HH" -H "x-agent-token: $TOKEN"  # scoped list
 curl -s "$BASE/export/$RID.md" -H "x-agent-token: $TOKEN"           # markdown export
 ```
@@ -73,7 +75,7 @@ curl -s "$BASE/export/$RID.md" -H "x-agent-token: $TOKEN"           # markdown e
 
 ```bash
 curl -s -X POST $BASE/clip "${A[@]}" -d '{"caption":"Overnight oats\n200 g oats\nStir and chill."}'  # ingest
-curl -s "$BASE/photos/sign?key=photos%2F$RID%2Fthumb.jpg" -H "x-agent-token: $TOKEN"                  # signed URL <15min
+curl -s "$BASE/photos/sign?key=photos%2F$RID%2Fthumb.jpg" -H "x-agent-token: $TOKEN"  # mint; returned URL resolves to bytes via /photos/dl (<15min)
 curl -s -X POST $BASE/share/cookbook "${A[@]}" -d '{"householdId":"'"$HH"'","recipeIds":["'"$RID"'"]}'  # owner-scoped share
 curl -s "$BASE/sync/pull?since=1970-01-01T00:00:00.000Z" -H "x-agent-token: $TOKEN"                    # legacy plaintext pull, scoped
 ```

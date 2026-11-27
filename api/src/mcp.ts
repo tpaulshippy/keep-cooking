@@ -296,10 +296,9 @@ const handlers: Record<string, Handler> = {
       throw httpError(400, "ttl must be an integer in [1, 899]");
     }
     const signed = await signKey(key, { secret: opts.secret, baseUrl: opts.baseUrl, ...(ttl !== undefined ? { ttlSeconds: ttl } : {}) });
-    // Serve bytes via GET /photos/dl (which verifies exp/sig and streams the
-    // R2 object). signKey is shared with the REST mint route, so its
-    // /photos/sign path is rewritten here instead of changing signKey.
-    return { ...signed, url: signed.url.replace('/photos/sign?', '/photos/dl?') };
+    // signKey mints byte-resolving GET /photos/dl URLs (verified + streamed
+    // there), so the tool returns the URL as-is.
+    return signed;
   },
 };
 
@@ -369,6 +368,7 @@ export async function handleMcp(
   if (method === 'ping') return rpcOk(id, {});
   if (method === 'tools/list') {
     return rpcOk(id, {
+      resultType: 'complete',
       tools: (mcpTools as { tools: unknown[] }).tools,
       ttlMs: MCP_DISCOVER_TTL_MS,
       cacheScope: MCP_DISCOVER_CACHE_SCOPE,
