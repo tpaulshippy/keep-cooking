@@ -11,12 +11,15 @@
   <meta property="og:title" content="Keep Cooking — Own your recipes. No subscriptions.">
   <meta property="og:description" content="Free, MIT open-source Paprika replacement: clip, cook, plan, shop, and sync. iOS, Android, and web.">
   <meta property="og:url" content="https://keepcooking.app/">
-  <meta property="og:image" content="https://keepcooking.app/og-image.svg">
+  <meta property="og:image" content="https://keepcooking.app/og-image.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="Keep Cooking logo and tagline: own your recipes, no subscriptions.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Keep Cooking — Own your recipes. No subscriptions.">
   <meta name="twitter:description" content="Free, MIT open-source Paprika replacement: clip, cook, plan, shop, and sync.">
-  <meta name="twitter:image" content="https://keepcooking.app/og-image.svg">
+  <meta name="twitter:image" content="https://keepcooking.app/og-image.png">
   <meta name="theme-color" content="#1a3c34">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
@@ -76,7 +79,7 @@
           </ul>
         </div>
         <figure class="hero-shot">
-          <img src="/img/recipes.png" alt="Keep Cooking recipe list on iPhone showing saved recipes that persist offline" width="320" height="694" fetchpriority="high">
+          <img src="/img/recipes.jpg" alt="Keep Cooking recipe list on iPhone showing saved recipes that persist offline" width="320" height="694" fetchpriority="high">
           <figcaption>Real app: your library, offline-first.</figcaption>
         </figure>
       </div>
@@ -97,22 +100,22 @@
       <p class="section-lede">One app for the whole cooking loop — from a link you saw at lunch to dinner on the table.</p>
       <div class="tour-grid">
         <article class="card">
-          <img src="/img/clip.png" alt="Recipe import review screen showing a parsed recipe ready to save" width="320" height="694" loading="lazy" decoding="async">
+          <img src="/img/clip.jpg" alt="Recipe import review screen showing a parsed recipe ready to save" width="320" height="694" loading="lazy" decoding="async">
           <h3>Clip anything</h3>
           <p>One-tap clip from the web, TikTok, Instagram, or YouTube. Scan cookbook pages and cards, or paste from your clipboard.</p>
         </article>
         <article class="card">
-          <img src="/img/recipes.png" alt="Recipe library with categories on iPhone" width="320" height="694" loading="lazy" decoding="async">
+          <img src="/img/recipes.jpg" alt="Recipe library with categories on iPhone" width="320" height="694" loading="lazy" decoding="async">
           <h3>Cook hands-free</h3>
           <p>Cook mode with step-by-step guidance, ingredient scaling, cross-off lists, tap-to-start timers, and keep-screen-on.</p>
         </article>
         <article class="card">
-          <img src="/img/plan.png" alt="Meal plan confirmation screen adding a week of meals to a shopping list" width="320" height="694" loading="lazy" decoding="async">
+          <img src="/img/plan.jpg" alt="Meal plan confirmation screen adding a week of meals to a shopping list" width="320" height="694" loading="lazy" decoding="async">
           <h3>Plan the week</h3>
           <p>Day, week, and month meal plans with reusable menus — add a whole week to your grocery list in one tap.</p>
         </article>
         <article class="card">
-          <img src="/img/shop.png" alt="Aisle-sorted weekly grocery list on iPhone" width="320" height="694" loading="lazy" decoding="async">
+          <img src="/img/shop.jpg" alt="Aisle-sorted weekly grocery list on iPhone" width="320" height="694" loading="lazy" decoding="async">
           <h3>Shop &amp; pantry</h3>
           <p>Aisle-sorted grocery lists, multiple lists, pantry locations with expiry dates, and barcode scan.</p>
         </article>
@@ -147,7 +150,10 @@
         <li><strong>Not source-available</strong> with Commons-Clause or dual-license riders</li>
         <li><strong>Not sub-locked</strong> like Paprika 4 Premium ($14.99/yr)</li>
       </ul>
-      <p class="hosting-note">Runs on the Cloudflare free tier — one Worker, one D1 database, one R2 bucket. Deploy your own backend in minutes: <code>wrangler d1 create + r2 bucket create + deploy</code>.</p>
+      <p class="hosting-note">Runs on the Cloudflare free tier — one Worker, one D1 database, one R2 bucket. Deploy your own backend in minutes:</p>
+      <pre class="hosting-commands"><code>npx wrangler d1 create keep-cooking
+npx wrangler r2 bucket create keep-cooking-photos
+npm run deploy --prefix api</code></pre>
     </section>
 
     <!-- GET / CTA -->

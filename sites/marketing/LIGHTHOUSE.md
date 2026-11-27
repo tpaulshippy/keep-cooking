@@ -2,6 +2,8 @@
 
 Date: 2026-11-27. Target: `sites/marketing/dist/` served locally
 (`python3 -m http.server`), audited with Lighthouse + Playwright Chromium.
+Re-verified after cubic review fixes (og-image.png, .jpg renames, nav.js,
+CSS/robots tweaks): still 100s on both profiles.
 
 ## Scores (all ≥ 90 ✅)
 
@@ -29,9 +31,27 @@ the eyebrow to `#8f4d15` (≈6:1). Re-ran both profiles → 100s.
 
 ## Reproduce
 
+Terminal A (server):
+
 ```sh
 npm run build --prefix sites/marketing
 cd sites/marketing/dist && python3 -m http.server 8471
+```
+
+Terminal B — desktop:
+
+```sh
 npx lighthouse http://localhost:8471/ --preset=desktop \
   --chrome-flags="--headless --no-sandbox"
 ```
+
+Terminal B — mobile (default motog54 profile, no `--preset` flag):
+
+```sh
+npx lighthouse http://localhost:8471/ \
+  --chrome-flags="--headless --no-sandbox"
+```
+
+Versions at last run: Lighthouse 12.x via npx, Chromium from Playwright
+`chromium-1255` (headless, `--no-sandbox`). Stop the server with Ctrl-C
+(or `pkill -f "http.server 8471"`) when done.

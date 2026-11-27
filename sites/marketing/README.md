@@ -19,9 +19,13 @@ split Pages/Workers projects use — keeping deploys and ownership separate.
    this repo with build command `npm run build --prefix sites/marketing`
    and output directory `sites/marketing/dist`).
 2. Custom domain: `keepcooking.app` (+ `www`).
-3. Path safety: `dist/_routes.json` explicitly excludes `/api/*` and
-   `/app/*`, which are served by the API Worker (`api/wrangler.toml`) and
-   the web-app project (issue #27) — this project owns only `/`.
+3. Path safety: this project serves only the marketing pages (no `/api/*` or
+   `/app/*` files in the output — enforced by the build). Real isolation
+   comes from hosting: `/api/*` is served by the API Worker
+   (`api/wrangler.toml` routes) and `/app/*` by the web-app project
+   (issue #27), both of which take precedence over this Pages project on
+   their paths. The shipped `_routes.json` only affects Functions
+   invocation, not other services — it is kept as a hint, not a guarantee.
 4. No environment variables, secrets, or bindings. No analytics: the site
    ships zero trackers by choice (see `/privacy.html`).
 

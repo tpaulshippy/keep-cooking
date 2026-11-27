@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, mkdirSync, cpSync, writeFileSync } from "node:fs";
+import { readFileSync, existsSync, mkdirSync, cpSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -30,25 +30,40 @@ check("/app CTA link", index.includes('href="/app"'));
 check("store placeholders marked", index.includes("placeholder"));
 check("privacy stub linked", index.includes("/privacy.html"));
 check("JSON-LD SoftwareApplication", index.includes("SoftwareApplication"));
-check("OG tags", index.includes("og:image") && index.includes("og-image.svg"));
-check("alt text on images", !/img(?![^>]*alt=)/.test(index));
+check("OG tags", index.includes("og:image") && index.includes("og-image.png")
+  && index.includes("og:image:width") && index.includes("og:image:height"));
+check("alt text on all images", !/<img\b(?![^>]*\salt=)/.test(index)
+  && !/<img\b(?![^>]*\salt=)/.test(readFileSync(join(pub, "privacy.html"), "utf8")));
 check("no heavy client JS (only nav.js)", !/react|vue|next|alpine|jquery/i.test(index));
-// Path-collision: no /api or /app files of our own
+// Path-collision: no /api or /app files of our own (real isolation is
+// separate hosting — API Worker routes + /app project — plus this absence)
 check("no api dir in public", !existsSync(join(pub, "api")));
 check("no app dir in public", !existsSync(join(pub, "app")));
-for (const f of ["index.html", "privacy.html", "styles.css", "nav.js", "favicon.svg", "og-image.svg", "robots.txt", "sitemap.xml"]) {
+// Every local <img src> must resolve to a file under public/
+for (const m of index.matchAll(/<img\b[^>]*\ssrc="([^"]+)"/g)) {
+  const src = m[1];
+  if (src.startsWith("/")) {
+    check(`img resolves: ${src}`, existsSync(join(pub, src.slice(1))));
+  }
+}
+for (const f of ["index.html", "privacy.html", "styles.css", "nav.js", "favicon.svg", "og-image.svg", "og-image.png", "robots.txt", "sitemap.xml",
+  "img/recipes.jpg", "img/clip.jpg", "img/plan.jpg", "img/shop.jpg"]) {
   check(`asset ${f} exists`, existsSync(join(pub, f)));
 }
 
-// Build: copy public/ -> dist/
+// Build: clear dist/ first (no stale files), then copy public/ -> dist/
+rmSync(dist, { recursive: true, force: true });
 mkdirSync(dist, { recursive: true });
 cpSync(pub, dist, { recursive: true });
+// NOTE: Pages _routes.json only controls Functions invocation — it cannot
+// reserve /api/* or /app/* served by other services. Kept as a harmless
+// hint; real isolation is separate Worker routes + no /api /app files above.
 writeFileSync(join(dist, "_routes.json"), JSON.stringify({
   version: 1,
   include: ["/*"],
   exclude: ["/api/*", "/app/*"],
 }, null, 2) + "\n");
-console.log("dist/ written (with _routes.json excluding /api/* and /app/*)");
+console.log("dist/ rebuilt from public/ (stale files cleared)");
 
 if (failures.length) {
   console.error(`\n${failures.length} check(s) failed`);

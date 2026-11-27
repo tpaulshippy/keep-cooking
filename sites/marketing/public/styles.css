@@ -49,8 +49,8 @@ body {
   display: flex; align-items: center; gap: 1.1rem;
   list-style: none; margin: 0; padding: 0;
 }
-.nav-links a { color: var(--ink); text-decoration: none; }
-.nav-links a:hover { text-decoration: underline; }
+.nav-links a:not(.btn) { color: var(--ink); text-decoration: none; }
+.nav-links a:not(.btn):hover { text-decoration: underline; }
 .nav-toggle {
   display: none; background: none; border: 1px solid var(--line);
   border-radius: 8px; font-size: 1.3rem; padding: .15rem .6rem; cursor: pointer;
@@ -131,9 +131,13 @@ h2 { font-size: clamp(1.6rem, 3.4vw, 2.3rem); line-height: 1.15; color: var(--br
 .free-list { columns: 1; padding-left: 1.2rem; }
 .hosting-note {
   background: var(--card); border: 1px dashed var(--line);
-  border-radius: var(--radius); padding: 1rem 1.2rem;
+  border-radius: var(--radius); padding: 1rem 1.2rem; margin-bottom: 0;
 }
-.hosting-note code { background: #efe8d5; padding: .1rem .4rem; border-radius: 6px; }
+.hosting-commands {
+  background: var(--brand); color: var(--brand-ink);
+  border-radius: var(--radius); padding: 1rem 1.2rem;
+  overflow-x: auto; font-size: .95rem;
+}
 .dl-list { list-style: none; padding: 0; display: grid; gap: 1rem; max-width: 34rem; }
 .dl-list li { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
 .dl-note { color: var(--muted); font-size: .9rem; }
