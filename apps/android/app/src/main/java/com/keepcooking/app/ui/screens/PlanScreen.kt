@@ -57,6 +57,7 @@ import com.keepcooking.app.plan.menuDayCount
 import com.keepcooking.app.plan.menuMealSlots
 import com.keepcooking.app.plan.normalizeMeal
 import com.keepcooking.app.plan.planFeedSubscribeUrl
+import com.keepcooking.app.plan.planMealForMenuSlot
 import com.keepcooking.app.plan.validateDayCount
 import com.keepcooking.app.widgets.SnapshotWriter
 import java.time.DayOfWeek
@@ -105,6 +106,12 @@ private fun encodeMenuEntries(entries: List<MenuEntry>): String =
     runCatching {
         planJson.encodeToString(ListSerializer(MenuEntry.serializer()), entries)
     }.getOrDefault("[]")
+
+/** Entry-backed grid days for the stepper/editor: min(max(growTarget, entryMax+1), 28). */
+private fun gridDaysFor(entries: List<MenuEntry>, growTarget: Int?): Int {
+    val backed = maxOf((entries.maxOfOrNull { it.dayOffset } ?: -1) + 1, 1)
+    return minOf(maxOf(growTarget ?: backed, backed), 28)
+}
 
 private fun menuSyncPayload(menu: MenuEntity, entries: List<MenuEntry>) = buildJsonObject {
     put("id", menu.id)
@@ -182,8 +189,9 @@ fun PlanScreen(container: AppContainer? = null) {
     var renameText by remember { mutableStateOf("") }
     var slotsMenu by remember { mutableStateOf<MenuEntity?>(null) }
     var slotsText by remember { mutableStateOf("") }
-    var dayCountOverrides by remember { mutableStateOf(mapOf<String, Int>()) }
-    var slotsOverrides by remember { mutableStateOf(mapOf<String, List<String>>()) }
+    // Editor-local day-count growth beyond the entry-backed max (persisted
+    // entries always drive the stored day count; see gridDaysFor).
+    var editorExtraDays by remember { mutableStateOf(mapOf<String, Int>()) }
     var pendingShrink by remember { mutableStateOf<Pair<MenuEntity, Int>?>(null) }
     var editingMenu by remember { mutableStateOf<MenuEntity?>(null) }
     var editingEntries by remember { mutableStateOf(listOf<MenuEntry>()) }
@@ -191,12 +199,6 @@ fun PlanScreen(container: AppContainer? = null) {
     var pickerMeal by remember { mutableStateOf<String?>(null) }
     var pickerQuery by remember { mutableStateOf("") }
     var pickerServings by remember { mutableStateOf("4") }
-
-    fun effectiveDayCount(menu: MenuEntity): Int =
-        dayCountOverrides[menu.id] ?: menuDayCount(menuEntriesOf(menu))
-
-    fun effectiveSlots(menu: MenuEntity): List<String> =
-        slotsOverrides[menu.id] ?: menuMealSlots(menuEntriesOf(menu))
 
     fun persistMenu(menu: MenuEntity, entries: List<MenuEntry>) {
         val db = container?.db ?: return
@@ -239,17 +241,21 @@ fun PlanScreen(container: AppContainer? = null) {
             runCatching {
                 val now = System.currentTimeMillis()
                 val did = deviceId.ifEmpty { container.syncEngine.deviceId() }
+                // Fresh read: the in-memory plans state may be stale.
+                val freshPlans = db.plans().livePlans()
                 val expanded = expandMenuEntries(entries)
-                val occupied = plans.filterNot { it.deleted }
-                    .map { it.localDate() to normalizeMeal(it.mealRaw) }.toSet()
+                    .map { it.copy(meal = planMealForMenuSlot(it.meal)) }
+                val dropped = entries.size - expandMenuEntries(entries).size
+                val occupied = freshPlans.filterNot { it.deleted }
+                    .map { it.localDate() to planMealForMenuSlot(it.mealRaw) }.toSet()
                 val (toInsert, skipped) = filterSkipped(expanded, weekStart, occupied, skip)
                 if (!skip) {
-                    // Overwrite: tombstone conflicting plans (same date + meal)
-                    // before inserting, so apply is idempotent per slot.
-                    val conflicts = plans.filterNot { it.deleted }.filter { plan ->
+                    // Overwrite: tombstone conflicting plans (same date + plan
+                    // meal) before inserting, so apply is idempotent per slot.
+                    val conflicts = freshPlans.filterNot { it.deleted }.filter { plan ->
                         toInsert.any { e ->
                             plan.localDate() == weekStart.plusDays(e.dayOffset.toLong()) &&
-                                normalizeMeal(plan.mealRaw) == e.meal
+                                planMealForMenuSlot(plan.mealRaw) == e.meal
                         }
                     }
                     for (conflict in conflicts) {
@@ -296,11 +302,10 @@ fun PlanScreen(container: AppContainer? = null) {
                 }
                 plans = db.plans().livePlans()
                 refreshSnapshot()
-                aggResult = if (skip && skipped > 0) {
-                    "“${menu.name}” applied to week of $weekStart (${rows.size} entries, $skipped skipped)."
-                } else {
-                    "“${menu.name}” applied to week of $weekStart (${rows.size} entries)."
-                }
+                val parts = mutableListOf("${rows.size} entries")
+                if (skip && skipped > 0) parts += "$skipped skipped"
+                if (dropped > 0) parts += "$dropped ignored"
+                aggResult = "“${menu.name}” applied to week of $weekStart (${parts.joinToString(", ")})."
             }.onFailure {
                 aggResult = "Couldn't apply “${menu.name}” (${it.message})."
             }
@@ -358,14 +363,19 @@ fun PlanScreen(container: AppContainer? = null) {
         persistMenu(menu.copy(deleted = true), entries)
     }
 
-    fun applyDayCount(menu: MenuEntity, count: Int) {
-        val clamped = validateDayCount(count)
-        val current = effectiveDayCount(menu)
-        if (clamped >= current) {
-            dayCountOverrides = dayCountOverrides + (menu.id to clamped)
+    fun stepDayCount(menu: MenuEntity, menuEntries: List<MenuEntry>, dayCount: Int, delta: Int) {
+        if (delta >= 0) {
+            editorExtraDays = editorExtraDays + (menu.id to minOf(dayCount + delta, 28))
             return
         }
-        pendingShrink = menu to clamped
+        val target = validateDayCount(dayCount + delta)
+        if (target == dayCount) return
+        val backed = menuDayCount(menuEntries)
+        if (target < backed) {
+            pendingShrink = menu to target
+        } else {
+            editorExtraDays = editorExtraDays + (menu.id to target)
+        }
     }
 
     fun addWeekToList(weekStart: LocalDate) {
@@ -615,12 +625,12 @@ fun PlanScreen(container: AppContainer? = null) {
                 }
             }
 
-            if (menus.isNotEmpty() || showDemoMenus) {
+            if (container != null) {
                 Spacer(Modifier.height(8.dp))
                 Text("Reusable menus", style = MaterialTheme.typography.titleMedium)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = skipFilled, onCheckedChange = { skipFilled = it })
-                    Text("Skip filled days", style = MaterialTheme.typography.bodyMedium)
+                    Text("Skip filled slots", style = MaterialTheme.typography.bodyMedium)
                 }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -636,13 +646,21 @@ fun PlanScreen(container: AppContainer? = null) {
                     )
                     Button(
                         onClick = { createMenu() },
-                        enabled = container != null && newMenuName.trim().isNotEmpty(),
+                        enabled = newMenuName.trim().isNotEmpty(),
                         modifier = Modifier.testTag("menu-create-button"),
                     ) { Text("Create") }
                 }
+                if (menus.isEmpty()) {
+                    Text(
+                        "No reusable menus yet — create one above.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                }
                 menus.forEach { menu ->
                     val menuEntries = menuEntriesOf(menu)
-                    val dayCount = effectiveDayCount(menu)
+                    val dayCount = gridDaysFor(menuEntries, editorExtraDays[menu.id])
+                    val outOfRange = menuEntries.count { it.dayOffset < 0 || it.dayOffset > 27 }
                     Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                         Column(Modifier.padding(12.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -655,10 +673,21 @@ fun PlanScreen(container: AppContainer? = null) {
                                 }
                                 OutlinedButton(
                                     onClick = { applyMenu(menu, weekStart, skipFilled) },
-                                    enabled = container != null && menuEntries.isNotEmpty(),
+                                    enabled = menuEntries.isNotEmpty(),
                                 ) {
                                     Text("Apply to week")
                                 }
+                            }
+                            if (outOfRange > 0) {
+                                Text(
+                                    if (outOfRange == 1) {
+                                        "1 entry outside days 1–28 is ignored on apply."
+                                    } else {
+                                        "$outOfRange entries outside days 1–28 are ignored on apply."
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.secondary,
+                                )
                             }
                             Spacer(Modifier.height(4.dp))
                             Row(
@@ -666,14 +695,8 @@ fun PlanScreen(container: AppContainer? = null) {
                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                             ) {
                                 Text("Days: $dayCount", style = MaterialTheme.typography.labelSmall)
-                                OutlinedButton(
-                                    onClick = { applyDayCount(menu, dayCount - 1) },
-                                    enabled = container != null,
-                                ) { Text("-") }
-                                OutlinedButton(
-                                    onClick = { applyDayCount(menu, dayCount + 1) },
-                                    enabled = container != null,
-                                ) { Text("+") }
+                                OutlinedButton(onClick = { stepDayCount(menu, menuEntries, dayCount, -1) }) { Text("-") }
+                                OutlinedButton(onClick = { stepDayCount(menu, menuEntries, dayCount, +1) }) { Text("+") }
                                 OutlinedButton(
                                     onClick = {
                                         editingMenu = menu
@@ -682,14 +705,14 @@ fun PlanScreen(container: AppContainer? = null) {
                                 ) { Text("Edit") }
                             }
                             Text(
-                                "Meals: ${effectiveSlots(menu).joinToString(", ")}",
+                                "Meals: ${menuMealSlots(menuEntries).joinToString(", ")}",
                                 style = MaterialTheme.typography.labelSmall,
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                 OutlinedButton(
                                     onClick = {
                                         slotsMenu = menu
-                                        slotsText = effectiveSlots(menu).joinToString(", ")
+                                        slotsText = menuMealSlots(menuEntries).joinToString(", ")
                                     },
                                 ) { Text("Meals") }
                                 OutlinedButton(
@@ -704,17 +727,20 @@ fun PlanScreen(container: AppContainer? = null) {
                         }
                     }
                 }
-                if (menus.isEmpty() && showDemoMenus) {
-                    demoMenus.forEach { menu ->
-                        Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(menu.name, style = MaterialTheme.typography.bodyLarge)
-                                    Text("${menu.entryCount} entries", style = MaterialTheme.typography.labelSmall)
-                                }
-                                OutlinedButton(onClick = {}, enabled = false) {
-                                    Text("Apply to week")
-                                }
+            }
+
+            if (showDemoMenus) {
+                Spacer(Modifier.height(8.dp))
+                Text("Reusable menus", style = MaterialTheme.typography.titleMedium)
+                demoMenus.forEach { menu ->
+                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(menu.name, style = MaterialTheme.typography.bodyLarge)
+                                Text("${menu.entryCount} entries", style = MaterialTheme.typography.labelSmall)
+                            }
+                            OutlinedButton(onClick = {}, enabled = false) {
+                                Text("Apply to week")
                             }
                         }
                     }
@@ -771,7 +797,7 @@ fun PlanScreen(container: AppContainer? = null) {
         )
     }
 
-    // --- Meal slots editor dialog ---
+    // --- Meal slots editor dialog: renames matching entry meals, persists. ---
     slotsMenu?.let { menu ->
         AlertDialog(
             onDismissRequest = { slotsMenu = null },
@@ -787,9 +813,30 @@ fun PlanScreen(container: AppContainer? = null) {
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val slots = slotsText.split(",").map { normalizeMeal(it) }.filter { it.isNotEmpty() }
-                        if (slots.isNotEmpty()) slotsOverrides = slotsOverrides + (menu.id to slots)
-                        slotsMenu = null
+                        val current = menuEntriesOf(menu)
+                        val oldSlots = menuMealSlots(current)
+                        val newSlots = slotsText.split(",")
+                            .map { normalizeMeal(it) }
+                            .filter { it.isNotEmpty() }
+                            .distinct()
+                        if (newSlots.isNotEmpty()) {
+                            val mapping = oldSlots.mapIndexedNotNull { i, old ->
+                                if (i < newSlots.size) old to newSlots[i] else null
+                            }.toMap()
+                            val renamed = mutableListOf<MenuEntry>()
+                            var dropped = 0
+                            for (e in current) {
+                                val target = mapping[normalizeMeal(e.meal)]
+                                if (target == null) dropped++ else renamed += e.copy(meal = target)
+                            }
+                            slotsMenu = null
+                            persistMenu(menu, renamed)
+                            if (dropped > 0) {
+                                aggResult = "Meals updated ($dropped entr${if (dropped == 1) "y" else "ies"} removed with deleted slots)."
+                            }
+                        } else {
+                            slotsMenu = null
+                        }
                     },
                 ) { Text("Save") }
             },
@@ -799,17 +846,17 @@ fun PlanScreen(container: AppContainer? = null) {
         )
     }
 
-    // --- Shrink day-count confirm dialog ---
+    // --- Shrink day-count confirm dialog (target is a zero-based offset). ---
     pendingShrink?.let { (menu, target) ->
         AlertDialog(
             onDismissRequest = { pendingShrink = null },
             title = { Text("Shorten menu?") },
-            text = { Text("Entries on day $target and later will be removed.") },
+            text = { Text("Entries on day ${target + 1} and later will be removed.") },
             confirmButton = {
                 TextButton(
                     onClick = {
                         val kept = menuEntriesOf(menu).filter { it.dayOffset < target }
-                        dayCountOverrides = dayCountOverrides + (menu.id to target)
+                        editorExtraDays = editorExtraDays - menu.id
                         pendingShrink = null
                         persistMenu(menu, kept)
                     },
@@ -823,14 +870,30 @@ fun PlanScreen(container: AppContainer? = null) {
 
     // --- Day x meal grid editor dialog ---
     editingMenu?.let { menu ->
-        val slots = effectiveSlots(menu)
-        val dayCount = maxOf(effectiveDayCount(menu), menuDayCount(editingEntries))
+        val slots = menuMealSlots(editingEntries)
+        val entryBacked = maxOf((editingEntries.maxOfOrNull { it.dayOffset } ?: -1) + 1, 1)
+        val gridDays = minOf(maxOf(editorExtraDays[menu.id] ?: entryBacked, entryBacked), 28)
+        val outOfRangeEdit = editingEntries.count { it.dayOffset < 0 || it.dayOffset > 27 }
         AlertDialog(
             onDismissRequest = { editingMenu = null },
             title = { Text("Edit ${menu.name}") },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
-                    for (day in 0 until dayCount) {
+                    if (gridDays > entryBacked) {
+                        Text(
+                            "Extra day(s) are editor-only until you add entries.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
+                    }
+                    if (outOfRangeEdit > 0) {
+                        Text(
+                            "$outOfRangeEdit entr${if (outOfRangeEdit == 1) "y" else "ies"} outside days 1–28 are ignored on apply.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
+                    }
+                    for (day in 0 until gridDays) {
                         Text("Day ${day + 1}", style = MaterialTheme.typography.titleSmall)
                         for (slot in slots) {
                             val cell = editingEntries.filter {
@@ -868,9 +931,9 @@ fun PlanScreen(container: AppContainer? = null) {
             confirmButton = {
                 TextButton(
                     onClick = {
-                        persistMenu(menu, editingEntries)
-                        dayCountOverrides = dayCountOverrides + (menu.id to menuDayCount(editingEntries))
+                        editorExtraDays = editorExtraDays - menu.id
                         editingMenu = null
+                        persistMenu(menu, editingEntries)
                     },
                 ) { Text("Save") }
             },
@@ -880,7 +943,7 @@ fun PlanScreen(container: AppContainer? = null) {
         )
     }
 
-    // --- Recipe picker dialog for one grid cell ---
+    // --- Recipe picker dialog for one grid cell (adds one entry per tap). ---
     if (pickerDay != null && pickerMeal != null) {
         val day = pickerDay ?: 0
         val meal = pickerMeal ?: ""
@@ -907,18 +970,15 @@ fun PlanScreen(container: AppContainer? = null) {
                     OutlinedTextField(
                         value = pickerServings,
                         onValueChange = { pickerServings = it },
-                        label = { Text("Servings") },
+                        label = { Text("Servings (0.25–100)") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
                     candidates.forEach { recipe ->
                         OutlinedButton(
                             onClick = {
-                                val servings = pickerServings.toDoubleOrNull() ?: 4.0
-                                val others = editingEntries.filterNot {
-                                    it.dayOffset == day && normalizeMeal(it.meal) == meal
-                                }
-                                editingEntries = others + MenuEntry(
+                                val servings = pickerServings.toDoubleOrNull()?.coerceIn(0.25, 100.0) ?: 4.0
+                                editingEntries = editingEntries + MenuEntry(
                                     dayOffset = day,
                                     meal = meal,
                                     recipeId = recipe.id,

@@ -7,6 +7,7 @@ import com.keepcooking.app.plan.filterSkipped
 import com.keepcooking.app.plan.menuDayCount
 import com.keepcooking.app.plan.menuMealSlots
 import com.keepcooking.app.plan.normalizeMeal
+import com.keepcooking.app.plan.planMealForMenuSlot
 import com.keepcooking.app.plan.validateDayCount
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
@@ -15,7 +16,7 @@ import org.junit.Test
 
 /**
  * Pure menu-planning helpers (MenuPlanning.kt): day counts, meal slots,
- * normalization, clamping, and skip-vs-overwrite apply semantics.
+ * plan-meal mapping, normalization, clamping, and skip-vs-overwrite apply.
  */
 class MenuPlanningTest {
     private fun entry(day: Int, meal: String, recipe: String = "r1", servings: Double = 4.0) =
@@ -29,18 +30,35 @@ class MenuPlanningTest {
     }
 
     @Test
+    fun dayCountClampsTo28() {
+        assertEquals(28, menuDayCount(listOf(entry(50, "dinner"))))
+        assertEquals(28, menuDayCount(listOf(entry(27, "dinner"))))
+        assertEquals(1, menuDayCount(listOf(entry(-5, "dinner"))))
+    }
+
+    @Test
     fun mealSlotsDistinctNormalizedInOrder() {
         val entries = listOf(entry(0, "Dinner"), entry(1, "dinner"), entry(0, " Snacks "))
         assertEquals(listOf("dinner", "snack"), menuMealSlots(entries))
     }
 
     @Test
-    fun mealSlotsEmptyFallsBackToDefaults() {
+    fun mealSlotsIgnoresEmptyAndFallsBackToDefaults() {
         assertEquals(
             listOf("breakfast", "lunch", "dinner", "snack"),
             menuMealSlots(emptyList()),
         )
         assertEquals(listOf("brunch"), menuMealSlots(emptyList(), listOf("brunch")))
+        // All-blank labels are unusable: fall back to defaults.
+        assertEquals(
+            listOf("breakfast", "lunch", "dinner", "snack"),
+            menuMealSlots(listOf(entry(0, " "), entry(1, ""))),
+        )
+        // Blank labels are skipped but order of the rest is kept.
+        assertEquals(
+            listOf("lunch", "dinner"),
+            menuMealSlots(listOf(entry(0, "  "), entry(0, "Lunch"), entry(1, "dinner"))),
+        )
     }
 
     @Test
@@ -49,6 +67,19 @@ class MenuPlanningTest {
         assertEquals("snack", normalizeMeal("snacks"))
         assertEquals("snack", normalizeMeal(" SNACKS "))
         assertEquals("brunch", normalizeMeal("Brunch"))
+    }
+
+    @Test
+    fun planMealMapsContractMealsAndDefaultsTheRest() {
+        assertEquals("breakfast", planMealForMenuSlot("breakfast"))
+        assertEquals("lunch", planMealForMenuSlot(" Lunch "))
+        assertEquals("dinner", planMealForMenuSlot("DINNER"))
+        assertEquals("snack", planMealForMenuSlot("snacks"))
+        // Custom labels and empties fall back to dinner (plans contract).
+        assertEquals("dinner", planMealForMenuSlot("brunch"))
+        assertEquals("dinner", planMealForMenuSlot("second breakfast"))
+        assertEquals("dinner", planMealForMenuSlot("  "))
+        assertEquals("dinner", planMealForMenuSlot(""))
     }
 
     @Test
@@ -68,6 +99,24 @@ class MenuPlanningTest {
         assertEquals("snack", out[0].meal)
         assertEquals("r1", out[0].recipeId)
         assertEquals(4.0, out[0].servings ?: -1.0, 0.001)
+    }
+
+    @Test
+    fun expandDropsEmptyMeals() {
+        val out = expandMenuEntries(
+            listOf(entry(0, " "), entry(0, ""), entry(0, "dinner")),
+        )
+        assertEquals(1, out.size)
+        assertEquals("dinner", out[0].meal)
+    }
+
+    @Test
+    fun expandDropsOutOfRangeOffsets() {
+        val out = expandMenuEntries(
+            listOf(entry(-1, "dinner"), entry(0, "dinner"), entry(27, "lunch"), entry(28, "lunch"))),
+        )
+        assertEquals(2, out.size)
+        assertEquals(listOf(0, 27), out.map { it.dayOffset })
     }
 
     @Test

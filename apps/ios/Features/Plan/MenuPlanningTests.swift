@@ -91,7 +91,9 @@ final class MenuPlanningTests: XCTestCase {
 
     func testOccupiedKeysNormalizeDayAndMeal() {
         let calendar = Calendar.current
-        let day = Date()
+        // Anchor at start-of-day: adding hours must not cross a midnight
+        // boundary (the old `Date()` anchor flaked near midnight).
+        let day = calendar.startOfDay(for: Date())
         let laterSameDay = calendar.date(byAdding: .hour, value: 5, to: day) ?? day
         let keys = occupiedKeys(plans: [(date: day, meal: "dinner"),
                                         (date: laterSameDay, meal: "SNACKS")])
@@ -129,7 +131,7 @@ final class MenuPlanningTests: XCTestCase {
         XCTAssertEqual(result.skippedCount, 0)
     }
 
-    // MARK: - normalizeMeal + validateDayCount
+    // MARK: - normalizeMeal + validateDayCount + planMealForMenuSlot
 
     func testNormalizeMeal() {
         XCTAssertEqual(normalizeMeal("Dinner"), "dinner")
@@ -137,6 +139,75 @@ final class MenuPlanningTests: XCTestCase {
         XCTAssertEqual(normalizeMeal("SNACK"), "snack")
         XCTAssertEqual(normalizeMeal("  brunch  "), "brunch")
         XCTAssertEqual(normalizeMeal(""), "")
+    }
+
+    func testPlanMealForMenuSlotMapping() {
+        // Canonical meals pass through (normalized first).
+        XCTAssertEqual(planMealForMenuSlot("breakfast"), "breakfast")
+        XCTAssertEqual(planMealForMenuSlot(" Snacks "), "snack")
+        XCTAssertEqual(planMealForMenuSlot("DINNER"), "dinner")
+        // Anything else collapses to dinner: the plans CHECK constraint +
+        // openapi Plan.meal allow only the 4 canonical slots.
+        XCTAssertEqual(planMealForMenuSlot("brunch"), "dinner")
+        XCTAssertEqual(planMealForMenuSlot("appetizer"), "dinner")
+        XCTAssertEqual(planMealForMenuSlot(""), "dinner")
+    }
+
+    // MARK: - Expansion drops (empty meals, out-of-range offsets)
+
+    func testExpandDropsEmptyMeals() {
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: Date())
+        let entries = [entry(dayOffset: 0, meal: "   "),
+                       entry(dayOffset: 0, meal: ""),
+                       entry(dayOffset: 1, meal: "dinner")]
+        let expanded = expandMenuEntries(entries: entries, weekStart: start,
+                                         householdId: "hh", deviceId: "d1")
+        XCTAssertEqual(expanded.count, 1)
+        XCTAssertEqual(expanded.first?.meal, "dinner")
+    }
+
+    func testExpandDropsOutOfRangeOffsets() {
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: Date())
+        let entries = [entry(dayOffset: -1, meal: "dinner"),
+                       entry(dayOffset: 0, meal: "dinner"),
+                       entry(dayOffset: 27, meal: "lunch"),
+                       entry(dayOffset: 28, meal: "breakfast"),
+                       entry(dayOffset: 365, meal: "snack")]
+        let expanded = expandMenuEntries(entries: entries, weekStart: start,
+                                         householdId: "hh", deviceId: "d1")
+        XCTAssertEqual(expanded.map(\.dayOffset).sorted(), [0, 27])
+    }
+
+    // MARK: - Slot rename (pure rename + dedupe)
+
+    func testRenameMenuSlotRenamesMatching() {
+        let entries = [entry(dayOffset: 0, meal: "snack", recipeId: "r1"),
+                       entry(dayOffset: 1, meal: "dinner", recipeId: "r2")]
+        let out = renameMenuSlot(entries: entries, from: "snack", to: "brunch")
+        XCTAssertEqual(out.map(\.meal), ["brunch", "dinner"])
+        XCTAssertEqual(out.map(\.recipeId), ["r1", "r2"])
+    }
+
+    func testRenameMenuSlotDedupesKeepsFirst() {
+        // Renaming "snack" -> "dinner" collides with the existing dinner row
+        // for the same recipe: the duplicate drops, first occurrence wins.
+        let entries = [entry(dayOffset: 0, meal: "snack", recipeId: "r1", servings: 2),
+                       entry(dayOffset: 0, meal: "dinner", recipeId: "r1", servings: 2),
+                       entry(dayOffset: 1, meal: "snack", recipeId: "r2", servings: 1)]
+        let out = renameMenuSlot(entries: entries, from: "snack", to: "dinner")
+        XCTAssertEqual(out.count, 2)
+        XCTAssertEqual(out[0].meal, "dinner")
+        XCTAssertEqual(out[0].recipeId, "r1")
+        XCTAssertEqual(out[1].recipeId, "r2")
+    }
+
+    func testRenameMenuSlotNoops() {
+        let entries = [entry(dayOffset: 0, meal: "dinner")]
+        XCTAssertEqual(renameMenuSlot(entries: entries, from: "dinner", to: "dinner"), entries)
+        XCTAssertEqual(renameMenuSlot(entries: entries, from: "dinner", to: "  "), entries)
+        XCTAssertEqual(renameMenuSlot(entries: entries, from: "", to: "lunch"), entries)
     }
 
     func testValidateDayCountClamps() {

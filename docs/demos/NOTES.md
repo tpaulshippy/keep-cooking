@@ -105,9 +105,13 @@ Unit suite (touched files it compiles): `xcodebuild test -scheme KeepCookingTest
 No `menus.mp4` recorded (no macOS host in CI). Manual simulator path covers
 the same flow on iOS + Android against Room/SwiftData offline-first:
 
-1. Menus tab → **Create** "Week 1 — High protein" → **Edit** → day-count
-   stepper to 7, slots `breakfast,lunch,dinner,snack` → per-cell recipe
-   picker assigns a recipe + servings (photo + name shown) → Save.
+1. iOS: drawer → **Menus** (also via More → Menus). Android: Plan tab →
+   **Reusable menus**. **Create** "Week 1 — High protein" → **Edit** →
+   day-count stepper to 7, rename a slot if desired (slot renames update
+   that slot's entries) → per-cell recipe picker assigns a recipe +
+   servings (iOS shows photo + name, Android shows name) → Save.
+   Only entry-backed days/slots persist and sync — trailing empty days
+   from the stepper are editor-local until filled.
 2. Rename to "Week 1 — HP", **Duplicate** ("Week 1 — HP copy"), delete copy.
 3. **Apply to week** with week-start date → skip-filled ON leaves occupied
    day+meal plans intact (reports skipped count); toggle OFF overwrites
@@ -116,8 +120,12 @@ the same flow on iOS + Android against Room/SwiftData offline-first:
    aggregates menu-applied recipes into the aisle-sorted grocery list.
 5. Offline edit (airplane mode) → reconnect → converges via `SyncEnvelope`
    `entity: "menu"` outbox/LWW path like plans/lists (see
-   `MenuPlanningTests` iOS / `MenuPlanningTest` Android for
-   create → assign → apply → skip-filled unit coverage; API `menus` CRUD
-   smoke in `api/test/recipes.test.ts`).
+   `MenuPlanningTests` iOS / `MenuPlanningTest` Android for helper-unit
+   coverage of day-count, slots, meal mapping, expand, and skip-filled
+   filtering; API `menus` CRUD smoke in `api/test/recipes.test.ts`).
 6. No contract changes: menu length/slots derive from `entries`
    (`dayOffset`/`meal`), persisted in existing `entriesJSON`/`entriesJson`.
+   Custom slot labels are kept on the menu but mapped to a supported plan
+   meal (breakfast/lunch/dinner/snack, else dinner) at apply time, since
+   plans only allow those four; entries with an empty meal or
+   `dayOffset` outside 0–27 are ignored by Apply and reported.

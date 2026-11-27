@@ -1854,20 +1854,29 @@ struct MenusTabView: View {
 
     /// Copies a menu's entries into `weekStart`. Skip-filled (default) leaves
     /// occupied day+meal slots alone; overwrite tombstones conflicting plans
-    /// on those keys first, then inserts everything.
+    /// on those keys first, then inserts everything. Every written meal goes
+    /// through planMealForMenuSlot (plans allow only the 4 canonical meals);
+    /// empty/out-of-range entries are dropped by expandMenuEntries and
+    /// reported in the confirm banner.
     private func apply(_ menu: Menu) {
-        let expanded = expandMenuEntries(entries: menu.entries, weekStart: weekStart,
+        let rawExpanded = expandMenuEntries(entries: menu.entries, weekStart: weekStart,
             householdId: "hh-demo", deviceId: currentDeviceId())
+        let droppedCount = menu.entries.count - rawExpanded.count
+        let droppedNote = droppedCount > 0 ? " (\(droppedCount) ignored: empty or out of range)" : ""
+        let expanded: [ExpandedMenuEntry] = rawExpanded.map {
+            (dayOffset: $0.dayOffset, date: $0.date, meal: planMealForMenuSlot($0.meal),
+             recipeId: $0.recipeId, servings: $0.servings)
+        }
         guard !expanded.isEmpty else {
-            confirm = "\(menu.name) has no entries to apply"
+            confirm = "\(menu.name) has no entries to apply" + droppedNote
             return
         }
         let livePlans = plans.filter { !$0.tombstoned }
-        let occupied = occupiedKeys(plans: livePlans.map { (date: $0.date, meal: $0.mealRaw) })
+        let occupied = occupiedKeys(plans: livePlans.map { (date: $0.date, meal: planMealForMenuSlot($0.mealRaw)) })
         if !skipFilled {
-            let keys = Set(expanded.map { OccupiedMealKey(day: $0.date, meal: $0.meal) })
+            let keys = Set(expanded.map { OccupiedMealKey(day: $0.date, meal: planMealForMenuSlot($0.meal)) })
             for plan in livePlans
-                where keys.contains(OccupiedMealKey(day: plan.date, meal: plan.mealRaw)) {
+                where keys.contains(OccupiedMealKey(day: plan.date, meal: planMealForMenuSlot(plan.mealRaw))) {
                 plan.tombstoned = true
                 plan.updatedAt = Date()
             }
@@ -1876,12 +1885,9 @@ struct MenusTabView: View {
         var count = 0
         for entry in result.toInsert {
             let plan = Plan(householdId: "hh-demo", date: entry.date,
-                meal: MealSlot(rawValue: entry.meal) ?? .dinner,
+                meal: MealSlot(rawValue: planMealForMenuSlot(entry.meal)) ?? .dinner,
                 recipeId: entry.recipeId.isEmpty ? nil : entry.recipeId,
                 servings: entry.servings, deviceId: currentDeviceId())
-            // Custom menu meals (e.g. "brunch") have no MealSlot: keep the
-            // normalized label verbatim instead of collapsing to dinner.
-            if MealSlot(rawValue: entry.meal) == nil { plan.mealRaw = entry.meal }
             context.insert(plan)
             count += 1
         }
@@ -1889,8 +1895,9 @@ struct MenusTabView: View {
         if count > 0 {
             confirm = "Applied \(menu.name): \(count) meals planned"
                 + (result.skippedCount > 0 ? " (\(result.skippedCount) filled skipped)" : "")
+                + droppedNote
         } else {
-            confirm = "\(menu.name): all \(result.skippedCount) slots already filled"
+            confirm = "\(menu.name): all \(result.skippedCount) slots already filled" + droppedNote
         }
     }
 }
@@ -1955,16 +1962,15 @@ private struct MenuRowView: View {
 }
 
 /// Day x meal grid editor for one menu. Persists via `menu.entries` +
-/// updatedAt bump (last-write-wins sync). Slot removals only hide columns;
-/// saved entries with other meals are kept and still apply to weeks.
+/// updatedAt bump (last-write-wins sync). Slots are entry-derived
+/// (menuMealSlots): shrinking the day count drops entries, growing past the
+/// entry-backed max is editor-local until new cells are filled.
 private struct MenuEditorSheet: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     let menu: Menu
     let recipes: [Recipe]
     @State private var dayCount: Int
-    @State private var slots: [String]
-    @State private var slotsText: String
     @State private var cellSelection: MenuCellKey?
     @State private var shrinkAlert = false
     @State private var pendingShrinkTo = 1
@@ -1972,15 +1978,38 @@ private struct MenuEditorSheet: View {
     init(menu: Menu, recipes: [Recipe]) {
         self.menu = menu
         self.recipes = recipes
-        let days = menuDayCount(entries: menu.entries)
-        let slotList = menuMealSlots(entries: menu.entries)
-        _dayCount = State(initialValue: days)
-        _slots = State(initialValue: slotList)
-        _slotsText = State(initialValue: slotList.joined(separator: ", "))
+        _dayCount = State(initialValue: menuDayCount(entries: menu.entries))
     }
 
     private var recipesById: [String: Recipe] {
         Dictionary(uniqueKeysWithValues: recipes.map { ($0.id, $0) })
+    }
+
+    /// Entry-backed length: highest saved offset + 1 (unclamped, so foreign
+    /// or sync data past day 28 still counts). Growing the stepper past this
+    /// is editor-local until new cells are filled; shrinking persists by
+    /// dropping entries.
+    private var entryBackedDays: Int {
+        (menu.entries.map(\.dayOffset).max() ?? -1) + 1
+    }
+
+    /// Grid length: stepper clamped to the entry-backed max and day 28.
+    private var gridDays: Int {
+        min(max(dayCount, entryBackedDays), menuMaxDayCount)
+    }
+
+    /// Entries outside days 1–28 (e.g. synced from the 0–365 API range):
+    /// kept on the menu, ignored by Apply.
+    private var beyondRangeCount: Int {
+        menu.entries.filter { $0.dayOffset < 0 || $0.dayOffset > menuMaxDayCount - 1 }.count
+    }
+
+    /// Slots derive from entries — there is deliberately no "add empty slot"
+    /// control: an entry-less slot cannot persist. Slots appear when their
+    /// cells are filled and vanish when emptied; rename rewrites the
+    /// underlying MenuEntry.meal values instead.
+    private var slots: [String] {
+        menuMealSlots(entries: menu.entries)
     }
 
     var body: some View {
@@ -1991,15 +2020,23 @@ private struct MenuEditorSheet: View {
                         value: Binding(get: { dayCount }, set: requestDayCount),
                         in: 1...28)
                         .accessibilityIdentifier("menu-daycount-stepper")
+                    if dayCount > entryBackedDays {
+                        Text("Extra days save once filled — days without recipes are editor-local.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if beyondRangeCount > 0 {
+                        Text("\(beyondRangeCount) entries outside days 1–28 (e.g. synced) are kept but Apply ignores them.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 Section("Meals") {
-                    TextField("breakfast, lunch, dinner, snack", text: $slotsText)
-                        .submitLabel(.done)
-                        .onSubmit(commitSlots)
-                        .accessibilityIdentifier("menu-slots-field")
-                    Text("Comma-separated. Removing a meal hides its column; saved entries are kept.")
+                    ForEach(slots, id: \.self) { slot in
+                        SlotRenameRow(slot: slot, onSave: { renameSlot(from: slot, to: $0) })
+                    }
+                    Text("Slots come from saved entries. Rename rewrites every matching entry (collisions deduped, first wins).")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                .accessibilityIdentifier("menu-slots-field")
                 Section("Grid") {
                     gridContent
                 }
@@ -2036,7 +2073,7 @@ private struct MenuEditorSheet: View {
                             .frame(minWidth: 104, alignment: .center)
                     }
                 }
-                ForEach(0..<dayCount, id: \.self) { day in
+                ForEach(0..<gridDays, id: \.self) { day in
                     HStack(spacing: 8) {
                         Text("Day \(day + 1)")
                             .font(.caption.bold())
@@ -2112,8 +2149,10 @@ private struct MenuEditorSheet: View {
         }
     }
 
-    /// Stepper sink: growing is instant; shrinking past saved entries needs
-    /// confirmation because entries with dayOffset >= count are dropped.
+    /// Stepper sink: growing past the entry-backed max is editor-local
+    /// (nothing to persist until new cells are filled); shrinking past saved
+    /// entries needs confirmation because entries with dayOffset >= count
+    /// are dropped.
     private func requestDayCount(_ newValue: Int) {
         let clamped = validateDayCount(newValue)
         if clamped >= dayCount {
@@ -2137,16 +2176,41 @@ private struct MenuEditorSheet: View {
         }
     }
 
-    private func commitSlots() {
-        var seen: [String] = []
-        for part in slotsText.split(separator: ",") {
-            let meal = normalizeMeal(String(part))
-            if meal.isEmpty == false && seen.contains(meal) == false {
-                seen.append(meal)
-            }
+    /// Persists a slot rename via renameMenuSlot (dedupe keeps first).
+    private func renameSlot(from old: String, to new: String) {
+        let updated = renameMenuSlot(entries: menu.entries, from: old, to: new)
+        guard updated != menu.entries else { return }
+        menu.entries = updated
+        menu.updatedAt = Date()
+        try? context.save()
+    }
+}
+
+/// Rename field for one entry-derived meal slot. Save rewrites the matching
+/// MenuEntry.meal values via renameMenuSlot (dedupe keeps first); the row
+/// re-renders from entries, so no local slot state is kept.
+private struct SlotRenameRow: View {
+    let slot: String
+    var onSave: (String) -> Void
+    @State private var draft: String
+
+    init(slot: String, onSave: @escaping (String) -> Void) {
+        self.slot = slot
+        self.onSave = onSave
+        _draft = State(initialValue: slot)
+    }
+
+    var body: some View {
+        HStack {
+            TextField("Meal name", text: $draft)
+                .textFieldStyle(.roundedBorder)
+                .submitLabel(.done)
+                .onSubmit { onSave(draft) }
+                .accessibilityIdentifier("menu-slot-rename-\(slot)")
+            Button("Save") { onSave(draft) }
+                .buttonStyle(.bordered)
+                .disabled(normalizeMeal(draft).isEmpty || normalizeMeal(draft) == slot)
         }
-        slots = seen.isEmpty ? menuDefaultSlots : seen
-        slotsText = slots.joined(separator: ", ")
     }
 }
 
