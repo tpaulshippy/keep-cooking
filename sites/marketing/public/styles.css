@@ -175,3 +175,28 @@ footer a { color: var(--brand); }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
 }
+
+/* dark mode */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #101815;
+    --ink: #f2ede0;
+    --brand: #7fbfa9;
+    --brand-ink: #10201b;
+    --accent: #e09a52;
+    --card: #16211d;
+    --line: #2c3d37;
+    --muted: #b9c4ba;
+  }
+  .eyebrow { color: #f0b573; } /* ~8:1 on dark bg, >=4.5 in both modes */
+  .site-header { background: rgba(16, 24, 21, .96); }
+  .proof-stats { background: #1a3c34; color: #f5efe0; }
+  .hero-shot img {
+    border-color: var(--line);
+    box-shadow: 0 24px 60px -24px rgba(0, 0, 0, .8);
+  }
+  .hosting-commands {
+    background: #0b120f; color: #f2ede0; border: 1px solid var(--line);
+  }
+}

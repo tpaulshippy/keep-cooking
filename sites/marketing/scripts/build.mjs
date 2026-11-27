@@ -32,6 +32,12 @@ check("privacy stub linked", index.includes("/privacy.html"));
 check("JSON-LD SoftwareApplication", index.includes("SoftwareApplication"));
 check("OG tags", index.includes("og:image") && index.includes("og-image.png")
   && index.includes("og:image:width") && index.includes("og:image:height"));
+// Dark mode: prefers-color-scheme block present, eyebrow tuned in both modes
+const css = readFileSync(join(pub, "styles.css"), "utf8");
+check("dark mode block present", css.includes("@media (prefers-color-scheme: dark)"));
+check("eyebrow color in light mode", /\.eyebrow\s*\{[^}]*color:\s*#8f4d15/.test(css));
+const darkBlock = css.slice(css.indexOf("@media (prefers-color-scheme: dark)"));
+check("eyebrow color in dark mode", /\.eyebrow\s*\{[^}]*color:\s*#[0-9a-f]{6}/i.test(darkBlock));
 check("alt text on all images", !/<img\b(?![^>]*\salt=)/.test(index)
   && !/<img\b(?![^>]*\salt=)/.test(readFileSync(join(pub, "privacy.html"), "utf8")));
 check("no heavy client JS (only nav.js)", !/react|vue|next|alpine|jquery/i.test(index));
