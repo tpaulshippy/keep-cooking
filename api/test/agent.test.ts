@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 import { createApp } from '../src/index';
 import { MemoryStore } from '../src/store';
 import { D1Store } from '../src/d1store';
-import { householdHash, type EncryptedEnvelope } from '../src/e2e';
+import { householdHash, validateE2EPushBatch, E2E_MAX_PUSH_BATCH, type EncryptedEnvelope } from '../src/e2e';
 import { AGENT_TOKEN_HEADER } from '../src/agent';
 import { deriveAll as deriveAllDocs, encryptEnvelope as docsEncrypt, decryptEnvelope as docsDecrypt, canonicalE2EUpdatedAt } from '../../docs/agents/lib.mjs';
 import mcpTools from '../../packages/contracts/mcp-tools.json';
@@ -171,6 +171,35 @@ describe('agent KDF vectors (docs/agents parity)', () => {
     expect(d.token).not.toBe(AGENT_TOKEN);
     expect(d.verifier).not.toBe(AGENT_VERIFIER);
     expect(d.householdHash).not.toBe(HOUSEHOLD_HASH);
+  });
+
+  it('push batches are capped (413 above E2E_MAX_PUSH_BATCH)', async () => {
+    const d = await deriveAll(SYNC_CODE, HH);
+    const one = await encryptEnvelope(d.dataKey, {
+      kid: d.kid,
+      householdHash: d.householdHash,
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      entity: 'recipe',
+      title: 'Batch Cap Broth',
+    });
+    const atCap = Array(E2E_MAX_PUSH_BATCH).fill(one);
+    expect(validateE2EPushBatch(d.householdHash, atCap)).toHaveLength(E2E_MAX_PUSH_BATCH);
+    const overCap = [...atCap, one];
+    try {
+      validateE2EPushBatch(d.householdHash, overCap);
+      expect.unreachable('over-cap batch must throw');
+    } catch (e) {
+      expect((e as { status?: number }).status).toBe(413);
+    }
+    // HTTP surface: 413, nothing persisted.
+    const { app } = agentApp();
+    const res = await app.request(`/v2/sync/${d.householdHash}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(overCap),
+    });
+    expect(res.status).toBe(413);
+    expect(await (await app.request(`/v2/sync/${d.householdHash}`)).json()).toEqual([]);
   });
 
   it('lib.mjs and the test helpers interoperate (AD-bound payload-only format)', async () => {

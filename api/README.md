@@ -59,7 +59,9 @@ replaces — no double sync. Agent pull/push traffic counts against the D1
 rows-read budget above (each `sync_pull` reads the household's full row set,
 and each `sync_push` envelope reloads it again — a batch of N envelopes
 costs N row-set reads on D1, since `e2ePut` merges the latest D1 snapshot
-per envelope before LWW).
+per envelope before LWW. Batches are capped at 500 envelopes per request
+(413 above that — chunk and retry), so one push costs at most 500 row-set
+reads).
 
 ## Auth / RBAC
 

@@ -10,22 +10,32 @@ touch the wire. Test vectors use the published dummy syncCode
 export BASE=https://<your-worker>
 export HH=hh-agent-demo
 read -rs -p 'syncCode: ' KEY && export KEY   # paste from the app recovery kit; not echoed, never a literal (stays out of shell history)
-# derive with node (prints token/verifier/hash):
-node -e "
+# derive with node (prints token/verifier/hash) — command holds no secret:
+# KEY/HH are already exported, and only the derived values print.
+TOKEN=$(node -e "
 import('./docs/agents/lib.mjs').then(async ({deriveAll}) => {
   const d = await deriveAll(process.env.KEY, process.env.HH);
-  console.log(JSON.stringify({token: d.token, verifier: d.verifier, hash: d.householdHash}, null, 1));
-})"
-TOKEN=<token from above>   # base64url, 43 chars
+  process.stdout.write(d.token);
+})")
+HASH=$(node -e "
+import('./docs/agents/lib.mjs').then(async ({deriveAll}) => {
+  const d = await deriveAll(process.env.KEY, process.env.HH);
+  process.stdout.write(d.householdHash);
+})")
+VERIFIER=$(node -e "
+import('./docs/agents/lib.mjs').then(async ({deriveAll}) => {
+  const d = await deriveAll(process.env.KEY, process.env.HH);
+  process.stdout.write(d.verifier);
+})")
 ```
 
 ## Enroll (once per household; re-enroll to rotate)
 
 ```bash
-# verifier = hex(SHA256(raw token bytes)) — compute it, never send the key
+# verifier = hex(SHA256(raw token bytes)) — derived above, never the key
 curl -s -X POST $BASE/agent/enroll \
   -H 'content-type: application/json' \
-  -d '{"householdHash":"<hash>","householdId":"'"$HH"'","verifier":"<verifier>"}'
+  -d '{"householdHash":"'"$HASH"'","householdId":"'"$HH"'","verifier":"'"$VERIFIER"'"}'
 # -> 201 {"ok":true,"householdId":"hh-agent-demo","householdHash":"<hash>","hashPrefix8":"<8>"}
 
 curl -s $BASE/agent/status -H "x-agent-token: $TOKEN"
