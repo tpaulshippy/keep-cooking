@@ -99,3 +99,25 @@ Unit suite (touched files it compiles): `xcodebuild test -scheme KeepCookingTest
   recorded (stub sheets / no Calendar in sim).
 - iOS 18.5 recording was impossible (installd/widgetkit, above); 18.5 build
   verified green. The stray `KeepCooking26` simulator is intentional test infra.
+
+## Menus demo (issue 25, no recording yet — simulator steps)
+
+No `menus.mp4` recorded (no macOS host in CI). Manual simulator path covers
+the same flow on iOS + Android against Room/SwiftData offline-first:
+
+1. Menus tab → **Create** "Week 1 — High protein" → **Edit** → day-count
+   stepper to 7, slots `breakfast,lunch,dinner,snack` → per-cell recipe
+   picker assigns a recipe + servings (photo + name shown) → Save.
+2. Rename to "Week 1 — HP", **Duplicate** ("Week 1 — HP copy"), delete copy.
+3. **Apply to week** with week-start date → skip-filled ON leaves occupied
+   day+meal plans intact (reports skipped count); toggle OFF overwrites
+   (conflicts tombstoned first, LWW via `updatedAt`).
+4. Plan tab day/week/month shows applied entries; **Add week to list**
+   aggregates menu-applied recipes into the aisle-sorted grocery list.
+5. Offline edit (airplane mode) → reconnect → converges via `SyncEnvelope`
+   `entity: "menu"` outbox/LWW path like plans/lists (see
+   `MenuPlanningTests` iOS / `MenuPlanningTest` Android for
+   create → assign → apply → skip-filled unit coverage; API `menus` CRUD
+   smoke in `api/test/recipes.test.ts`).
+6. No contract changes: menu length/slots derive from `entries`
+   (`dayOffset`/`meal`), persisted in existing `entriesJSON`/`entriesJson`.
