@@ -63,9 +63,8 @@ jobs:
           if [ -n "$INTERNAL_BETA_TOKEN" ]; then
             echo "$INTERNAL_BETA_TOKEN" | npx wrangler secret put INTERNAL_BETA_TOKEN
           fi
-          # Beta household access: the iOS app syncs as x-user-id `beta-user`
-          # (pass 2 replaces this with Apple auth). Prod treats unknown users
-          # as viewers (writes 403), so ensure the beta membership exists.
+          # Beta household access: the iOS app syncs as x-user-id `beta-user`.
+          # Prod treats unknown users as viewers (writes 403), so ensure the beta membership exists.
           npx wrangler d1 execute keep-cooking --remote --command "INSERT INTO households (id, name) VALUES ('hh-demo', 'Keep Cooking') ON CONFLICT(id) DO NOTHING"
           npx wrangler d1 execute keep-cooking --remote --command "INSERT INTO memberships (household_id, user_id, role) VALUES ('hh-demo', 'beta-user', 'owner') ON CONFLICT(household_id, user_id) DO UPDATE SET role = 'owner'"
           # No custom domain yet: publishes to the out-of-the-box
