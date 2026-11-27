@@ -22,8 +22,10 @@ check("hero section present", index.includes('class="hero"') && index.includes('
 for (const w of ["Clip anything", "Cook hands-free", "Plan the week", "Shop &amp; pantry", "Organize your way", "Sync &amp; share"]) {
   check(`tour card "${w}"`, index.includes(w));
 }
-// Copy accuracy vs README: free/MIT, no invented pricing
+// Copy accuracy vs README: free/MIT, no invented pricing (the single
+// allowlisted Paprika migration hook lives in the free section)
 check("no invented pricing", !/\$\d+\.\d+|\/mo|per month/i.test(index.replace("Paprika 4 Premium ($14.99/yr)", "")));
+check("exactly one Paprika mention", (index.match(/paprika/gi) || []).length === 1);
 check("MIT mentioned", index.includes("MIT"));
 check("GitHub link", index.includes("https://github.com/tpaulshippy/keep-cooking"));
 check("/app CTA link", index.includes('href="/app"'));
