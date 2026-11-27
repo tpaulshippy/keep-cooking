@@ -94,6 +94,11 @@
 		FC1C53B008E7D4B24E0C2900 /* LibrarySearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 387AFE136C2733428BD24526 /* LibrarySearch.swift */; };
 		FC8E8046FA88377EB78E834E /* OCRScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2A8C22786FA68F1E6CC4BC9 /* OCRScanView.swift */; };
 		FEE67F59609EDF7A3D0520CB /* recipe-14-dupe.json in Resources */ = {isa = PBXBuildFile; fileRef = A5C9C6D250C6D1A9CA3C5206 /* recipe-14-dupe.json */; };
+		858409DF8917560029B7E013 /* DeviceAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCA46C500C5EE469847B5DFA /* DeviceAuth.swift */; };
+		425E597C743DF30248622FB9 /* DeviceAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCA46C500C5EE469847B5DFA /* DeviceAuth.swift */; };
+		68A9075E61B2A5DBC2A7CF7A /* MenuPlanning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 643087D104C3146F314BB6F9 /* MenuPlanning.swift */; };
+		728629008164321F8E2C9345 /* MenuPlanning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 643087D104C3146F314BB6F9 /* MenuPlanning.swift */; };
+		C86BCF8C20B8DBFE6D2BF00F /* MenuPlanningTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1DF1293845B621A65A655DE /* MenuPlanningTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -204,6 +209,9 @@
 		EACF5E755C544FFBD1793665 /* ShareViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViews.swift; sourceTree = "<group>"; };
 		FB072D7F5ECACC2922F3EBD6 /* SeedLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeedLoader.swift; sourceTree = "<group>"; };
 		FFEB426C01662481C2053D24 /* ClipModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipModels.swift; sourceTree = "<group>"; };
+		DCA46C500C5EE469847B5DFA /* DeviceAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceAuth.swift; sourceTree = "<group>"; };
+		643087D104C3146F314BB6F9 /* MenuPlanning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuPlanning.swift; sourceTree = "<group>"; };
+		E1DF1293845B621A65A655DE /* MenuPlanningTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuPlanningTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -301,6 +309,7 @@
 		6838D55237B323809A3C6089 /* Sync */ = {
 			isa = PBXGroup;
 			children = (
+				DCA46C500C5EE469847B5DFA /* DeviceAuth.swift */,
 				B3A8CBC7B0252EEA4661CB9D /* SyncCrypto.swift */,
 				5DFAC576FA69697C63244F82 /* SyncEngine.swift */,
 				A9C3A3E566A0A70144AE964C /* SyncEngineTests.swift */,
@@ -397,6 +406,8 @@
 		D8159C7788674A2948BEFBF8 /* Plan */ = {
 			isa = PBXGroup;
 			children = (
+				643087D104C3146F314BB6F9 /* MenuPlanning.swift */,
+				E1DF1293845B621A65A655DE /* MenuPlanningTests.swift */,
 				23789FAAD89E65816EC079FC /* PlanAggregation.swift */,
 				001753EFE47673C0075BB23A /* PlanViews.swift */,
 			);
@@ -680,11 +691,14 @@
 				6F3FAE4AB0811C1A26F9172D /* Models.swift in Sources */,
 				FC8E8046FA88377EB78E834E /* OCRScanView.swift in Sources */,
 				5F9CCD36213494A18AABD4B9 /* PlanAggregation.swift in Sources */,
+				728629008164321F8E2C9345 /* MenuPlanning.swift in Sources */,
+				C86BCF8C20B8DBFE6D2BF00F /* MenuPlanningTests.swift in Sources */,
 				52D74B01AC0FC879994D257D /* RecipeScaler.swift in Sources */,
 				146B4607ACF94CD235B22A99 /* ShopHelpers.swift in Sources */,
 				A4D5D3B0FEAA90EA5AB9E853 /* StepTimerParser.swift in Sources */,
 				F0ADD184F26E0FC03B726023 /* SyncEngine.swift in Sources */,
 				5710023B40A0AA1C46BDE9F1 /* SyncCrypto.swift in Sources */,
+				425E597C743DF30248622FB9 /* DeviceAuth.swift in Sources */,
 				AAB93A2259B2B0A1ED976986 /* SyncEngineTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -724,6 +738,7 @@
 				723BC5F8FED26ECCD3C508AA /* Models.swift in Sources */,
 				D69B64F308EF648A7093EFA9 /* OCRScanView.swift in Sources */,
 				8F6BC75DE7F90D499F8E5978 /* PlanAggregation.swift in Sources */,
+				68A9075E61B2A5DBC2A7CF7A /* MenuPlanning.swift in Sources */,
 				1D7D8265EA70F7516559552F /* PlanViews.swift in Sources */,
 				B69C24A0C530C685D90F1F92 /* RecipeExporter.swift in Sources */,
 				B96072184B3458205049DCF6 /* RecipeScaler.swift in Sources */,
@@ -737,6 +752,7 @@
 				E3C48E8CF0791DCCD3666AF9 /* StepTimerParser.swift in Sources */,
 				6FE57C1CFCD71EEE8F3F5588 /* SyncEngine.swift in Sources */,
 				614CBF813B016FD69E868D9E /* SyncCrypto.swift in Sources */,
+				858409DF8917560029B7E013 /* DeviceAuth.swift in Sources */,
 				800694335C558E4E1D5C0F3E /* WidgetSnapshot.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
