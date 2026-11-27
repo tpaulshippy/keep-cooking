@@ -113,7 +113,7 @@ class MenuPlanningTest {
     @Test
     fun expandDropsOutOfRangeOffsets() {
         val out = expandMenuEntries(
-            listOf(entry(-1, "dinner"), entry(0, "dinner"), entry(27, "lunch"), entry(28, "lunch"))),
+            listOf(entry(-1, "dinner"), entry(0, "dinner"), entry(27, "lunch"), entry(28, "lunch")),
         )
         assertEquals(2, out.size)
         assertEquals(listOf(0, 27), out.map { it.dayOffset })

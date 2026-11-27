@@ -36,10 +36,13 @@ Requires Android Studio Hedgehog+ (AGP 8.3, JDK 17) and an Android SDK with
 
 ```bash
 cd apps/android
-./gradlew :app:assembleDebug        # or open in Android Studio and Run
+./gradlew :app:assembleDebug        # pinned wrapper → Gradle 8.7, no system Gradle needed
 ./gradlew :app:testDebugUnitTest   # JUnit4 unit tests (sync LWW contract)
 ./gradlew :app:connectedDebugAndroidTest  # Compose UI tests (needs emulator/device)
 ```
+
+CLI builds must run on JDK 17 (`JAVA_HOME` → a 17 install); newer JDKs break
+the Kotlin 1.9 / KSP 1.x daemon. Covered in CI by `android-check.yml`.
 
 No `local.properties` is checked in — set `sdk.dir` / `ANDROID_HOME` locally.
 

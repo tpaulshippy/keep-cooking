@@ -39,6 +39,12 @@ android {
     packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
 }
 
+// Run Kotlin/KSP on JDK 17 (required by AGP 8.3 + Kotlin 1.9 / KSP 1.x),
+// even when the Gradle daemon itself runs on a newer JDK.
+kotlin {
+    jvmToolchain(17)
+}
+
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
     implementation(composeBom)
