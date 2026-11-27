@@ -1945,12 +1945,12 @@ private struct MenuRowView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("menu-rename-\(menu.id)")
-                Button(action: onDuplicate) label: {
+                Button(action: onDuplicate) {
                     Label("Duplicate", systemImage: "plus.square.on.square")
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("menu-duplicate-\(menu.id)")
-                Button(role: .destructive, action: onDelete) label: {
+                Button(role: .destructive, action: onDelete) {
                     Label("Delete", systemImage: "trash")
                 }
                 .buttonStyle(.plain)
