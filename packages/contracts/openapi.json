@@ -937,6 +937,12 @@
       }
     },
     "securitySchemes": {
+      "AgentToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-agent-token",
+        "description": "Key-derived bearer (base64url of 32 HKDF-SHA256 bytes, domain-separated from the data key \u2014 see docs/agents/). Enroll via POST /agent/enroll, which stores only hex(SHA256(token)). Accepted as an alternative to the Ed25519 device signature on every mutating route (prod): reads are scoped to the enrolled household (out-of-scope reads are 404), writes require an explicit matching householdId (else 403). Blind /v2 envelopes stay opaque \u2014 the server verifies the token, never content."
+      },
       "DeviceId": {
         "description": "enrolled device id (UUIDv4, from POST /v2/devices)",
         "in": "header",
@@ -1290,7 +1296,7 @@
     },
     "/mcp": {
       "post": {
-        "description": "Stateless JSON-RPC 2.0 (Streamable HTTP subset): initialize, tools/list, tools/call, ping. Every call authenticates via x-agent-token; tools are scoped to the enrolled household. Tool schemas are versioned in packages/contracts/mcp-tools.json.",
+        "description": "Stateless JSON-RPC 2.0 (Streamable HTTP subset): initialize (legacy handshake, kept for 2025 clients), server/discover (modern handshake), tools/list, tools/call, ping. Every tool call authenticates via x-agent-token; tools are scoped to the enrolled household. Tool schemas are versioned in packages/contracts/mcp-tools.json.",
         "operationId": "mcpRpc",
         "requestBody": {
           "content": {
@@ -2299,6 +2305,60 @@
             "AgentToken": []
           }
         ]
+      }
+    },
+    "/photos/dl": {
+      "get": {
+        "operationId": "photoDownload",
+        "description": "Serve R2 photo bytes for a signed URL minted by GET /photos/sign (or the photos_sign MCP tool, which targets this route). Verifies the HMAC exp/sig first; no device signature or agent token required (the signature IS the capability, expiring in <15min).",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "exp",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "sig",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "photo bytes (image/jpeg)",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "key, exp, or sig missing"
+          },
+          "403": {
+            "description": "invalid or expired signature"
+          },
+          "404": {
+            "description": "photo serving unconfigured or key does not exist"
+          }
+        }
       }
     }
   },

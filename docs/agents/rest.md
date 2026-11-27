@@ -60,6 +60,11 @@ curl -s -X POST $BASE/plans "${A[@]}" \
 curl -s -X POST $BASE/lists "${A[@]}" \
   -d '{"name":"Week groceries","householdId":"'"$HH"'","items":[{"name":"tomatoes","quantity":"800 g tomatoes"}]}'  # 201
 
+> These v1 routes are plaintext: the server sees titles, ingredients, steps,
+> and plans in full (legacy design, out-of-scope for zero-knowledge — see
+> `docs/e2e-v1.md`). For private content use the encrypted `/v2/sync` pipe
+> below (Blind sync) instead: the server then stores only opaque bytes.
+
 curl -s "$BASE/recipes?householdId=$HH" -H "x-agent-token: $TOKEN"  # scoped list
 curl -s "$BASE/export/$RID.md" -H "x-agent-token: $TOKEN"           # markdown export
 ```
@@ -80,8 +85,8 @@ opaque bytes. The server validates shape + LWW metadata only:
 
 ```bash
 # $ENV_JSON = one EncryptedEnvelope built by lib.mjs
-curl -s -X PUT $BASE/v2/sync/<householdHash> "${A[@]}" -d "[$ENV_JSON]"  # -> {"stored":["<id>"]}
-curl -s "$BASE/v2/sync/<householdHash>?since=1970-01-01T00:00:00.000Z" -H "x-agent-token: $TOKEN"
+curl -s -X PUT $BASE/v2/sync/$HASH "${A[@]}" -d "[$ENV_JSON]"  # -> {"stored":["<id>"]}
+curl -s "$BASE/v2/sync/$HASH?since=1970-01-01T00:00:00.000Z" -H "x-agent-token: $TOKEN"
 # decrypt each envelope with decryptEnvelope(dataKey, env)
 ```
 
@@ -90,3 +95,14 @@ curl -s "$BASE/v2/sync/<householdHash>?since=1970-01-01T00:00:00.000Z" -H "x-age
 - `401 {"error":"unknown agent token (enroll with POST /agent/enroll)"}` — unknown/malformed token (fail closed).
 - `403 {"error":"agent token is scoped to household '<hh>'…"}` — write naming another household (or none).
 - `404 {"error":"not found"}` — out-of-scope single-entity read (no existence oracle).
+- `409 {"error":"householdId label is already bound — present the existing agent token in x-agent-token to re-bind it"}` — enroll names a different householdHash for an already-bound label. Re-bind by presenting the existing token:
+
+```bash
+curl -s -X POST $BASE/agent/enroll -H "x-agent-token: $TOKEN" \
+  -H 'content-type: application/json' \
+  -d '{"householdHash":"'"$HASH"'","householdId":"'"$HH"'","verifier":"'"$VERIFIER"'"}'
+# -> 201; the old hash's enrollment is revoked (its token stops working)
+```
+
+(or `enroll(base, { householdHash, householdId, verifier }, token)` from
+[`lib.mjs`](./lib.mjs) — the optional third argument sends `x-agent-token`).

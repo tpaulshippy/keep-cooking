@@ -450,7 +450,8 @@ export class D1Store extends MemoryStore implements Store {
   override async agentEnroll(e: AgentEnrollment): Promise<AgentEnrollment> {
     // A verifier already bound to a different household hash is a 409
     // (unique verifier index in D1) — reject before touching D1 so a
-    // conflicting write never lands in either store.
+    // conflicting write never lands in either store. Same-household reuse is
+    // fine (token rotation re-enrolls the same hash with a new verifier).
     const clash = await this.agentGetByVerifier(e.verifier);
     if (clash && clash.householdHash !== e.householdHash) {
       const err = new Error('verifier is already bound to a different household hash') as Error & { status?: number };
@@ -472,6 +473,15 @@ export class D1Store extends MemoryStore implements Store {
         .run();
     } catch (err) {
       if (err instanceof Error && /no such table/i.test(err.message)) return super.agentEnroll(e);
+      // A stale isolate skips the in-memory pre-check above (its maps don't
+      // know the binding yet), so D1 raises the unique-constraint failure
+      // instead. Map it to the documented 409 — a conflicting binding is a
+      // client conflict, never a 500.
+      if (err instanceof Error && /UNIQUE constraint failed: agent_enrollments\.(verifier|household_id)/i.test(err.message)) {
+        const conflict = new Error('agent enrollment conflicts with an existing binding') as Error & { status?: number };
+        conflict.status = 409;
+        throw conflict;
+      }
       throw err;
     }
     const changes = (res as { meta?: { changes?: unknown } } | null | undefined)?.meta?.changes;

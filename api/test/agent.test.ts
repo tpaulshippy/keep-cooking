@@ -61,12 +61,17 @@ async function deriveAll(syncCode: string, householdId: string) {
 
 async function encryptEnvelope(
   dataKey: Uint8Array,
-  opts: { kid: string; householdHash: string; id: string; entity: 'recipe'; title: string },
+  opts: { kid: string; householdHash: string; id: string; entity: 'recipe'; title: string; updatedAt?: string },
 ): Promise<EncryptedEnvelope> {
   // Native wire format (see docs/agents/lib.mjs + iOS/Android SyncCrypto):
   // ONLY the inner payload is sealed; the plaintext header is bound via
   // e2eHeaderAD as AES-GCM associated data.
-  const updatedAt = '2026-11-27T12:00:00.000Z';
+  // Mirrors lib.mjs nextAgentUpdatedAt: whole-second AND strictly increasing
+  // (module-level), so rapid seals of one entity never tie and both land.
+  let ms = Math.floor(Date.parse(opts.updatedAt ?? '2026-11-27T12:00:00.000Z') / 1000) * 1000;
+  if (ms <= lastLocalSealMs) ms = lastLocalSealMs + 1000;
+  lastLocalSealMs = ms;
+  const updatedAt = new Date(ms).toISOString();
   const deviceId = 'agent-test';
   const inner = { id: opts.id, title: opts.title, servings: 2, householdId: HH, ingredients: [], steps: [] };
   const key = await crypto.subtle.importKey('raw', dataKey as unknown as ArrayBuffer, 'AES-GCM', false, ['encrypt']);
@@ -96,6 +101,9 @@ async function encryptEnvelope(
 
 /** Domain separator for the E2E header AD binding (mirrors lib.mjs). */
 const E2E_AD_CONTEXT = 'smidgen-e2e-ad-v1';
+
+// Monotonic seal clock for the local helper (mirrors lib.mjs nextAgentUpdatedAt).
+let lastLocalSealMs = 0;
 
 function e2eHeaderAD(h: {
   kid: string; householdHash: string; id: string; updatedAt: string;
@@ -242,7 +250,8 @@ describe('agent KDF vectors (docs/agents parity)', () => {
       deviceId: 'agent-test',
       payload: { id: 'x', title: 'Whole Second Stew', servings: 2, householdId: HH, ingredients: [], steps: [] },
     });
-    expect(env.updatedAt).toBe('2026-11-27T12:00:00.000Z'); // …whole seconds out
+    expect(env.updatedAt.endsWith('.000Z')).toBe(true); // …whole seconds out (monotonic bump may advance it past the input second)
+    expect(Date.parse(env.updatedAt)).toBeGreaterThanOrEqual(Date.parse('2026-11-27T12:00:00.000Z'));
     // iOS formula (floor ms) and Android formula (floor to seconds) agree on
     // agent envelopes — the envelope opens on both implementations.
     const iosMillis = Math.floor(Date.parse(env.updatedAt));
@@ -251,6 +260,38 @@ describe('agent KDF vectors (docs/agents parity)', () => {
     // …and the sealed box still opens (AD over the canonicalized header).
     expect((await docsDecrypt(doc.dataKey, env)).payload.title).toBe('Whole Second Stew');
     expect(await decryptTitle(d.dataKey, env as unknown as EncryptedEnvelope)).toBe('Whole Second Stew');
+  });
+
+  it('rapid agent seals are strictly increasing whole seconds (no same-entity ties)', async () => {
+    const { nextAgentUpdatedAt } = await import('../../docs/agents/lib.mjs');
+    const d = await deriveAll(SYNC_CODE, HH);
+    const doc = await deriveAllDocs(SYNC_CODE, HH);
+    const base = {
+      kid: d.kid,
+      householdHash: d.householdHash,
+      id: '22222222-2222-4222-8222-222222222222',
+      entity: 'recipe' as const,
+      deviceId: 'agent-test',
+      payload: { id: 'x', title: 'Rapid Ragu', servings: 2, householdId: HH, ingredients: [], steps: [] },
+    };
+    // Same input timestamp twice (far from other tests' seals, so the
+    // module-level clock starts here deterministically).
+    const e1 = await docsEncrypt(doc.dataKey, { ...base, updatedAt: '2026-11-27T12:05:00.000Z' });
+    const e2 = await docsEncrypt(doc.dataKey, { ...base, updatedAt: '2026-11-27T12:05:00.000Z' });
+    expect(e1.updatedAt).toBe('2026-11-27T12:05:00.000Z');
+    expect(e2.updatedAt).toBe('2026-11-27T12:05:01.000Z');
+    expect(Date.parse(e2.updatedAt)).toBeGreaterThan(Date.parse(e1.updatedAt));
+    for (const e of [e1, e2]) {
+      // Whole seconds: the iOS (floor ms) and Android (floor to seconds)
+      // AD formulas agree, so the envelope opens on both implementations.
+      expect(Math.floor(Date.parse(e.updatedAt))).toBe(Math.floor(Date.parse(e.updatedAt) / 1000) * 1000);
+      expect((await docsDecrypt(doc.dataKey, e)).payload.title).toBe('Rapid Ragu');
+      expect(await decryptTitle(d.dataKey, e as unknown as EncryptedEnvelope)).toBe('Rapid Ragu');
+    }
+    // The exported stepper is monotonic across calls on its own.
+    const t1 = nextAgentUpdatedAt('2026-11-27T12:06:00.000Z');
+    expect(nextAgentUpdatedAt('2026-11-27T12:06:00.000Z')).not.toBe(t1);
+    expect(Date.parse(nextAgentUpdatedAt('2026-11-27T12:06:00.000Z'))).toBeGreaterThan(Date.parse(t1));
   });
 });
 
@@ -577,6 +618,74 @@ describe('agent enroll + key-only REST', () => {
     expect(await store2.agentGetByVerifier(AGENT_VERIFIER)).toMatchObject({ householdId: HH, householdHash: HOUSEHOLD_HASH });
     expect(await store2.agentGetByLabel(HH)).toMatchObject({ householdHash: HOUSEHOLD_HASH });
   });
+
+  it('agent v2 bucket scope: cross-bucket reads 404, writes 403, own bucket works', async () => {
+    const { app, store } = agentApp();
+    await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
+    const h = agentHeaders(AGENT_TOKEN);
+    const other = 'e'.repeat(64); // well-formed but not the enrolled bucket
+    // Cross-bucket read → 404 (no existence oracle).
+    expect((await app.request(`/v2/sync/${other}`, { headers: h })).status).toBe(404);
+    // Cross-bucket PUT → 403, nothing stored anywhere.
+    const d = await deriveAll(SYNC_CODE, HH);
+    const env = await encryptEnvelope(d.dataKey, {
+      kid: d.kid,
+      householdHash: d.householdHash,
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa01',
+      entity: 'recipe',
+      title: 'Cross Bucket Broth',
+    });
+    expect(
+      (await app.request(`/v2/sync/${other}`, { method: 'PUT', headers: h, body: JSON.stringify([env]) })).status,
+    ).toBe(403);
+    expect(await store.e2eList(other, new Date(0).toISOString())).toEqual([]);
+    expect(await store.e2eList(HOUSEHOLD_HASH, new Date(0).toISOString())).toEqual([]);
+    // Seed the OWN bucket, then cross-bucket DELETE → 403, own bucket intact.
+    expect(
+      (await app.request(`/v2/sync/${HOUSEHOLD_HASH}`, { method: 'PUT', headers: h, body: JSON.stringify([env]) })).status,
+    ).toBe(200);
+    expect((await app.request(`/v2/sync/${other}`, { method: 'DELETE', headers: h })).status).toBe(403);
+    expect(await store.e2eList(HOUSEHOLD_HASH, new Date(0).toISOString())).toHaveLength(1);
+    // Own bucket still works with the token: read 200, wipe 200.
+    expect((await app.request(`/v2/sync/${HOUSEHOLD_HASH}`, { headers: h })).status).toBe(200);
+    expect((await app.request(`/v2/sync/${HOUSEHOLD_HASH}`, { method: 'DELETE', headers: h })).status).toBe(200);
+    expect(await store.e2eList(HOUSEHOLD_HASH, new Date(0).toISOString())).toEqual([]);
+  });
+
+  it('POST /share/cookbook rejects foreign recipeIds for agents (404)', async () => {
+    const { app, store } = agentApp();
+    await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
+    const h = agentHeaders(AGENT_TOKEN);
+    const own = (await (
+      await app.request('/recipes', {
+        method: 'POST',
+        headers: h,
+        body: JSON.stringify({ title: 'Own Shareable', householdId: HH }),
+      })
+    ).json()) as { id: string };
+    const seeded = await app.request('/recipes', {
+      method: 'POST',
+      headers: { 'x-role': 'owner', 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'Foreign', householdId: 'hh-other' }),
+    });
+    expect(seeded.status).toBe(201);
+    const foreignId = ((await seeded.json()) as { id: string }).id;
+    // Foreign recipe in an agent share → 404, nothing created.
+    const bad = await app.request('/share/cookbook', {
+      method: 'POST',
+      headers: h,
+      body: JSON.stringify({ householdId: HH, recipeIds: [foreignId] }),
+    });
+    expect(bad.status).toBe(404);
+    // Own recipe shares fine.
+    const ok = await app.request('/share/cookbook', {
+      method: 'POST',
+      headers: h,
+      body: JSON.stringify({ householdId: HH, recipeIds: [own.id] }),
+    });
+    expect(ok.status).toBe(201);
+    void store;
+  });
 });
 
 describe('blind server: real AES-GCM round-trip, server learns nothing', () => {
@@ -686,6 +795,56 @@ describe('MCP on the same Worker', () => {
     };
     expect(list.result.tools.map((t) => t.name)).toEqual(mcpTools.tools.map((t) => t.name));
     for (const t of list.result.tools) expect(t.inputSchema).toBeDefined();
+  });
+
+  it('server/discover advertises the MCP subset + cache hints; tools/list carries them too', async () => {
+    const { app } = agentApp();
+    await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
+    const disc = (await (await call(app, rpc('server/discover'), AGENT_TOKEN)).json()) as {
+      result: {
+        resultType: string;
+        supportedVersions: string[];
+        capabilities: { tools: object };
+        _meta: { 'io.modelcontextprotocol/serverInfo': { name: string; version: string } };
+        instructions: string;
+        ttlMs: number;
+        cacheScope: string;
+      };
+    };
+    expect(disc.result.resultType).toBe('complete');
+    expect(disc.result.supportedVersions).toEqual(['2026-07-28']);
+    expect(disc.result.capabilities).toEqual({ tools: {} });
+    expect(disc.result._meta['io.modelcontextprotocol/serverInfo']).toMatchObject({
+      name: 'keep-cooking-agent',
+      version: '0.1.0',
+    });
+    expect(typeof disc.result.instructions).toBe('string');
+    expect(disc.result.instructions.length).toBeGreaterThan(0);
+    expect(disc.result.ttlMs).toBe(3600000);
+    expect(disc.result.cacheScope).toBe('private');
+    // Handshake stays public like initialize.
+    const anon = (await (await call(app, rpc('server/discover'))).json()) as { result: { resultType: string } };
+    expect(anon.result.resultType).toBe('complete');
+    // Legacy initialize is unchanged (2025-client compat).
+    const init = (await (await call(app, rpc('initialize'), AGENT_TOKEN)).json()) as {
+      result: { protocolVersion: string };
+    };
+    expect(init.result.protocolVersion).toBe('2026-07-28');
+    // tools/list carries the same cache fields alongside the tools array.
+    const list = (await (await call(app, rpc('tools/list'), AGENT_TOKEN)).json()) as {
+      result: { tools: unknown[]; ttlMs: number; cacheScope: string };
+    };
+    expect(Array.isArray(list.result.tools)).toBe(true);
+    expect(list.result.ttlMs).toBe(3600000);
+    expect(list.result.cacheScope).toBe('private');
+  });
+
+  it('id-less non-notification requests get 202 with no body (not id:null)', async () => {
+    const { app } = agentApp();
+    await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
+    const res = await call(app, { jsonrpc: '2.0', method: 'tools/list' }, AGENT_TOKEN);
+    expect(res.status).toBe(202);
+    expect(await res.text()).toBe('');
   });
 
   it('tools/call recipe_create → get → list without any header stub', async () => {
@@ -850,6 +1009,125 @@ describe('MCP on the same Worker', () => {
   it('GET /mcp is 405', async () => {
     const { app } = agentApp();
     expect((await app.request('/mcp')).status).toBe(405);
+  });
+
+  it('D1 unique bindings (label + verifier) surface as 409; rotations still land', async () => {
+    // Fake D1 enforcing both unique indexes with D1-style error text, shared
+    // by two isolates: the second one starts with empty memory (stale).
+    type Row = { household_hash: string; household_id: string; verifier: string; updated_at: string };
+    const rows = new Map<string, Row>();
+    const fakeDb = {
+      prepare(sql: string) {
+        return {
+          bind: (...args: unknown[]) => ({
+            run: async () => {
+              if (/INSERT INTO agent_enrollments/.test(sql)) {
+                const [hh, label, verifier, ts] = args as string[];
+                for (const r of rows.values()) {
+                  if (r.household_hash === hh) continue; // self-update never conflicts
+                  if (r.verifier === verifier) {
+                    throw new Error('D1_ERROR: UNIQUE constraint failed: agent_enrollments.verifier: SQLITE_CONSTRAINT_UNIQUE');
+                  }
+                  if (r.household_id === label) {
+                    throw new Error('D1_ERROR: UNIQUE constraint failed: agent_enrollments.household_id: SQLITE_CONSTRAINT_UNIQUE');
+                  }
+                }
+                rows.set(hh, { household_hash: hh, household_id: label, verifier, updated_at: ts });
+                return { meta: { changes: 1 } };
+              }
+              if (/DELETE FROM agent_enrollments/.test(sql)) {
+                rows.delete(String(args[0]));
+                return { meta: { changes: 1 } };
+              }
+              return { meta: { changes: 1 } };
+            },
+            all: async () => ({ results: [] as unknown[] }),
+            first: async () => {
+              if (/WHERE household_hash/.test(sql)) {
+                const r = rows.get(String(args[0]));
+                return r ? { ...r } : null;
+              }
+              return null;
+            },
+          }),
+        };
+      },
+    };
+    const fresh = new D1Store(fakeDb as never);
+    const t0 = '2026-11-27T12:00:00.000Z';
+    const t1 = '2026-11-27T12:00:01.000Z';
+    const t2 = '2026-11-27T12:00:02.000Z';
+    // First binding lands.
+    await fresh.agentEnroll({ householdHash: HOUSEHOLD_HASH, householdId: HH, verifier: AGENT_VERIFIER, updatedAt: t0 });
+    // Same label + different hash on a STALE isolate (empty memory, same D1)
+    // hits the household_id unique index → 409, not 500.
+    const stale = new D1Store(fakeDb as never);
+    try {
+      await stale.agentEnroll({ householdHash: 'f'.repeat(64), householdId: HH, verifier: 'c'.repeat(64), updatedAt: t1 });
+      expect.unreachable('duplicate-label-different-hash insert must throw');
+    } catch (e) {
+      expect((e as { status?: number }).status).toBe(409);
+    }
+    // Same verifier + different hash on a stale isolate → 409 too.
+    const stale2 = new D1Store(fakeDb as never);
+    try {
+      await stale2.agentEnroll({ householdHash: 'e'.repeat(64), householdId: 'hh-stale', verifier: AGENT_VERIFIER, updatedAt: t1 });
+      expect.unreachable('duplicate-verifier-different-hash insert must throw');
+    } catch (e) {
+      expect((e as { status?: number }).status).toBe(409);
+    }
+    // Same-hash rotation (new verifier, newer row) still lands on both.
+    await fresh.agentEnroll({ householdHash: HOUSEHOLD_HASH, householdId: HH, verifier: 'd'.repeat(64), updatedAt: t2 });
+    expect(await fresh.agentGetByVerifier('d'.repeat(64))).toMatchObject({ householdId: HH });
+    expect(await fresh.agentGetByVerifier(AGENT_VERIFIER)).toBeNull();
+  });
+
+  it('GET /photos/dl verifies the signature and streams R2 bytes', async () => {
+    const { signKey } = await import('../src/photos');
+    const store = new MemoryStore();
+    const jpeg = new TextEncoder().encode('fake-jpeg-bytes');
+    const photosFetcher = async (key: string) =>
+      key === `photos/r1/thumb.jpg` ? { body: jpeg, contentType: 'image/jpeg' } : null;
+    const secret = 'test-secret';
+    const app = createApp(store, { baseUrl: 'https://api.keepcooking.local', secret, photosFetcher });
+    // Mint via /photos/sign (dev: no token needed), then download.
+    const signed = (await (
+      await app.request(`/photos/sign?key=${encodeURIComponent('photos/r1/thumb.jpg')}`)
+    ).json()) as { url: string };
+    expect(signed.url).toContain('/photos/sign?');
+    const q = new URL(signed.url).search;
+    const good = await app.request(`/photos/dl${q}`);
+    expect(good.status).toBe(200);
+    expect(good.headers.get('content-type')).toContain('image/jpeg');
+    expect(await good.text()).toBe('fake-jpeg-bytes');
+    // Tampered sig → 403; missing params → 400.
+    const tampered = q.replace(/sig=[^&]*/, 'sig=deadbeef');
+    expect((await app.request(`/photos/dl${tampered}`)).status).toBe(403);
+    expect((await app.request('/photos/dl?key=x')).status).toBe(400);
+    // Signed key with no object → 404.
+    const missing = await signKey('photos/nope/thumb.jpg', { secret, baseUrl: 'https://api.keepcooking.local' });
+    expect((await app.request(`/photos/dl${new URL(missing.url).search}`)).status).toBe(404);
+    // Expired signature → 403 (minted in the past).
+    const old = await signKey('photos/r1/thumb.jpg', {
+      secret,
+      baseUrl: 'https://api.keepcooking.local',
+      nowMs: Date.now() - 3600_000,
+    });
+    expect((await app.request(`/photos/dl${new URL(old.url).search}`)).status).toBe(403);
+    // No fetcher wired (dev without R2) → 404 even with a valid signature.
+    const bare = createApp(new MemoryStore(), { baseUrl: 'https://api.keepcooking.local', secret });
+    expect((await bare.request(`/photos/dl${q}`)).status).toBe(404);
+  });
+
+  it('MCP photos_sign targets the /photos/dl byte route', async () => {
+    const { app } = agentApp();
+    await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
+    const out = (await (
+      await call(app, rpc('tools/call', { name: 'photos_sign', arguments: { key: 'photos/x/thumb.jpg' } }), AGENT_TOKEN)
+    ).json()) as { result: { content: { text: string }[] } };
+    const signed = JSON.parse(out.result.content[0]!.text) as { url: string };
+    expect(signed.url).toContain('/photos/dl?');
+    expect(signed.url).not.toContain('/photos/sign?');
   });
 });
 

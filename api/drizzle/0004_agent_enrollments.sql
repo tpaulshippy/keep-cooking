@@ -16,3 +16,4 @@ CREATE TABLE IF NOT EXISTS agent_enrollments (
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_enrollments_verifier ON agent_enrollments(verifier);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_enrollments_household_id ON agent_enrollments(household_id);

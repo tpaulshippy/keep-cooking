@@ -350,8 +350,8 @@
         "type": "object",
         "required": ["recipeIds"],
         "properties": {
-          "recipeIds": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
-          "expiresInDays": { "type": "integer", "default": 30 },
+          "recipeIds": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "maxItems": 500 },
+          "expiresInDays": { "type": "integer", "minimum": 1, "maximum": 365, "default": 30 },
           "householdId": { "type": "string" }
         }
       }
@@ -379,6 +379,7 @@
         "properties": {
           "envelopes": {
             "type": "array",
+            "maxItems": 500,
             "items": {
               "type": "object",
               "required": ["v", "alg", "kid", "householdHash", "id", "entity", "updatedAt", "deviceId", "nonce", "ciphertext"],

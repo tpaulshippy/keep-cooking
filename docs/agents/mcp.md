@@ -1,20 +1,26 @@
 # MCP usage (same Worker, stateless)
 
 `POST /mcp` speaks JSON-RPC 2.0 with the Streamable-HTTP subset:
-`initialize`, `tools/list`, `tools/call`, `ping` (plus `notifications/*`,
+`initialize` (legacy handshake, kept for 2025 clients), `server/discover`
+(modern handshake — returns the supported versions, capabilities, and cache
+hints below), `tools/list`, `tools/call`, `ping` (plus `notifications/*`,
 which are tolerated: bare notifications get `202` with no body, while a
 notification carrying an `id` is acknowledged with `200` and an empty
 `result` so the client doesn't hang). `tools/list`, `tools/call`, and
-`ping` authenticate per-request via `x-agent-token` — `initialize` and
-`notifications/*` do not (they expose nothing privileged); there are no
+`ping` authenticate per-request via `x-agent-token`; `initialize`,
+`server/discover`, and `notifications/*` accept requests without a token
+(they expose nothing privileged) — but a present-but-unknown token is
+rejected with `401` for every method by the header middleware before
+dispatch, so omit the header instead of guessing. There are no
 sessions, so any isolate can serve any call. No new
 dependencies, no Durable Objects, no extra hosting: handlers delegate to the
 same `Store` methods as the REST routes.
 
 Tool schemas are versioned in `packages/contracts/mcp-tools.json` (32 tools:
 CRUD for recipes, lists, pantry, plans, menus + clip, scale, share, export,
-plan feed, sync pull/push, photo signing). `tools/list` serves that file
-verbatim.
+plan feed, sync pull/push, photo signing). `tools/list` serves the `tools`
+array of that file (plus static cache hints `ttlMs: 3600000`,
+`cacheScope: "private"`).
 
 ```bash
 BASE=https://<your-worker>
@@ -28,7 +34,15 @@ curl -s -X POST $BASE/mcp "${M[@]}" \
 #     "capabilities":{"tools":{"listChanged":false}},
 #     "serverInfo":{"name":"keep-cooking-agent","version":"0.1.0"}}}
 
-# list tools (names + inputSchema, exactly mcp-tools.json)
+# modern handshake (MCP 2026-07-28 subset: server/discover only)
+curl -s -X POST $BASE/mcp "${M[@]}" \
+  -d '{"jsonrpc":"2.0","id":0,"method":"server/discover"}'
+# -> {"jsonrpc":"2.0","id":0,"result":{"resultType":"complete",
+#     "supportedVersions":["2026-07-28"],"capabilities":{"tools":{}},
+#     "_meta":{"io.modelcontextprotocol/serverInfo":{"name":"keep-cooking-agent","version":"0.1.0"}},
+#     "instructions":"<one-line tool summary>","ttlMs":3600000,"cacheScope":"private"}}
+
+# list tools (names + inputSchema from the tools array of mcp-tools.json)
 curl -s -X POST $BASE/mcp "${M[@]}" \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 
@@ -43,7 +57,9 @@ curl -s -X POST $BASE/mcp "${M[@]}" -d '{"jsonrpc":"2.0","id":5,"method":"tools/
 ```
 
 Conventions: successful tool results are `result.content[0].text` (a JSON
-string, or raw text for `export_recipe` md/html). Tool-level failures
+string — for `export_recipe` md/html the text is a JSON object such as
+`{"format":"md","content":"..."}`, so parse the text before reading the
+export body). Tool-level failures
 (validation, 404, cross-household writes) come back as `result.isError: true`
 with the message as text — not as JSON-RPC errors. JSON-RPC errors
 (`-32600`, `-32601`, `-32001` auth) are reserved for protocol problems; auth

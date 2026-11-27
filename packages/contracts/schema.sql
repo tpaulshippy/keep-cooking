@@ -85,6 +85,7 @@ CREATE TABLE IF NOT EXISTS agent_enrollments (
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_enrollments_verifier ON agent_enrollments(verifier);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_enrollments_household_id ON agent_enrollments(household_id);
 CREATE INDEX IF NOT EXISTS idx_recipes_household ON recipes(household_id);
 CREATE INDEX IF NOT EXISTS idx_ingredients_recipe ON ingredients(recipe_id);
 CREATE INDEX IF NOT EXISTS idx_steps_recipe ON steps(recipe_id);

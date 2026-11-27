@@ -4,7 +4,8 @@
 // above (same validation, same LWW/tombstone semantics). Auth is per-request
 // via x-agent-token (see agent.ts); there is no session state, so any
 // isolate can serve any call. Tool schemas are versioned in
-// packages/contracts/mcp-tools.json, served verbatim by tools/list.
+// packages/contracts/mcp-tools.json, served as the tools array by
+// tools/list (plus static cache hints).
 
 import { newId, type Store } from './store';
 import type { AgentIdentity } from './agent';
@@ -28,6 +29,10 @@ import mcpTools from '../../packages/contracts/mcp-tools.json';
 export const MCP_PROTOCOL_VERSION = '2026-07-28';
 export const MCP_SERVER_NAME = 'keep-cooking-agent';
 export const MCP_SERVER_VERSION = '0.1.0';
+
+/** Cache hints on server/discover + tools/list (the tool set is static per deploy). */
+export const MCP_DISCOVER_TTL_MS = 3600000;
+export const MCP_DISCOVER_CACHE_SCOPE = 'private';
 
 interface JsonRpcRequest {
   jsonrpc?: unknown;
@@ -290,7 +295,11 @@ const handlers: Record<string, Handler> = {
     if (ttl !== undefined && (!Number.isInteger(ttl) || ttl < 1 || ttl > 899)) {
       throw httpError(400, "ttl must be an integer in [1, 899]");
     }
-    return signKey(key, { secret: opts.secret, baseUrl: opts.baseUrl, ...(ttl !== undefined ? { ttlSeconds: ttl } : {}) });
+    const signed = await signKey(key, { secret: opts.secret, baseUrl: opts.baseUrl, ...(ttl !== undefined ? { ttlSeconds: ttl } : {}) });
+    // Serve bytes via GET /photos/dl (which verifies exp/sig and streams the
+    // R2 object). signKey is shared with the REST mint route, so its
+    // /photos/sign path is rewritten here instead of changing signKey.
+    return { ...signed, url: signed.url.replace('/photos/sign?', '/photos/dl?') };
   },
 };
 
@@ -314,6 +323,7 @@ export async function handleMcp(
     return rpcErr(undefined, -32600, 'invalid request', 200);
   }
   const id = req.id === undefined ? null : (req.id as string | number | null);
+  const hasId = req.id !== undefined;
   const method = String(req.method);
 
   if (method === 'notifications/initialized' || method.startsWith('notifications/')) {
@@ -331,12 +341,38 @@ export async function handleMcp(
       serverInfo: { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
     });
   }
+  // Modern handshake (MCP 2026-07-28 subset: servers MUST implement
+  // server/discover). Public like initialize — it exposes no privileged
+  // data. Legacy initialize stays for 2025 clients.
+  if (method === 'server/discover') {
+    return rpcOk(id, {
+      resultType: 'complete',
+      supportedVersions: [MCP_PROTOCOL_VERSION],
+      capabilities: { tools: {} },
+      _meta: {
+        'io.modelcontextprotocol/serverInfo': { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
+      },
+      instructions:
+        'Keep Cooking agent tools for recipes, plans, lists, pantry, menus, and photos; every call is scoped to the enrolled household.',
+      ttlMs: MCP_DISCOVER_TTL_MS,
+      cacheScope: MCP_DISCOVER_CACHE_SCOPE,
+    });
+  }
+  if (!hasId) {
+    // A JSON-RPC request WITHOUT an id is a notification: no reply (202 +
+    // null body), even for regular methods. Id-bearing behavior is unchanged.
+    return { status: 202, body: null };
+  }
   if (!agent) {
     return rpcErr(id, -32001, 'missing or unknown x-agent-token (enroll with POST /agent/enroll)', 401);
   }
   if (method === 'ping') return rpcOk(id, {});
   if (method === 'tools/list') {
-    return rpcOk(id, { tools: (mcpTools as { tools: unknown[] }).tools });
+    return rpcOk(id, {
+      tools: (mcpTools as { tools: unknown[] }).tools,
+      ttlMs: MCP_DISCOVER_TTL_MS,
+      cacheScope: MCP_DISCOVER_CACHE_SCOPE,
+    });
   }
   if (method === 'tools/call') {
     const params = (req.params ?? {}) as { name?: unknown; arguments?: unknown };

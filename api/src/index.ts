@@ -5,7 +5,7 @@ import { authAttach, agentAttach, authenticateDevice, getAgent, getUser, isProdB
 import { devicesEnroll, devicesRevoke } from './devices';
 import { clipRecipe } from './clip';
 import { scaleRecipe } from './scale';
-import { signKey, variantKeys, DEFAULT_SIGNED_URL_TTL_SECONDS } from './photos';
+import { signKey, variantKeys, verifySignature, DEFAULT_SIGNED_URL_TTL_SECONDS } from './photos';
 import { recipeToHtml, recipeToMarkdown, plansToIcs } from './export';
 import {
   parseOrThrow,
@@ -32,6 +32,13 @@ export interface Env {
   PUBLIC_BASE_URL?: string;
   PHOTOS_SIGNING_SECRET?: string; // HMAC for photo signed URLs only; not auth
 }
+
+/**
+ * R2 byte source for GET /photos/dl. Returns the object's bytes (or null
+ * when the key does not exist). Wired from the PHOTOS binding in the worker
+ * entrypoint; tests pass a fake. Absent in dev without R2 (route 404s).
+ */
+export type PhotoFetcher = (key: string) => Promise<{ body: Uint8Array | ReadableStream | string | null; contentType?: string } | null>;
 
 const VERSION = '0.1.0';
 
@@ -68,12 +75,13 @@ export function resolveStore(env: Env): Store {
 
 export function createApp(
   store: Store,
-  opts: { version?: string; baseUrl?: string; secret?: string; prod?: boolean } = {},
+  opts: { version?: string; baseUrl?: string; secret?: string; prod?: boolean; photosFetcher?: PhotoFetcher } = {},
 ) {
   const app = new Hono<{ Variables: { store: Store } }>();
   const version = opts.version ?? VERSION;
   const baseUrl = (opts.baseUrl ?? 'https://api.keepcooking.local').replace(/\/$/, '');
   const secret = opts.secret ?? 'dev-only-change-me';
+  const photosFetcher = opts.photosFetcher;
   // Prod detection: explicit override wins, else derived from baseUrl
   // (workers.dev / any non-local host => prod). Dev keeps the header stub.
   const prod = opts.prod ?? isProdBaseUrl(baseUrl);
@@ -476,6 +484,16 @@ export function createApp(
     const body = parseOrThrow(shareRequestSchema, await c.req.json().catch(() => ({})));
     requireAgentScope(c, body.householdId);
     await requireOwnerRole(c, getStore(), body.householdId);
+    // Agent recipe scope (#26, mirrors the MCP share_cookbook tool): every
+    // shared recipe must belong to the enrolled household — out-of-scope ids
+    // 404 without confirming existence.
+    const a = getAgent(c);
+    if (a) {
+      for (const rid of body.recipeIds) {
+        const r = await getStore().getRecipe(rid);
+        if (!r || r.householdId !== a.householdId) return c.json({ error: 'not found' }, 404);
+      }
+    }
     const id = newId();
     const expiresAt = new Date(Date.now() + (body.expiresInDays ?? 30) * 86400_000).toISOString();
     const url = `${baseUrl}/s/${id}`;
@@ -522,6 +540,22 @@ export function createApp(
     const ttl = Number(c.req.query('ttl') ?? DEFAULT_SIGNED_URL_TTL_SECONDS);
     const signed = await signKey(key, { secret, baseUrl, ttlSeconds: Number.isFinite(ttl) ? ttl : DEFAULT_SIGNED_URL_TTL_SECONDS });
     return c.json(signed);
+  });
+  // GET /photos/dl serves R2 bytes for a signed URL (GET /photos/sign only
+  // mints). The HMAC exp/sig is verified first — 400 on missing params, 403
+  // on bad/expired — then the object streams with image/jpeg. 404 when no
+  // fetcher is wired (dev without R2) or the key does not exist.
+  app.get('/photos/dl', async (c) => {
+    const key = c.req.query('key') ?? '';
+    const expRaw = c.req.query('exp') ?? '';
+    const sig = c.req.query('sig') ?? '';
+    const exp = Number(expRaw);
+    if (!key || !expRaw || !sig || !Number.isFinite(exp)) return c.json({ error: 'key, exp, and sig are required' }, 400);
+    if (!(await verifySignature(key, exp, sig, secret))) return c.json({ error: 'invalid or expired signature' }, 403);
+    if (!photosFetcher) return c.json({ error: 'photo serving is not configured' }, 404);
+    const obj = await photosFetcher(key);
+    if (!obj || !obj.body) return c.json({ error: 'not found' }, 404);
+    return new Response(obj.body, { headers: { 'content-type': obj.contentType ?? 'image/jpeg' } });
   });
 
   // ---------- sync ----------
@@ -644,17 +678,25 @@ export function createApp(
   // PUT/GET /v2/sync/:hash — :hash is the hex householdHash deriving bucket
   // identity. Plaintext v1 envelopes fail schema validation (400). Photos
   // stay inline in ciphertext for pass 1 — no dedicated photo route.
+  // Agent bucket scope (#26): a token authenticates exactly one bucket.
+  // Cross-bucket reads 404 (no existence oracle); cross-bucket writes 403.
   app.get('/v2/sync/:hash', async (c) => {
     const hash = c.req.param('hash') ?? '';
     if (!E2E_HASH_RE.test(hash)) return c.json({ error: 'invalid household hash' }, 400);
     const raw = c.req.query('since') ?? '1970-01-01T00:00:00.000Z';
     const parsed = new Date(raw);
     if (Number.isNaN(parsed.getTime())) return c.json({ error: 'invalid since' }, 400);
+    const a = getAgent(c);
+    if (a && hash !== a.householdHash) return c.json({ error: 'not found' }, 404);
     return c.json(await getStore().e2eList(hash, parsed.toISOString()));
   });
   app.put('/v2/sync/:hash', async (c) => {
     const hash = c.req.param('hash') ?? '';
     if (!E2E_HASH_RE.test(hash)) return c.json({ error: 'invalid household hash' }, 400);
+    const a = getAgent(c);
+    if (a && hash !== a.householdHash) {
+      return c.json({ error: `agent token is scoped to household '${a.householdId}'` }, 403);
+    }
     const raw = await c.req.json().catch(() => null);
     // Validate-first (shared with the MCP sync_push tool): a bad batch never
     // partially lands. The 422 shape keeps its `entity` field for clients.
@@ -675,6 +717,10 @@ export function createApp(
   app.delete('/v2/sync/:hash', async (c) => {
     const hash = c.req.param('hash') ?? '';
     if (!E2E_HASH_RE.test(hash)) return c.json({ error: 'invalid household hash' }, 400);
+    const a = getAgent(c);
+    if (a && hash !== a.householdHash) {
+      return c.json({ error: `agent token is scoped to household '${a.householdId}'` }, 403);
+    }
     // Whole-bucket wipe. No household membership lookup is possible from an
     // opaque hash, so no role check applies in either env. Per-id delete
     // travels as a deleted=true tombstone envelope via PUT.
@@ -689,11 +735,20 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const store = resolveStore(env);
     if (store instanceof D1Store) await store.hydrate();
+    const photos = env.PHOTOS as
+      | { get: (key: string) => Promise<{ body: ReadableStream | null; httpMetadata?: { contentType?: string } } | null> }
+      | undefined;
     const app = createApp(store, {
       version: env.APP_VERSION ?? VERSION,
       baseUrl: env.PUBLIC_BASE_URL ?? 'https://api.keepcooking.local',
       secret: env.PHOTOS_SIGNING_SECRET ?? 'dev-only-change-me',
       // prod derived from PUBLIC_BASE_URL via isProdBaseUrl (workers.dev => prod)
+      photosFetcher: photos
+        ? async (key: string) => {
+            const obj = await photos.get(key);
+            return obj ? { body: obj.body, contentType: obj.httpMetadata?.contentType } : null;
+          }
+        : undefined,
     });
     return app.fetch(request);
   },

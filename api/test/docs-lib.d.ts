@@ -39,6 +39,7 @@ declare module '*docs/agents/lib.mjs' {
   }
   export function e2eHeaderAD(h: DocsEnvelopeHeader): Uint8Array;
   export function canonicalE2EUpdatedAt(updatedAt: string): string;
+  export function nextAgentUpdatedAt(updatedAt: string): string;
   export function encryptEnvelope(dataKey: Uint8Array, params: DocsEnvelopeHeader & { payload: unknown }): Promise<DocsEncryptedEnvelope>;
   export function decryptEnvelope(
     dataKey: Uint8Array,

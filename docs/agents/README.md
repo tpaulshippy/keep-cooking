@@ -47,7 +47,7 @@ omitted `householdId` to the enrolled household (`403` on mismatch).
 
 | Route class | Plaintext visible | Blind? |
 |---|---|---|
-| `PUT/GET /v2/sync/:hash` (+ MCP `sync_push`/`sync_pull`) | routing header only (`v/alg/kid/hash/id/entity/updatedAt/deviceId/deleted/nonce`) | **yes** — ciphertext is opaque; server holds no key |
+| `PUT/GET /v2/sync/:hash` (+ MCP `sync_push`/`sync_pull`) | routing header only (`v/alg/kid/householdHash/id/entity/updatedAt/deviceId/deleted/nonce`) | **yes** — ciphertext is opaque; server holds no key |
 | `POST /agent/enroll`, `GET /agent/status` | householdHash, householdId label, verifier hash | capability binding, no key material |
 | v1 REST (`/recipes`, `/lists`, `/pantry`, `/plans`, `/menus`, `/share/*`, `/export/*`, `/sync/*`, `/photos/sign`) + same-named MCP tools | entity fields in full (legacy plaintext design) | **no** — documented out-of-scope for zero-knowledge (see `docs/e2e-v1.md`); use the blind pipe for private content |
 | `POST /clip` (+ MCP `clip`) | submitted URL/caption | **no** — fetch-and-parse inherently sees input |

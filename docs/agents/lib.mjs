@@ -26,6 +26,13 @@
 // (floor(ms) == ms when ms=000), so agent envelopes open on BOTH current
 // implementations. Do NOT touch apps/ to "fix" this here — the app-side gap
 // is out of scope; the agent just never emits fractional seconds.
+//
+// SAME-SECOND TIES: the server keeps the earlier envelope when two seals of
+// one entity share a timestamp (LWW on strictly-greater updatedAt), so two
+// rapid seals inside one second would silently drop the second. To prevent
+// that, encryptEnvelope bumps a floored value that is not ahead of the
+// previous seal forward to the next whole second (module-level lastMillis) —
+// rapid seals are whole-second AND strictly increasing, so both land.
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -115,15 +122,30 @@ export function canonicalE2EUpdatedAt(updatedAt) {
   return new Date(Math.floor(Date.parse(updatedAt) / 1000) * 1000).toISOString();
 }
 
+// Monotonic whole-second sealer: floored values that do not advance past the
+// previous seal move forward to the next whole second, so rapid seals of one
+// entity never tie (the server keeps the earlier envelope on equal
+// timestamps). Module-level: all seals from this import share the clock.
+let lastSealedMillis = 0;
+
+/** Whole-second ISO string strictly after every previous seal from this module. */
+export function nextAgentUpdatedAt(updatedAt) {
+  let ms = Math.floor(Date.parse(updatedAt) / 1000) * 1000;
+  if (ms <= lastSealedMillis) ms = lastSealedMillis + 1000;
+  lastSealedMillis = ms;
+  return new Date(ms).toISOString();
+}
+
 /** AES-GCM-256 encrypt a v1 SyncEnvelope payload into an EncryptedEnvelope.
  * Wire format mirrors the apps exactly: ONLY `payload` is sealed; the header
  * stays plaintext and is bound via `e2eHeaderAD` as AES-GCM associated data,
  * so iOS/Android open agent-sealed envelopes (and vice versa).
- * `updatedAt` is canonicalized to whole seconds before sealing (agent rule
- * above), so the wire header and the bound AD always carry a `.000Z` value
- * both app implementations reproduce. */
+ * `updatedAt` is canonicalized to a strictly increasing whole-second value
+ * before sealing (see the header rule above), so the wire header and the
+ * bound AD always carry a `.000Z` value both app implementations reproduce
+ * — and rapid seals never tie. */
 export async function encryptEnvelope(dataKey, { kid, householdHash, id, entity, updatedAt, deviceId, deleted = false, payload }) {
-  const wireUpdatedAt = canonicalE2EUpdatedAt(updatedAt);
+  const wireUpdatedAt = nextAgentUpdatedAt(updatedAt);
   const key = await crypto.subtle.importKey('raw', dataKey, 'AES-GCM', false, ['encrypt']);
   const ad = e2eHeaderAD({ kid, householdHash, id, updatedAt: wireUpdatedAt, deviceId, deleted, entity });
   const nonce = crypto.getRandomValues(new Uint8Array(12));
@@ -175,10 +197,10 @@ export async function decryptEnvelope(dataKey, env) {
   };
 }
 
-export async function enroll(base, { householdHash, householdId, verifier }) {
+export async function enroll(base, { householdHash, householdId, verifier }, token) {
   const res = await fetch(`${base}/agent/enroll`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...(token ? { 'x-agent-token': token } : {}) },
     body: JSON.stringify({ householdHash, householdId, verifier }),
   });
   if (res.status !== 201) throw new Error(`enroll failed: ${res.status} ${await res.text()}`);

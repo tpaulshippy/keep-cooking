@@ -79,19 +79,26 @@ reads).
   device once, then sign every write. The household E2E key (see
   `docs/e2e-v1.md`) is a different secret: it encrypts recipe content and
   never leaves the device — it is never sent to, or verified by, the server.
-- Enroll (open — the only unsigned write):
-  `POST /v2/devices { deviceId: UUIDv4, publicKey: base64(32B Ed25519),
-  displayName? }` → `201 { deviceId, enrolledAt }` on first enroll,
-  `200` on idempotent re-enroll with the same key, `410` when the id was
-  revoked (gone — enroll a fresh `deviceId` instead), `409` when the id is
-  already enrolled with a different key.
+- Enroll open writes (no device signature): `POST /v2/devices
+  { deviceId: UUIDv4, publicKey: base64(32B Ed25519), displayName? }` →
+  `201 { deviceId, enrolledAt }` on first enroll, `200` on idempotent
+  re-enroll with the same key, `410` when the id was revoked (gone — enroll
+  a fresh `deviceId` instead), `409` when the id is already enrolled with a
+  different key. Plus the agent exceptions: `POST /agent/enroll` (agent
+  enrollment — how agents join; same trust as the unguessable `/v2` bucket)
+  and `POST /mcp` (per-method auth lives in the JSON-RPC dispatcher —
+  `initialize`/`notifications` stay usable for handshake, every tool call
+  needs a valid `x-agent-token`). A valid `x-agent-token` is an alternative
+  credential to the device signature on mutating routes (prod) — see the
+  agent bullet above.
 - Signed writes carry `x-device-id` / `x-device-ts` (millis since epoch) /
   `x-device-sig` (base64 Ed25519 over the canonical string
   `METHOD + "\n" + path+query + "\n" + ts + "\n" + hex(SHA256(bodyBytes))`;
   the empty body hashes as `hex(SHA256(""))`). Reads (`GET`/`HEAD`/`OPTIONS`)
   plus `GET /health`, `GET /openapi.json`, and `POST /v2/devices`
-  (enrollment) stay open; every other `POST`/`PUT`/`DELETE` requires a valid
-  signature (`401` otherwise). Replay window `|now - ts| <= 5 min` is a
+  (enrollment), plus `POST /agent/enroll` and `POST /mcp` (agent exceptions —
+  see above), stay open at the device gate; every other `POST`/`PUT`/`DELETE`
+  requires a valid signature or a valid `x-agent-token` (`401` otherwise). Replay window `|now - ts| <= 5 min` is a
   documented limitation, not a nonce ledger: two identical writes inside the
   window both verify (handlers are idempotent, so this is safe). This has
   nothing to do with the E2E envelope `nonce` (`api/src/e2e.ts`), which is a
