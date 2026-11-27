@@ -176,7 +176,9 @@ export async function authAttach(c: Context, next: Next) {
 export function agentAttach(store: Store) {
   return async function agentAttachMw(c: Context, next: Next) {
     const tok = c.req.header(AGENT_TOKEN_HEADER);
-    if (!tok) return next();
+    // Missing header → non-agent path. A PRESENT header (even empty) must
+    // verify or 401 — an empty value is not "no header" (fail closed).
+    if (tok === undefined) return next();
     if (new URL(c.req.url).pathname === '/health') return next();
     const verifier = await agentVerifierFor(tok);
     const enr = verifier ? await store.agentGetByVerifier(verifier) : null;

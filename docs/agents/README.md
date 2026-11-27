@@ -39,9 +39,9 @@ Key derivation (locked — changing any string orphans buckets):
 | verifier | `hex(SHA256(raw token bytes))` | stored server-side (one-way) |
 
 `householdId` is an explicit **non-secret label** (from the invite bundle,
-e.g. `hh-demo`). Secrecy comes from the syncCode, not the label. Agents must
-pass the label explicitly on writes — the server never silently defaults an
-agent into another household (`403` otherwise).
+e.g. `hh-demo`). Secrecy comes from the syncCode, not the label. REST writes
+require the label explicitly (`403` otherwise); MCP mutations default an
+omitted `householdId` to the enrolled household (`403` on mismatch).
 
 ## What the server ever sees (plaintext)
 

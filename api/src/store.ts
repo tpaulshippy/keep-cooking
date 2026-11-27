@@ -216,6 +216,9 @@ export interface Store {
   // to a plaintext householdId label + token verifier (a hash, never a key).
   agentEnroll(e: AgentEnrollment): Promise<AgentEnrollment>;
   agentGetByVerifier(verifier: string): Promise<AgentEnrollment | null>;
+  // Plaintext householdId label -> enrollment (the label is non-secret; the
+  // hash binding is what a re-bind must prove, see POST /agent/enroll).
+  agentGetByLabel(label: string): Promise<AgentEnrollment | null>;
 }
 
 // ---------- shared assemblers (used by both stores) ----------
@@ -578,17 +581,38 @@ export class MemoryStore implements Store {
   // a hash replaces the verifier (token rotation without data-key rotation).
   private agentByHash = new Map<string, AgentEnrollment>();
   private agentByVerifier = new Map<string, string>(); // verifier -> householdHash
+  private agentByLabel = new Map<string, string>(); // householdId label -> householdHash
 
   async agentEnroll(e: AgentEnrollment): Promise<AgentEnrollment> {
+    // A verifier already bound to a different hash must never be silently
+    // re-pointed: D1 rejects the same upsert through its unique verifier
+    // index, so memory must reject too (else one token resolves to different
+    // households depending on the isolate). Check before mutating anything.
+    const clash = this.agentByVerifier.get(e.verifier);
+    if (clash && clash !== e.householdHash) {
+      const err = new Error('verifier is already bound to a different household hash') as Error & { status?: number };
+      err.status = 409;
+      throw err;
+    }
     const prev = this.agentByHash.get(e.householdHash);
     if (prev && prev.verifier !== e.verifier) this.agentByVerifier.delete(prev.verifier);
+    if (prev && prev.householdId !== e.householdId && this.agentByLabel.get(prev.householdId) === e.householdHash) {
+      this.agentByLabel.delete(prev.householdId);
+    }
     this.agentByHash.set(e.householdHash, e);
     this.agentByVerifier.set(e.verifier, e.householdHash);
+    this.agentByLabel.set(e.householdId, e.householdHash);
     return e;
   }
 
   async agentGetByVerifier(verifier: string): Promise<AgentEnrollment | null> {
     const hash = this.agentByVerifier.get(verifier);
+    if (!hash) return null;
+    return this.agentByHash.get(hash) ?? null;
+  }
+
+  async agentGetByLabel(label: string): Promise<AgentEnrollment | null> {
+    const hash = this.agentByLabel.get(label);
     if (!hash) return null;
     return this.agentByHash.get(hash) ?? null;
   }

@@ -32,6 +32,7 @@ function check(step, res, want) {
 
 const d = await deriveAll(KEY, HOUSEHOLD);
 console.log(`derived kid=${d.kid} hashPrefix8=${d.hashPrefix8} (syncCode never leaves this machine)`);
+console.log(`target ${BASE} household "${HOUSEHOLD}" — demo records will be created there; keep the default scratch label, never a real household.`);
 
 // 1. enroll the token verifier (server stores a hash of the token, not the key)
 const e = await enroll(BASE, { householdHash: d.householdHash, householdId: HOUSEHOLD, verifier: d.verifier });
@@ -81,12 +82,12 @@ const env = await encryptEnvelope(d.dataKey, {
   entity: 'recipe',
   updatedAt: new Date().toISOString(),
   deviceId: `agent-${d.hashPrefix8}`,
-  payload: { id: recipe.id, title: recipe.title, servings: 4, householdId: HOUSEHOLD, ingredients: [], steps: [] },
+  payload: { ...recipe, householdId: HOUSEHOLD },
 });
 check('blind sync_push', await api('PUT', `/v2/sync/${d.householdHash}`, [env]), 200);
 const pulled = check('blind sync_pull', await api('GET', `/v2/sync/${d.householdHash}?since=1970-01-01T00:00:00.000Z`), 200);
 const back = await decryptEnvelope(d.dataKey, pulled.find((x) => x.id === recipe.id));
-console.log(`ok blind decrypt -> title "${back.payload.title}" (server only ever saw ciphertext)`);
+console.log(`ok blind decrypt -> title "${back.payload.title}" (the /v2 sync payload traveled as ciphertext only)`);
 
 console.log('\nworked session complete:');
 console.log(`  recipe ${recipe.id} "${recipe.title}"`);

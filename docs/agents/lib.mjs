@@ -70,12 +70,35 @@ export async function deriveAll(syncCode, householdId) {
   };
 }
 
-/** AES-GCM-256 encrypt a v1 SyncEnvelope payload into an EncryptedEnvelope. */
+/** Domain separator for the E2E header associated-data binding. Must match
+ * `e2eADContext` (iOS SyncCrypto.swift) / `E2E_AD_CONTEXT` (Android
+ * SyncCrypto.kt): AES-GCM authenticates (but does not encrypt) these bytes,
+ * so a blind-server header swap fails open instead of decrypting under a
+ * forged header. Encoded as a JSON string array — deterministic. */
+export const E2E_AD_CONTEXT = 'smidgen-e2e-ad-v1';
+
+/**
+ * Canonical associated data binding the sealed payload to its plaintext
+ * routing header. Parts (all strings): [context, v, alg, kid,
+ * householdHash, id, updatedAtMillis, deviceId, deletedFlag, entity].
+ * `updatedAt` binds whole MILLISECONDS parsed from the exact wire string —
+ * the same value both sides recompute after the JSON round-trip.
+ */
+export function e2eHeaderAD({ v = 2, alg = 'AES-GCM-256', kid, householdHash, id, updatedAt, deviceId, deleted = false, entity }) {
+  const millis = Math.floor(Date.parse(updatedAt));
+  const parts = [E2E_AD_CONTEXT, String(v), alg, kid, householdHash, id, String(millis), deviceId, deleted ? '1' : '0', entity];
+  return enc.encode(JSON.stringify(parts));
+}
+
+/** AES-GCM-256 encrypt a v1 SyncEnvelope payload into an EncryptedEnvelope.
+ * Wire format mirrors the apps exactly: ONLY `payload` is sealed; the header
+ * stays plaintext and is bound via `e2eHeaderAD` as AES-GCM associated data,
+ * so iOS/Android open agent-sealed envelopes (and vice versa). */
 export async function encryptEnvelope(dataKey, { kid, householdHash, id, entity, updatedAt, deviceId, deleted = false, payload }) {
-  const wire = { id, updatedAt, deviceId, deleted, entity, payload };
   const key = await crypto.subtle.importKey('raw', dataKey, 'AES-GCM', false, ['encrypt']);
+  const ad = e2eHeaderAD({ kid, householdHash, id, updatedAt, deviceId, deleted, entity });
   const nonce = crypto.getRandomValues(new Uint8Array(12));
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, key, enc.encode(JSON.stringify(wire)));
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce, additionalData: ad }, key, enc.encode(JSON.stringify(payload)));
   return {
     v: 2,
     alg: 'AES-GCM-256',
@@ -91,11 +114,32 @@ export async function encryptEnvelope(dataKey, { kid, householdHash, id, entity,
   };
 }
 
-/** Decrypt an EncryptedEnvelope back to the v1 SyncEnvelope wire object. */
+/** Decrypt an EncryptedEnvelope back to the v1 SyncEnvelope wire object
+ * ({id, updatedAt, deviceId, deleted, entity, payload}): rebuilds the header
+ * AD from the envelope and passes it as associated data, so boxes sealed
+ * without it (or under a tampered header) fail authentication. */
 export async function decryptEnvelope(dataKey, env) {
   const key = await crypto.subtle.importKey('raw', dataKey, 'AES-GCM', false, ['decrypt']);
-  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64ToBytes(env.nonce) }, key, b64ToBytes(env.ciphertext));
-  return JSON.parse(dec.decode(pt));
+  const ad = e2eHeaderAD({
+    v: env.v,
+    alg: env.alg,
+    kid: env.kid,
+    householdHash: env.householdHash,
+    id: env.id,
+    updatedAt: env.updatedAt,
+    deviceId: env.deviceId,
+    deleted: env.deleted,
+    entity: env.entity,
+  });
+  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64ToBytes(env.nonce), additionalData: ad }, key, b64ToBytes(env.ciphertext));
+  return {
+    id: env.id,
+    updatedAt: env.updatedAt,
+    deviceId: env.deviceId,
+    deleted: env.deleted ?? false,
+    entity: env.entity,
+    payload: JSON.parse(dec.decode(pt)),
+  };
 }
 
 export async function enroll(base, { householdHash, householdId, verifier }) {

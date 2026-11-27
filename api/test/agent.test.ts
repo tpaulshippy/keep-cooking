@@ -10,7 +10,7 @@ import { MemoryStore } from '../src/store';
 import { D1Store } from '../src/d1store';
 import { householdHash, type EncryptedEnvelope } from '../src/e2e';
 import { AGENT_TOKEN_HEADER } from '../src/agent';
-import { deriveAll as deriveAllDocs } from '../../docs/agents/lib.mjs';
+import { deriveAll as deriveAllDocs, encryptEnvelope as docsEncrypt, decryptEnvelope as docsDecrypt } from '../../docs/agents/lib.mjs';
 import mcpTools from '../../packages/contracts/mcp-tools.json';
 
 // ---------- fixed test vectors (syncCode is a published dummy, never real) ----------
@@ -63,17 +63,20 @@ async function encryptEnvelope(
   dataKey: Uint8Array,
   opts: { kid: string; householdHash: string; id: string; entity: 'recipe'; title: string },
 ): Promise<EncryptedEnvelope> {
-  const payload = {
-    id: opts.id,
-    updatedAt: '2026-11-27T12:00:00.000Z',
-    deviceId: 'agent-test',
-    deleted: false,
-    entity: 'recipe' as const,
-    payload: { id: opts.id, title: opts.title, servings: 2, householdId: HH, ingredients: [], steps: [] },
-  };
+  // Native wire format (see docs/agents/lib.mjs + iOS/Android SyncCrypto):
+  // ONLY the inner payload is sealed; the plaintext header is bound via
+  // e2eHeaderAD as AES-GCM associated data.
+  const updatedAt = '2026-11-27T12:00:00.000Z';
+  const deviceId = 'agent-test';
+  const inner = { id: opts.id, title: opts.title, servings: 2, householdId: HH, ingredients: [], steps: [] };
   const key = await crypto.subtle.importKey('raw', dataKey as unknown as ArrayBuffer, 'AES-GCM', false, ['encrypt']);
   const nonce = crypto.getRandomValues(new Uint8Array(12));
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce as unknown as ArrayBuffer }, key, enc.encode(JSON.stringify(payload)));
+  const ad = e2eHeaderAD({ kid: opts.kid, householdHash: opts.householdHash, id: opts.id, updatedAt, deviceId, deleted: false, entity: 'recipe' });
+  const ct = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: nonce as unknown as ArrayBuffer, additionalData: ad as unknown as ArrayBuffer },
+    key,
+    enc.encode(JSON.stringify(inner)),
+  );
   // Wire format is STANDARD base64 with padding (see encryptedEnvelopeSchema).
   const b64 = (a: Uint8Array | ArrayBuffer) => Buffer.from(a as Uint8Array).toString('base64');
   return {
@@ -83,23 +86,39 @@ async function encryptEnvelope(
     householdHash: opts.householdHash,
     id: opts.id,
     entity: 'recipe',
-    updatedAt: '2026-11-27T12:00:00.000Z',
-    deviceId: 'agent-test',
+    updatedAt,
+    deviceId,
     deleted: false,
     nonce: b64(nonce),
     ciphertext: b64(ct),
   };
 }
 
+/** Domain separator for the E2E header AD binding (mirrors lib.mjs). */
+const E2E_AD_CONTEXT = 'smidgen-e2e-ad-v1';
+
+function e2eHeaderAD(h: {
+  kid: string; householdHash: string; id: string; updatedAt: string;
+  deviceId: string; deleted: boolean; entity: string;
+}): Uint8Array {
+  const millis = Math.floor(Date.parse(h.updatedAt));
+  const parts = [E2E_AD_CONTEXT, '2', 'AES-GCM-256', h.kid, h.householdHash, h.id, String(millis), h.deviceId, h.deleted ? '1' : '0', h.entity];
+  return enc.encode(JSON.stringify(parts));
+}
+
 async function decryptTitle(dataKey: Uint8Array, env: EncryptedEnvelope): Promise<string> {
   const key = await crypto.subtle.importKey('raw', dataKey as unknown as ArrayBuffer, 'AES-GCM', false, ['decrypt']);
+  const ad = e2eHeaderAD({
+    kid: env.kid, householdHash: env.householdHash, id: env.id,
+    updatedAt: env.updatedAt, deviceId: env.deviceId, deleted: env.deleted, entity: env.entity,
+  });
   const pt = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: unb64u(env.nonce) as unknown as ArrayBuffer },
+    { name: 'AES-GCM', iv: unb64u(env.nonce) as unknown as ArrayBuffer, additionalData: ad as unknown as ArrayBuffer },
     key,
     unb64u(env.ciphertext),
   );
-  const wire = JSON.parse(new TextDecoder().decode(pt)) as { payload: { title: string } };
-  return wire.payload.title;
+  const inner = JSON.parse(new TextDecoder().decode(pt)) as { title: string };
+  return inner.title;
 }
 
 beforeAll(async () => {
@@ -152,6 +171,28 @@ describe('agent KDF vectors (docs/agents parity)', () => {
     expect(d.token).not.toBe(AGENT_TOKEN);
     expect(d.verifier).not.toBe(AGENT_VERIFIER);
     expect(d.householdHash).not.toBe(HOUSEHOLD_HASH);
+  });
+
+  it('lib.mjs and the test helpers interoperate (AD-bound payload-only format)', async () => {
+    const d = await deriveAll(SYNC_CODE, HH);
+    const doc = await deriveAllDocs(SYNC_CODE, HH);
+    const inner = { id: 'x', title: 'Interop Stew', servings: 2, householdId: HH, ingredients: [], steps: [] };
+    const params = {
+      kid: d.kid,
+      householdHash: d.householdHash,
+      id: '11111111-1111-4111-8111-111111111111',
+      entity: 'recipe',
+      updatedAt: '2026-11-27T12:00:00.000Z',
+      deviceId: 'agent-test',
+      payload: inner,
+    };
+    // Sealed by lib.mjs, opened by the local helper (and vice versa).
+    const viaDocs = await docsEncrypt(doc.dataKey, params);
+    expect(await decryptTitle(d.dataKey, viaDocs as unknown as EncryptedEnvelope)).toBe('Interop Stew');
+    const viaLocal = await encryptEnvelope(d.dataKey, {
+      kid: params.kid, householdHash: params.householdHash, id: params.id, entity: 'recipe', title: 'Interop Stew',
+    });
+    expect((await docsDecrypt(doc.dataKey, viaLocal)).payload.title).toBe('Interop Stew');
   });
 });
 
@@ -257,6 +298,19 @@ describe('agent enroll + key-only REST', () => {
     expect((await app.request('/health', { headers: agentHeaders('short') })).status).toBe(200);
   });
 
+  it('an empty x-agent-token is 401, not anonymous (fail closed)', async () => {
+    const { app } = agentApp();
+    await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
+    const res = await app.request('/recipes', {
+      method: 'POST',
+      headers: { [AGENT_TOKEN_HEADER]: '', 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'x', householdId: HH }),
+    });
+    expect(res.status).toBe(401);
+    // …while a missing header still takes the anonymous dev path.
+    expect((await app.request('/recipes')).status).toBe(200);
+  });
+
   it('cross-household access is rejected (403 writes, 404 reads)', async () => {
     const { app } = agentApp();
     await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
@@ -293,6 +347,33 @@ describe('agent enroll + key-only REST', () => {
     });
     expect(lists.status).toBe(201);
     expect(await (await app.request('/lists', { headers: h })).json()).toEqual([]);
+  });
+
+  it('a label-squatter without the syncCode gets 409; bootstrap stays open', async () => {
+    const { app } = agentApp();
+    // Bootstrap: a label with no existing binding enrolls openly.
+    expect((await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER)).status).toBe(201);
+    // Squatter: same label, different hash, no token proof → 409.
+    const squat = await enroll(app, 'a'.repeat(64), HH, 'b'.repeat(64));
+    expect(squat.status).toBe(409);
+    // Victim binding untouched: the real token still verifies.
+    expect((await app.request('/agent/status', { headers: agentHeaders(AGENT_TOKEN) })).status).toBe(200);
+  });
+
+  it('re-binding a bound label with the existing token succeeds (rotation with proof)', async () => {
+    const { app } = agentApp();
+    await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
+    const newHash = 'c'.repeat(64);
+    const token2 = await randomToken();
+    const verifier2 = createHash('sha256').update(Buffer.from(token2, 'base64url')).digest('hex');
+    // Same label, different hash, but the existing token is presented → 201.
+    const rebind = await app.request('/agent/enroll', {
+      method: 'POST',
+      headers: { ...agentHeaders(AGENT_TOKEN), 'content-type': 'application/json' },
+      body: JSON.stringify({ householdHash: newHash, householdId: HH, verifier: verifier2 }),
+    });
+    expect(rebind.status).toBe(201);
+    expect((await app.request('/agent/status', { headers: agentHeaders(token2) })).status).toBe(200);
   });
 
   it('rotating the verifier revokes the old token', async () => {
@@ -337,6 +418,37 @@ describe('agent enroll + key-only REST', () => {
     for (const e of pull) expect(e.payload.householdId).toBe(HH);
   });
 
+  it('agent cannot overwrite another household row by reusing its id (403)', async () => {
+    const { app } = agentApp();
+    await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
+    const id = '22222222-2222-4222-8222-222222222222';
+    const foreign = {
+      id, updatedAt: '2026-11-27T12:00:00.000Z', deviceId: 'dev', entity: 'recipe',
+      payload: { title: 'Foreign', householdId: 'hh-other', ingredients: [], steps: [] },
+    };
+    // Seed the foreign row via the anonymous dev path (no agent header).
+    const seed = await app.request('/sync/push', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify([foreign]),
+    });
+    expect(seed.status).toBe(200);
+    // Same id with the agent's own label → 403, row untouched.
+    const overwrite = await app.request('/sync/push', {
+      method: 'POST',
+      headers: agentHeaders(AGENT_TOKEN),
+      body: JSON.stringify([{ ...foreign, updatedAt: '2026-11-28T12:00:00.000Z', payload: { ...foreign.payload, householdId: HH } }]),
+    });
+    expect(overwrite.status).toBe(403);
+    // Same id with a matching label still merges (no false positive).
+    const own = await app.request('/sync/push', {
+      method: 'POST',
+      headers: agentHeaders(AGENT_TOKEN),
+      body: JSON.stringify([{ ...foreign, id: '33333333-3333-4333-8333-333333333333', payload: { ...foreign.payload, householdId: HH } }]),
+    });
+    expect(own.status).toBe(200);
+  });
+
   it('enrollments survive a D1 hydrate (and work pre-migration)', async () => {
     // Pre-migration fake: every SQL op throws; memory fallback must hold.
     const throwing = { prepare() { throw new Error('no such table: agent_enrollments'); } };
@@ -344,6 +456,21 @@ describe('agent enroll + key-only REST', () => {
     await store.agentEnroll({ householdHash: HOUSEHOLD_HASH, householdId: HH, verifier: AGENT_VERIFIER, updatedAt: new Date().toISOString() });
     expect(await store.agentGetByVerifier(AGENT_VERIFIER)).toMatchObject({ householdId: HH });
     expect(await store.agentGetByVerifier('0'.repeat(64))).toBeNull();
+    // Hydrate round-trip: seed the enrollments table in a fake D1 and assert
+    // the rows (and the label index) load.
+    const row = {
+      household_hash: HOUSEHOLD_HASH, household_id: HH,
+      verifier: AGENT_VERIFIER, updated_at: '2026-11-27T12:00:00.000Z',
+    };
+    const seeded = {
+      prepare(sql: string) {
+        return { all: async () => ({ results: /FROM\s+agent_enrollments/.test(sql) ? [row] : [] }) };
+      },
+    };
+    const store2 = new D1Store(seeded as never);
+    await store2.hydrate();
+    expect(await store2.agentGetByVerifier(AGENT_VERIFIER)).toMatchObject({ householdId: HH, householdHash: HOUSEHOLD_HASH });
+    expect(await store2.agentGetByLabel(HH)).toMatchObject({ householdHash: HOUSEHOLD_HASH });
   });
 });
 
@@ -403,6 +530,17 @@ describe('blind server: real AES-GCM round-trip, server learns nothing', () => {
     const pull = await app.request(`/v2/sync/${wrong.householdHash}`);
     expect(pull.status).toBe(200);
     expect(await pull.json()).toEqual([]);
+    // The wrong key cannot enroll the victim's label either: its hash differs
+    // from the bound one and it holds no valid token → 409 with no header…
+    const squat = await enroll(app, wrong.householdHash, HH, wrong.verifier);
+    expect(squat.status).toBe(409);
+    // …and 401 carrying its own (unknown) token, rejected before the handler.
+    const squatAuth = await app.request('/agent/enroll', {
+      method: 'POST',
+      headers: agentHeaders(wrong.token),
+      body: JSON.stringify({ householdHash: wrong.householdHash, householdId: HH, verifier: wrong.verifier }),
+    });
+    expect(squatAuth.status).toBe(401);
     // The wrong-key token is unknown to the server → 401 on every v1 route.
     for (const [m, p] of [['GET', '/recipes'], ['POST', '/recipes'], ['GET', '/agent/status']] as const) {
       const res = await app.request(p, {
@@ -508,6 +646,72 @@ describe('MCP on the same Worker', () => {
     const envs = JSON.parse(pulled.result.content[0]!.text) as EncryptedEnvelope[];
     expect(envs).toHaveLength(1);
     expect(await decryptTitle(d.dataKey, envs[0]!)).toBe('MCP Blind Curry');
+  });
+
+  it('inherited handler names do not resolve (prototype pollution guard)', async () => {
+    const { app } = agentApp();
+    await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
+    for (const name of ['constructor', 'toString', 'hasOwnProperty']) {
+      const res = (await (
+        await call(app, rpc('tools/call', { name, arguments: {} }), AGENT_TOKEN)
+      ).json()) as { error: { code: number } };
+      expect(res.error.code).toBe(-32601);
+    }
+  });
+
+  it('missing jsonrpc is an invalid request; notifications are 202 with no body', async () => {
+    const { app } = agentApp();
+    await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
+    const bad = (await (
+      await call(app, { method: 'tools/list', id: 1 }, AGENT_TOKEN)
+    ).json()) as { error: { code: number } };
+    expect(bad.error.code).toBe(-32600);
+    const note = await call(app, { jsonrpc: '2.0', method: 'notifications/initialized' }, AGENT_TOKEN);
+    expect(note.status).toBe(202);
+    expect(await note.text()).toBe('');
+  });
+
+  it('sync_push validation failures carry field details', async () => {
+    const { app } = agentApp();
+    await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
+    const res = (await (
+      await call(app, rpc('tools/call', { name: 'sync_push', arguments: { envelopes: [{ nope: true }] } }), AGENT_TOKEN)
+    ).json()) as { result: { isError: boolean; content: { text: string }[] } };
+    expect(res.result.isError).toBe(true);
+    const text = res.result.content[0]!.text;
+    expect(text).toContain('validation failed');
+    expect(text).toContain('ciphertext');
+  });
+
+  it('share_cookbook enforces bounds and household ownership', async () => {
+    const { app } = agentApp();
+    await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
+    const created = (await (
+      await call(app, rpc('tools/call', { name: 'recipe_create', arguments: { title: 'Shareable', servings: 2 } }), AGENT_TOKEN)
+    ).json()) as { result: { content: { text: string }[] } };
+    const ownId = (JSON.parse(created.result.content[0]!.text) as { id: string }).id;
+    const ok = (await (
+      await call(app, rpc('tools/call', { name: 'share_cookbook', arguments: { recipeIds: [ownId] } }), AGENT_TOKEN)
+    ).json()) as { result: { isError?: boolean; content: { text: string }[] } };
+    expect(ok.result.isError ?? false).toBe(false);
+    // expiresInDays 0 / negative / fractional / huge are all rejected.
+    for (const expiresInDays of [0, -5, 1.5, 100000]) {
+      const bad = (await (
+        await call(app, rpc('tools/call', { name: 'share_cookbook', arguments: { recipeIds: [ownId], expiresInDays } }), AGENT_TOKEN)
+      ).json()) as { result: { isError: boolean } };
+      expect(bad.result.isError).toBe(true);
+    }
+    // A recipe from another household cannot be shared into this one.
+    const seeded = await app.request('/recipes', {
+      method: 'POST',
+      headers: { 'x-role': 'owner', 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'Foreign', householdId: 'hh-other' }),
+    });
+    const foreignId = ((await seeded.json()) as { id: string }).id;
+    const cross = (await (
+      await call(app, rpc('tools/call', { name: 'share_cookbook', arguments: { recipeIds: [foreignId] } }), AGENT_TOKEN)
+    ).json()) as { result: { isError: boolean } };
+    expect(cross.result.isError).toBe(true);
   });
 
   it('GET /mcp is 405', async () => {

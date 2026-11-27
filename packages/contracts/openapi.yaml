@@ -44,6 +44,8 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AgentEnrollResponse' }
+        '409':
+          description: householdId label already bound to a different hash (present the existing agent token in x-agent-token to re-bind it)
   /agent/status:
     get:
       operationId: agentStatus
@@ -76,6 +78,8 @@ paths:
           content:
             application/json:
               schema: { type: object }
+        '202':
+          description: notification accepted (no body, per Streamable HTTP)
         '401':
           description: missing or unknown x-agent-token
   /clip:

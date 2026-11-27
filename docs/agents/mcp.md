@@ -2,8 +2,10 @@
 
 `POST /mcp` speaks JSON-RPC 2.0 with the Streamable-HTTP subset:
 `initialize`, `tools/list`, `tools/call`, `ping` (plus `notifications/*`,
-which are tolerated). Every call authenticates per-request via `x-agent-token`
-— there are no sessions, so any isolate can serve any call. No new
+which are tolerated). `tools/list`, `tools/call`, and `ping` authenticate
+per-request via `x-agent-token` — `initialize` and `notifications/*` do not
+(they expose nothing privileged); there are no sessions, so any isolate can
+serve any call. No new
 dependencies, no Durable Objects, no extra hosting: handlers delegate to the
 same `Store` methods as the REST routes.
 
@@ -33,9 +35,9 @@ curl -s -X POST $BASE/mcp "${M[@]}" -d '{"jsonrpc":"2.0","id":3,"method":"tools/
   "params":{"name":"recipe_create","arguments":{"title":"MCP Risotto","servings":2}}}'
 # -> {"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"{...recipe...}"}]}}
 curl -s -X POST $BASE/mcp "${M[@]}" -d '{"jsonrpc":"2.0","id":4,"method":"tools/call",
-  "params":{"name":"plan_create","arguments":{"date":"2026-12-03","meal":"dinner","recipeId":"<id>"}}}}'
+  "params":{"name":"plan_create","arguments":{"date":"2026-12-03","meal":"dinner","recipeId":"<id>"}}}'
 curl -s -X POST $BASE/mcp "${M[@]}" -d '{"jsonrpc":"2.0","id":5,"method":"tools/call",
-  "params":{"name":"list_create","arguments":{"name":"MCP groceries","items":[{"name":"arborio rice"}]}}}}'
+  "params":{"name":"list_create","arguments":{"name":"MCP groceries","items":[{"name":"arborio rice"}]}}}'
 ```
 
 Conventions: successful tool results are `result.content[0].text` (a JSON

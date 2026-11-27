@@ -50,10 +50,13 @@ Stay-free rules: signed photo URLs (<15 min TTL) instead of proxied bytes,
 `GET /sync/pull?since=` deltas instead of full dumps, ICS feed cached client-side.
 Agent/MCP fit: same 1 Worker + 1 D1 + 1 R2, no Durable Objects, no extra
 services. `POST /mcp` is one request per tool call (stateless JSON-RPC, no
-polling); `sync_pull` is one D1 range SELECT per household hash; enrollments
+polling); agent `sync_pull` loads the household's rows and filters `since`
+in memory (cost grows with the household's total history, not the window —
+not a D1 range read); enrollments
 are one D1 row per household written once (re-enroll only rotates the
 verifier). Blind `/v2` envelopes cost the same rows as the app sync the agent
-replaces — no double sync.
+replaces — no double sync. Agent pull/push traffic counts against the D1
+rows-read budget above (each `sync_pull` reads the household's full row set).
 
 ## Auth / RBAC
 

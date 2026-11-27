@@ -11,8 +11,8 @@
 
 CREATE TABLE IF NOT EXISTS agent_enrollments (
   household_hash TEXT PRIMARY KEY,
-  household_id TEXT NOT NULL,
+  household_id TEXT NOT NULL REFERENCES households(id),
   verifier TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_enrollments_verifier ON agent_enrollments(verifier);

@@ -20,7 +20,7 @@ import {
   entitySchema,
 } from './zod';
 import { E2E_HASH_RE, HASH_LOG_PREFIX_LEN, validateE2EPushBatch, type EncryptedEnvelope } from './e2e';
-import { agentEnrollSchema, agentShortHash, AGENT_TOKEN_HEADER } from './agent';
+import { agentEnrollSchema, agentShortHash, agentVerifierFor, AGENT_TOKEN_HEADER } from './agent';
 import { handleMcp } from './mcp';
 import openApiJson from '../../packages/contracts/openapi.json';
 
@@ -112,12 +112,29 @@ export function createApp(
   app.get('/openapi.json', (c) => c.json(openApiJson));
 
   // ---------- key-only agent auth (#26) ----------
-  // POST /agent/enroll binds {householdHash, householdId, verifier}. Open:
-  // knowledge of the unguessable householdHash IS the capability (same trust
-  // as the /v2 bucket itself). Re-enroll rotates the token verifier without
-  // rotating the data key. Never receives key material — only hashes/labels.
+  // POST /agent/enroll binds {householdHash, householdId, verifier}. Open for
+  // a label with NO existing binding (bootstrap must work with the hash
+  // alone). But a householdId label that already maps to a DIFFERENT hash is
+  // bound: re-binding it requires proving syncCode knowledge by presenting
+  // the existing token in x-agent-token (anyone holding the syncCode
+  // re-derives the deterministic token, so legit clients and rotation are
+  // unaffected; label-squatters without the syncCode get 409). Same-hash
+  // re-enroll rotates the token verifier without rotating the data key.
+  // Never receives key material — only hashes/labels.
   app.post('/agent/enroll', async (c) => {
     const body = parseOrThrow(agentEnrollSchema, await c.req.json().catch(() => ({})));
+    const bound = await getStore().agentGetByLabel(body.householdId);
+    if (bound && bound.householdHash !== body.householdHash) {
+      const presented = c.req.header(AGENT_TOKEN_HEADER);
+      const verifier = presented ? await agentVerifierFor(presented) : null;
+      if (!verifier || verifier !== bound.verifier) {
+        const err = new Error(
+          'householdId label is already bound — present the existing agent token in x-agent-token to re-bind it',
+        ) as Error & { status?: number };
+        err.status = 409;
+        throw err;
+      }
+    }
     await getStore().ensureHousehold(body.householdId, body.householdId);
     const e = await getStore().agentEnroll({ ...body, updatedAt: new Date().toISOString() });
     return c.json(
@@ -139,7 +156,8 @@ export function createApp(
   app.post('/mcp', async (c) => {
     const body = await c.req.json().catch(() => null);
     const { status, body: out } = await handleMcp(getStore(), { secret, baseUrl }, body, getAgent(c));
-    return c.json(out, status);
+    // Notifications (202) carry no body per Streamable HTTP.
+    return out === null || out === undefined ? c.body(null, status) : c.json(out, status);
   });
   app.get('/mcp', (c) => c.json({ error: 'use POST /mcp with a JSON-RPC 2.0 body' }, 405));
 
@@ -547,6 +565,17 @@ export function createApp(
         continue;
       }
       const stored = await getStore().getEnvelopeEntity(env.entity, env.id);
+      if (a && stored) {
+        // An agent must not overwrite another household's row by reusing its
+        // entity id with its own label (same comparison as the
+        // ingredient/step branch above, but against the stored envelope).
+        const storedHh = (stored.payload as { householdId?: unknown } | undefined)?.householdId;
+        if (storedHh !== a.householdId) {
+          const err = new Error(`agent token is scoped to household '${a.householdId}'`) as Error & { status?: number };
+          err.status = 403;
+          throw err;
+        }
+      }
       if (!stored || env.updatedAt > stored.updatedAt) {
         await requireWriteRole(c, getStore(), (env.payload as { householdId?: string } | undefined)?.householdId);
         await getStore().applyEnvelopeFull(env);

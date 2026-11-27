@@ -80,8 +80,36 @@
           "source": { "type": "string" },
           "sourceUrl": { "type": "string" },
           "categories": { "type": "array", "items": { "type": "string" } },
-          "ingredients": { "type": "array", "items": { "type": "object" } },
-          "steps": { "type": "array", "items": { "type": "object" } },
+          "photoKeys": {
+            "type": "object",
+            "properties": {
+              "original": { "type": "string" },
+              "large1024": { "type": "string" },
+              "thumb": { "type": "string" }
+            }
+          },
+          "ingredients": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name"],
+              "properties": {
+                "name": { "type": "string" },
+                "quantity": { "type": ["number", "null"] },
+                "unit": { "type": "string" },
+                "display": { "type": "string" },
+                "position": { "type": "integer" }
+              }
+            }
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["text"],
+              "properties": { "position": { "type": "integer" }, "text": { "type": "string" } }
+            }
+          },
           "householdId": { "type": "string" }
         }
       }
@@ -374,11 +402,11 @@
     },
     {
       "name": "photos_sign",
-      "description": "Mint an HMAC-signed R2 photo URL (<15min TTL). Keys outside the enrolled household are rejected.",
+      "description": "Mint an HMAC-signed R2 photo URL (<15min TTL). A key naming a recipe of another household is rejected; keys that don't match photos/<recipeId>/<variant>.jpg or that name no existing recipe carry no household signal and are signed without a scope check.",
       "inputSchema": {
         "type": "object",
         "required": ["key"],
-        "properties": { "key": { "type": "string" }, "ttl": { "type": "integer" } }
+        "properties": { "key": { "type": "string" }, "ttl": { "type": "integer", "minimum": 1, "maximum": 899 } }
       }
     }
   ]

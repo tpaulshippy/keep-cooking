@@ -7,8 +7,9 @@ touch the wire. Test vectors use the published dummy syncCode
 `test-only-vector-sync-code-0001` — never a real key.
 
 ```bash
-BASE=https://<your-worker>
-HH=hh-agent-demo
+export BASE=https://<your-worker>
+export HH=hh-agent-demo
+export KEY='<paste syncCode from the app recovery kit>'   # required: never sent, only derives locally
 # derive with node (prints token/verifier/hash):
 node -e "
 import('./docs/agents/lib.mjs').then(async ({deriveAll}) => {

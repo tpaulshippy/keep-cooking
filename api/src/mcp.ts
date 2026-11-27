@@ -16,6 +16,7 @@ import {
   planInputSchema,
   menuInputSchema,
   scaleRequestSchema,
+  shareRequestSchema,
 } from './zod';
 import { validateE2EPushBatch, type EncryptedEnvelope } from './e2e';
 import { clipRecipe } from './clip';
@@ -231,13 +232,14 @@ const handlers: Record<string, Handler> = {
   },
   // ---------- share / export ----------
   share_cookbook: async (store, agent, p, opts) => {
-    const recipeIds = p['recipeIds'];
-    if (!Array.isArray(recipeIds) || recipeIds.length === 0) throw httpError(400, `missing required param 'recipeIds'`);
-    const householdId = scopedHousehold(agent, p);
+    // Same bounds as REST POST /share/cookbook: expiresInDays is an int in
+    // [1, 365] (default 30), recipeIds is 1..500 non-empty ids — and every
+    // id must belong to the enrolled household (out-of-scope reads 404).
+    const parsed = parseOrThrow(shareRequestSchema, { ...p, householdId: scopedHousehold(agent, p) });
+    for (const rid of parsed.recipeIds) scopeOr404(agent, await store.getRecipe(rid));
     const id = newId();
-    const expiresInDays = typeof p['expiresInDays'] === 'number' ? p['expiresInDays'] : 30;
-    const expiresAt = new Date(Date.now() + expiresInDays * 86400_000).toISOString();
-    const s = await store.createShare({ id, householdId, recipeIds: recipeIds.map(String), url: `${opts.baseUrl}/s/${id}`, expiresAt });
+    const expiresAt = new Date(Date.now() + (parsed.expiresInDays ?? 30) * 86400_000).toISOString();
+    const s = await store.createShare({ id, householdId: parsed.householdId, recipeIds: parsed.recipeIds, url: `${opts.baseUrl}/s/${id}`, expiresAt });
     return { id: s.id, url: s.url, expiresAt: s.expiresAt };
   },
   export_recipe: async (store, agent, p) => {
@@ -255,7 +257,18 @@ const handlers: Record<string, Handler> = {
     return store.e2eList(agent.householdHash, parsed.toISOString());
   },
   sync_push: async (store, agent, p) => {
-    const batch: EncryptedEnvelope[] = validateE2EPushBatch(agent.householdHash, p['envelopes']);
+    // Surface field-level schema issues to the agent: parseOrThrow attaches
+    // them as `details`, but the tool envelope only carries a message.
+    let batch: EncryptedEnvelope[];
+    try {
+      batch = validateE2EPushBatch(agent.householdHash, p['envelopes']);
+    } catch (e) {
+      if (e instanceof Error) {
+        const details = (e as Error & { details?: unknown }).details;
+        if (details !== undefined) e.message = `${e.message}: ${JSON.stringify(details)}`;
+      }
+      throw e;
+    }
     const stored: string[] = [];
     for (const env of batch) {
       if (await store.e2ePut(agent.householdHash, env)) stored.push(env.id);
@@ -289,17 +302,18 @@ export async function handleMcp(
   opts: McpOpts,
   body: unknown,
   agent: AgentIdentity | null,
-): Promise<{ status: 200 | 401; body: unknown }> {
+): Promise<{ status: 200 | 202 | 401; body: unknown }> {
   const req = (body ?? {}) as JsonRpcRequest;
-  if (typeof req !== 'object' || req.method === undefined) {
+  if (typeof req !== 'object' || req.method === undefined || req.jsonrpc !== '2.0') {
     return rpcErr(undefined, -32600, 'invalid request', 200);
   }
   const id = req.id === undefined ? null : (req.id as string | number | null);
-  const hasId = req.id !== undefined;
   const method = String(req.method);
 
   if (method === 'notifications/initialized' || method.startsWith('notifications/')) {
-    return { status: 200, body: hasId ? { jsonrpc: '2.0', id, result: {} } : {} };
+    // Streamable HTTP: notifications get 202 with NO body (null lets the
+    // route send an empty response instead of JSON).
+    return { status: 202, body: null };
   }
   if (method === 'initialize') {
     return rpcOk(id, {
@@ -318,7 +332,11 @@ export async function handleMcp(
   if (method === 'tools/call') {
     const params = (req.params ?? {}) as { name?: unknown; arguments?: unknown };
     const name = typeof params.name === 'string' ? params.name : '';
-    const handler = handlers[name];
+    // Own-property lookup: a plain-object index would resolve inherited
+    // names like 'constructor'/'toString' to Object.prototype members.
+    const handler = Object.prototype.hasOwnProperty.call(handlers, name)
+      ? handlers[name]
+      : undefined;
     if (!handler) return rpcErr(id, -32601, `unknown tool '${name}'`);
     const args = (params.arguments ?? {}) as Params;
     if (typeof args !== 'object' || args === null || Array.isArray(args)) {
