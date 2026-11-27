@@ -128,3 +128,12 @@ export const syncBlobsV2 = sqliteTable('sync_blobs_v2', {
 }, (t) => ({
   pk: primaryKey({ columns: [t.householdHash, t.id] }),
 }));
+
+// Key-only agent enrollments (#26): verifier is hex(SHA256(raw token)) —
+// a one-way hash, never key material. PK is the unguessable householdHash.
+export const agentEnrollments = sqliteTable('agent_enrollments', {
+  householdHash: text('household_hash').primaryKey(),
+  householdId: text('household_id').notNull(),
+  verifier: text('verifier').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});

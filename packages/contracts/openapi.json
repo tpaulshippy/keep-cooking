@@ -18,6 +18,71 @@
       }
     },
     "schemas": {
+      "AgentEnrollRequest": {
+        "description": "Binds an unguessable householdHash bucket to a householdId label + token verifier. Carries no key material.",
+        "properties": {
+          "householdHash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "householdId": {
+            "type": "string"
+          },
+          "verifier": {
+            "description": "hex(SHA256(raw agent-token bytes))",
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "householdHash",
+          "householdId",
+          "verifier"
+        ],
+        "type": "object"
+      },
+      "AgentEnrollResponse": {
+        "properties": {
+          "hashPrefix8": {
+            "type": "string"
+          },
+          "householdHash": {
+            "type": "string"
+          },
+          "householdId": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "householdId",
+          "householdHash",
+          "hashPrefix8"
+        ],
+        "type": "object"
+      },
+      "AgentStatus": {
+        "properties": {
+          "deviceId": {
+            "type": "string"
+          },
+          "hashPrefix8": {
+            "type": "string"
+          },
+          "householdId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "householdId",
+          "hashPrefix8",
+          "deviceId"
+        ],
+        "type": "object"
+      },
       "ClipReport": {
         "properties": {
           "confidence": {
@@ -814,6 +879,14 @@
         ],
         "type": "object"
       }
+    },
+    "securitySchemes": {
+      "AgentToken": {
+        "description": "Key-derived bearer (base64url of 32 HKDF-SHA256 bytes, domain-separated from the data key \u2014 see docs/agents/). Enroll via POST /agent/enroll, which stores only hex(SHA256(token)). Applies to every v1 route as an alternative to the dev x-user-id/x-role headers: reads are scoped to the enrolled household (out-of-scope reads are 404), writes require an explicit matching householdId (else 403). The /v2 blind sync pipe stays hash-addressed and needs no token.",
+        "in": "header",
+        "name": "x-agent-token",
+        "type": "apiKey"
+      }
     }
   },
   "info": {
@@ -823,6 +896,59 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/agent/enroll": {
+      "post": {
+        "description": "Bind a householdHash bucket to a plaintext householdId label plus a token verifier (hex(SHA256(raw agent token))). Open: knowledge of the unguessable householdHash IS the capability. Re-enroll to rotate the token without rotating the data key. Never receives key material.",
+        "operationId": "agentEnroll",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentEnrollRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentEnrollResponse"
+                }
+              }
+            },
+            "description": "enrolled"
+          }
+        }
+      }
+    },
+    "/agent/status": {
+      "get": {
+        "operationId": "agentStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentStatus"
+                }
+              }
+            },
+            "description": "enrolled household for this token"
+          },
+          "401": {
+            "description": "missing or unknown x-agent-token"
+          }
+        },
+        "security": [
+          {
+            "AgentToken": []
+          }
+        ]
+      }
+    },
     "/clip": {
       "post": {
         "operationId": "clipRecipe",
@@ -1049,6 +1175,43 @@
             "description": "ok"
           }
         }
+      }
+    },
+    "/mcp": {
+      "post": {
+        "description": "Stateless JSON-RPC 2.0 (Streamable HTTP subset): initialize, tools/list, tools/call, ping. Every call authenticates via x-agent-token; tools are scoped to the enrolled household. Tool schemas are versioned in packages/contracts/mcp-tools.json.",
+        "operationId": "mcpRpc",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "JSON-RPC 2.0 request",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "JSON-RPC 2.0 response (or isError tool result)"
+          },
+          "401": {
+            "description": "missing or unknown x-agent-token"
+          }
+        },
+        "security": [
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/menus": {

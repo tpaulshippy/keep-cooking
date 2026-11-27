@@ -1,5 +1,6 @@
 import type { Role } from './auth';
 import type { EncryptedEnvelope } from './e2e';
+import type { AgentEnrollment } from './agent';
 
 // Row + assembled API types. Recipe/List/etc. mirror the openapi.yaml
 // SyncEnvelope allOf (id/updatedAt/deviceId/deleted/entity + fields).
@@ -211,6 +212,10 @@ export interface Store {
   e2ePut(hash: string, env: EncryptedEnvelope): Promise<boolean>;
   e2eList(hash: string, since: string): Promise<EncryptedEnvelope[]>;
   e2eWipe(hash: string): Promise<number>;
+  // key-only agent auth (#26): enrollment binds an unguessable householdHash
+  // to a plaintext householdId label + token verifier (a hash, never a key).
+  agentEnroll(e: AgentEnrollment): Promise<AgentEnrollment>;
+  agentGetByVerifier(verifier: string): Promise<AgentEnrollment | null>;
 }
 
 // ---------- shared assemblers (used by both stores) ----------
@@ -567,6 +572,26 @@ export class MemoryStore implements Store {
   // ciphertext.
 
   e2eBlobs = new Map<string, Map<string, EncryptedEnvelope>>();
+
+  // ---------- key-only agent enrollments (#26) ----------
+  // byHash is authoritative; byVerifier is a secondary index. Re-enrolling
+  // a hash replaces the verifier (token rotation without data-key rotation).
+  private agentByHash = new Map<string, AgentEnrollment>();
+  private agentByVerifier = new Map<string, string>(); // verifier -> householdHash
+
+  async agentEnroll(e: AgentEnrollment): Promise<AgentEnrollment> {
+    const prev = this.agentByHash.get(e.householdHash);
+    if (prev && prev.verifier !== e.verifier) this.agentByVerifier.delete(prev.verifier);
+    this.agentByHash.set(e.householdHash, e);
+    this.agentByVerifier.set(e.verifier, e.householdHash);
+    return e;
+  }
+
+  async agentGetByVerifier(verifier: string): Promise<AgentEnrollment | null> {
+    const hash = this.agentByVerifier.get(verifier);
+    if (!hash) return null;
+    return this.agentByHash.get(hash) ?? null;
+  }
 
   async e2ePut(hash: string, env: EncryptedEnvelope): Promise<boolean> {
     let bucket = this.e2eBlobs.get(hash);

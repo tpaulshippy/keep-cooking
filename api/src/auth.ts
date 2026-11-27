@@ -1,5 +1,6 @@
 import type { Context, Next } from 'hono';
 import type { Store } from './store';
+import { agentVerifierFor, AGENT_TOKEN_HEADER, type AgentIdentity } from './agent';
 
 // Better Auth stub — PASS 2 will verify the real Apple session cookie/JWT here.
 // The app works out of the box against the deployed backend: there is no
@@ -82,6 +83,14 @@ function prodFlag(c: Context): boolean {
 }
 
 export function getUser(c: Context): AuthedUser {
+  // Key-only agent identity (#26): a valid x-agent-token beats every header
+  // stub in every env — the key holder can already decrypt the whole
+  // household, so they are its owner. Scope is enforced per-route by
+  // requireAgentScope(), not by role.
+  const agent = getAgent(c);
+  if (agent) {
+    return { id: `agent-${agent.householdHash.slice(0, 8)}`, email: '', role: 'owner', deviceId: agent.deviceId };
+  }
   const h = c.req.header.bind(c.req);
   const prod = prodFlag(c);
   if (prod) {
@@ -110,6 +119,9 @@ export async function resolveRole(
   store: Store,
   householdId: string | undefined,
 ): Promise<Role> {
+  // Agent requests already proved key possession: owner, scope-checked
+  // separately by requireAgentScope().
+  if (getAgent(c)) return 'owner';
   const user = getUser(c);
   if (!householdId) return user.role;
   try {
@@ -154,4 +166,57 @@ export async function requireOwnerRole(
 export async function authAttach(c: Context, next: Next) {
   c.set('user' as never, getUser(c) as never);
   await next();
+}
+
+/**
+ * Key-only agent attach (#26). No header → non-agent path, byte-identical
+ * behavior to before. Header present → must verify, else 401 (fail closed).
+ * `/health` stays open for liveness probes even with a bad token.
+ */
+export function agentAttach(store: Store) {
+  return async function agentAttachMw(c: Context, next: Next) {
+    const tok = c.req.header(AGENT_TOKEN_HEADER);
+    if (!tok) return next();
+    if (new URL(c.req.url).pathname === '/health') return next();
+    const verifier = await agentVerifierFor(tok);
+    const enr = verifier ? await store.agentGetByVerifier(verifier) : null;
+    if (!enr) {
+      const err = new Error('unknown agent token (enroll with POST /agent/enroll)') as Error & { status?: number };
+      err.status = 401;
+      throw err;
+    }
+    const id: AgentIdentity = {
+      householdId: enr.householdId,
+      householdHash: enr.householdHash,
+      deviceId: `agent-${enr.householdHash.slice(0, 8)}`,
+    };
+    c.set('agent' as never, id as never);
+    await next();
+  };
+}
+
+/** Agent identity for this request, or null for human/app callers. */
+export function getAgent(c: Context): AgentIdentity | null {
+  try {
+    return (c.get('agent' as never) as AgentIdentity | null) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Scope guard for agent requests: the target household must be the enrolled
+ * one (explicit — no silent 'hh-demo' default). No-op for non-agent
+ * requests. Throws 403 on mismatch.
+ */
+export function requireAgentScope(c: Context, householdId: string | undefined): void {
+  const a = getAgent(c);
+  if (!a) return;
+  if (!householdId || householdId !== a.householdId) {
+    const err = new Error(
+      `agent token is scoped to household '${a.householdId}' — pass that householdId`,
+    ) as Error & { status?: number };
+    err.status = 403;
+    throw err;
+  }
 }

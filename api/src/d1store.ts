@@ -15,6 +15,7 @@ import {
   type Household,
 } from './store';
 import { envelopeHeader, type EncryptedEnvelope } from './e2e';
+import type { AgentEnrollment } from './agent';
 
 // D1-backed store. Uses drizzle() for the connection (D1 via Drizzle) and
 // parameterized raw SQL for queries — table/column names match
@@ -85,6 +86,7 @@ export class D1Store extends MemoryStore implements Store {
         const u = String(m['user_id']);
         this.memberships.set(`${hh}|${u}`, { householdId: hh, userId: u, role: String(m['role']) as Role });
       }
+      await this.loadAgentEnrollments();
       const ingByRecipe = new Map<string, { id: string; recipeId: string; name: string; quantity: number | null; unit: string; display: string; position: number }[]>();
       for (const g of await q('SELECT id, recipe_id, name, quantity, unit, display, position FROM ingredients ORDER BY position')) {
         const rid = String(g['recipe_id']);
@@ -226,6 +228,42 @@ export class D1Store extends MemoryStore implements Store {
       "INSERT INTO memberships (household_id, user_id, role) VALUES (?, ?, ?) ON CONFLICT(household_id, user_id) DO UPDATE SET role = excluded.role",
       householdId, userId, role,
     );
+  }
+
+  // ---------- key-only agent enrollments (#26; D1 agent_enrollments) ----------
+  // Memory maps stay the read path; D1 is the durable copy loaded in
+  // hydrate(). persist() swallows pre-migration errors like every other row.
+
+  override async agentEnroll(e: AgentEnrollment): Promise<AgentEnrollment> {
+    const out = await super.agentEnroll(e);
+    await this.persist(
+      'INSERT INTO agent_enrollments (household_hash, household_id, verifier, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(household_hash) DO UPDATE SET household_id = excluded.household_id, verifier = excluded.verifier, updated_at = excluded.updated_at',
+      e.householdHash, e.householdId, e.verifier, e.updatedAt,
+    );
+    return out;
+  }
+
+  /** Load enrollments without re-persisting (hydrate path only). */
+  async loadAgentEnrollments(): Promise<void> {
+    let rows: Record<string, unknown>[];
+    try {
+      rows = (
+        await this.db
+          .prepare('SELECT household_hash, household_id, verifier, updated_at FROM agent_enrollments')
+          .all()
+      ).results;
+    } catch {
+      return; // pre-migration DB: memory fallback untouched
+    }
+    for (const r of rows) {
+      const e: AgentEnrollment = {
+        householdHash: String(r['household_hash'] ?? ''),
+        householdId: String(r['household_id'] ?? ''),
+        verifier: String(r['verifier'] ?? ''),
+        updatedAt: String(r['updated_at'] ?? ''),
+      };
+      if (e.householdHash && e.householdId && e.verifier) await super.agentEnroll(e);
+    }
   }
 
   override async createRecipe(input: any, meta: { deviceId: string; id?: string; updatedAt?: string }): Promise<Recipe> {

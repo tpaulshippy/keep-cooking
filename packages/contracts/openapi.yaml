@@ -25,6 +25,59 @@ paths:
       responses:
         '200':
           description: OpenAPI JSON (must match packages/contracts/openapi.json)
+  /agent/enroll:
+    post:
+      operationId: agentEnroll
+      description: >-
+        Bind a householdHash bucket to a plaintext householdId label plus a
+        token verifier (hex(SHA256(raw agent token))). Open: knowledge of the
+        unguessable householdHash IS the capability. Re-enroll to rotate the
+        token without rotating the data key. Never receives key material.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgentEnrollRequest' }
+      responses:
+        '201':
+          description: enrolled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentEnrollResponse' }
+  /agent/status:
+    get:
+      operationId: agentStatus
+      security: [{ AgentToken: [] }]
+      responses:
+        '200':
+          description: enrolled household for this token
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentStatus' }
+        '401':
+          description: missing or unknown x-agent-token
+  /mcp:
+    post:
+      operationId: mcpRpc
+      security: [{ AgentToken: [] }]
+      description: >-
+        Stateless JSON-RPC 2.0 (Streamable HTTP subset): initialize,
+        tools/list, tools/call, ping. Every call authenticates via
+        x-agent-token; tools are scoped to the enrolled household. Tool
+        schemas are versioned in packages/contracts/mcp-tools.json.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, description: JSON-RPC 2.0 request }
+      responses:
+        '200':
+          description: JSON-RPC 2.0 response (or isError tool result)
+          content:
+            application/json:
+              schema: { type: object }
+        '401':
+          description: missing or unknown x-agent-token
   /clip:
     post:
       operationId: clipRecipe
@@ -463,6 +516,19 @@ paths:
                 properties:
                   wiped: { type: integer }
 components:
+  securitySchemes:
+    AgentToken:
+      type: apiKey
+      in: header
+      name: x-agent-token
+      description: >-
+        Key-derived bearer (base64url of 32 HKDF-SHA256 bytes, domain-separated
+        from the data key — see docs/agents/). Enroll via POST /agent/enroll,
+        which stores only hex(SHA256(token)). Applies to every v1 route as an
+        alternative to the dev x-user-id/x-role headers: reads are scoped to
+        the enrolled household (out-of-scope reads are 404), writes require an
+        explicit matching householdId (else 403). The /v2 blind sync pipe
+        stays hash-addressed and needs no token.
   parameters:
     IdParam:
       name: id
@@ -723,6 +789,29 @@ components:
         id: { type: string, format: uuid }
         name: { type: string }
         role: { type: string, enum: [owner, member, viewer] }
+    AgentEnrollRequest:
+      type: object
+      description: Binds an unguessable householdHash bucket to a householdId label + token verifier. Carries no key material.
+      required: [householdHash, householdId, verifier]
+      properties:
+        householdHash: { type: string, pattern: '^[0-9a-f]{64}$' }
+        householdId: { type: string }
+        verifier: { type: string, description: hex(SHA256(raw agent-token bytes)), pattern: '^[0-9a-f]{64}$' }
+    AgentEnrollResponse:
+      type: object
+      required: [ok, householdId, householdHash, hashPrefix8]
+      properties:
+        ok: { type: boolean }
+        householdId: { type: string }
+        householdHash: { type: string }
+        hashPrefix8: { type: string }
+    AgentStatus:
+      type: object
+      required: [householdId, hashPrefix8, deviceId]
+      properties:
+        householdId: { type: string }
+        hashPrefix8: { type: string }
+        deviceId: { type: string }
     ShareLink:
       type: object
       required: [id, url]

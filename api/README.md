@@ -43,12 +43,28 @@ an in-memory store (dev only). `GET /health` proves boot.
 | D1 storage | 5 GB | ~50 MB (15 seeds ≈ 30 KB; 10k recipes ≈ 20 MB) | 100x |
 | R2 storage | 10 GB | ~1 GB (10k photos, 1024px q80 ≈ 100 KB avg) | 10x |
 | R2 Class A/B ops | 1M / 10M / month | ~100k uploads + ~1M signed GETs | 10x |
+| Agent enrollments (D1) | 5 GB (shared) | 1 row/household (~200 B; 10k households ≈ 2 MB) | 1000x+ |
+| Agent + MCP req/day | 100k req/day (shared) | ~10 req/day per active agent household (REST or `POST /mcp`, 1 read + 1 write each) | 1000x+ |
 
 Stay-free rules: signed photo URLs (<15 min TTL) instead of proxied bytes,
 `GET /sync/pull?since=` deltas instead of full dumps, ICS feed cached client-side.
+Agent/MCP fit: same 1 Worker + 1 D1 + 1 R2, no Durable Objects, no extra
+services. `POST /mcp` is one request per tool call (stateless JSON-RPC, no
+polling); `sync_pull` is one D1 range SELECT per household hash; enrollments
+are one D1 row per household written once (re-enroll only rotates the
+verifier). Blind `/v2` envelopes cost the same rows as the app sync the agent
+replaces — no double sync.
 
 ## Auth / RBAC
 
+- Key-only agent access (#26, see `docs/agents/`): the device encryption key
+  alone authenticates via `x-agent-token` (base64url HKDF-SHA256, domain-separated
+  from the data key). `POST /agent/enroll` binds `{householdHash, householdId,
+  verifier}` (server stores only the verifier hash — no key material); agents
+  are owner-scoped to their enrolled household (out-of-scope reads 404, wrong
+  writes 403, unknown tokens 401). `POST /mcp` exposes the same Store through
+  stateless JSON-RPC on this Worker (schemas in `packages/contracts/mcp-tools.json`).
+  The `/v2` blind pipe stays hash-addressed and needs no token.
 - Production: Better Auth (email + Apple) verifies the session; `src/auth.ts`
   `getUser()` is the single swap point (currently trusts `x-user-id` /
   `x-user-email` / `x-role` headers as a dev stub — **never enable header auth
@@ -107,6 +123,8 @@ CRUD `/lists`, CRUD `/pantry`, CRUD `/plans` + `/menus`,
 `GET /plans/feed.ics`, `POST /share/cookbook`, `GET /export/:id.(json|md|html)`,
 `GET /sync/pull?since=`, `POST /sync/push`,
 plus `GET /photos/variants?recipeId=` and `GET /photos/sign?key=` (<15 min TTL).
+Key-only agent surface (#26): `POST /agent/enroll`, `GET /agent/status`,
+`POST /mcp` (all in openapi.yaml + versioned `mcp-tools.json`).
 
 ## Sync
 

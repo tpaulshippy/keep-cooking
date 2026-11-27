@@ -1,0 +1,385 @@
+{
+  "version": "0.1.0",
+  "transport": "JSON-RPC 2.0 over POST /mcp (stateless Streamable HTTP, no sessions)",
+  "auth": "x-agent-token header (key-derived bearer, see docs/agents/). Every tool is scoped to the enrolled household.",
+  "tools": [
+    {
+      "name": "recipe_list",
+      "description": "List recipes in the enrolled household.",
+      "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+    },
+    {
+      "name": "recipe_get",
+      "description": "Get one recipe by id (404 when outside the enrolled household).",
+      "inputSchema": { "type": "object", "required": ["id"], "properties": { "id": { "type": "string" } } }
+    },
+    {
+      "name": "recipe_create",
+      "description": "Create a recipe. householdId defaults to the enrolled household and is rejected otherwise.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["title"],
+        "properties": {
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "servings": { "type": "number" },
+          "prepMinutes": { "type": ["integer", "null"] },
+          "cookMinutes": { "type": ["integer", "null"] },
+          "rating": { "type": ["number", "null"] },
+          "source": { "type": "string" },
+          "sourceUrl": { "type": "string" },
+          "categories": { "type": "array", "items": { "type": "string" } },
+          "photoKeys": {
+            "type": "object",
+            "properties": {
+              "original": { "type": "string" },
+              "large1024": { "type": "string" },
+              "thumb": { "type": "string" }
+            }
+          },
+          "ingredients": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name"],
+              "properties": {
+                "name": { "type": "string" },
+                "quantity": { "type": ["number", "null"] },
+                "unit": { "type": "string" },
+                "display": { "type": "string" },
+                "position": { "type": "integer" }
+              }
+            }
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["text"],
+              "properties": { "position": { "type": "integer" }, "text": { "type": "string" } }
+            }
+          },
+          "householdId": { "type": "string" }
+        }
+      }
+    },
+    {
+      "name": "recipe_update",
+      "description": "Replace a recipe by id (same fields as recipe_create plus id).",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id", "title"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "servings": { "type": "number" },
+          "prepMinutes": { "type": ["integer", "null"] },
+          "cookMinutes": { "type": ["integer", "null"] },
+          "rating": { "type": ["number", "null"] },
+          "source": { "type": "string" },
+          "sourceUrl": { "type": "string" },
+          "categories": { "type": "array", "items": { "type": "string" } },
+          "ingredients": { "type": "array", "items": { "type": "object" } },
+          "steps": { "type": "array", "items": { "type": "object" } },
+          "householdId": { "type": "string" }
+        }
+      }
+    },
+    {
+      "name": "recipe_delete",
+      "description": "Delete (tombstone) a recipe by id.",
+      "inputSchema": { "type": "object", "required": ["id"], "properties": { "id": { "type": "string" } } }
+    },
+    {
+      "name": "list_list",
+      "description": "List shopping lists in the enrolled household.",
+      "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+    },
+    {
+      "name": "list_get",
+      "description": "Get one shopping list by id.",
+      "inputSchema": { "type": "object", "required": ["id"], "properties": { "id": { "type": "string" } } }
+    },
+    {
+      "name": "list_create",
+      "description": "Create a shopping list.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string" },
+          "householdId": { "type": "string" },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name"],
+              "properties": {
+                "name": { "type": "string" },
+                "quantity": { "type": "string" },
+                "aisle": { "type": "string" },
+                "checked": { "type": "boolean" },
+                "recipeId": { "type": ["string", "null"] }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "list_update",
+      "description": "Replace a shopping list by id.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id", "name"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "householdId": { "type": "string" },
+          "items": { "type": "array", "items": { "type": "object" } }
+        }
+      }
+    },
+    {
+      "name": "list_delete",
+      "description": "Delete (tombstone) a shopping list by id.",
+      "inputSchema": { "type": "object", "required": ["id"], "properties": { "id": { "type": "string" } } }
+    },
+    {
+      "name": "pantry_list",
+      "description": "List pantry items in the enrolled household.",
+      "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+    },
+    {
+      "name": "pantry_create",
+      "description": "Create a pantry item.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string" },
+          "quantity": { "type": "string" },
+          "location": { "type": "string" },
+          "expiresAt": { "type": ["string", "null"] },
+          "lowThreshold": { "type": "string" },
+          "barcode": { "type": "string" },
+          "householdId": { "type": "string" }
+        }
+      }
+    },
+    {
+      "name": "pantry_update",
+      "description": "Replace a pantry item by id.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id", "name"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "quantity": { "type": "string" },
+          "location": { "type": "string" },
+          "expiresAt": { "type": ["string", "null"] },
+          "lowThreshold": { "type": "string" },
+          "barcode": { "type": "string" },
+          "householdId": { "type": "string" }
+        }
+      }
+    },
+    {
+      "name": "pantry_delete",
+      "description": "Delete (tombstone) a pantry item by id.",
+      "inputSchema": { "type": "object", "required": ["id"], "properties": { "id": { "type": "string" } } }
+    },
+    {
+      "name": "plan_list",
+      "description": "List meal plans in the enrolled household.",
+      "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+    },
+    {
+      "name": "plan_get",
+      "description": "Get one meal plan by id.",
+      "inputSchema": { "type": "object", "required": ["id"], "properties": { "id": { "type": "string" } } }
+    },
+    {
+      "name": "plan_create",
+      "description": "Create a meal plan entry.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["date", "meal"],
+        "properties": {
+          "date": { "type": "string", "format": "date" },
+          "meal": { "type": "string", "enum": ["breakfast", "lunch", "dinner", "snack"] },
+          "recipeId": { "type": ["string", "null"] },
+          "note": { "type": "string" },
+          "servings": { "type": ["number", "null"] },
+          "householdId": { "type": "string" }
+        }
+      }
+    },
+    {
+      "name": "plan_update",
+      "description": "Replace a meal plan by id.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id", "date", "meal"],
+        "properties": {
+          "id": { "type": "string" },
+          "date": { "type": "string", "format": "date" },
+          "meal": { "type": "string", "enum": ["breakfast", "lunch", "dinner", "snack"] },
+          "recipeId": { "type": ["string", "null"] },
+          "note": { "type": "string" },
+          "servings": { "type": ["number", "null"] },
+          "householdId": { "type": "string" }
+        }
+      }
+    },
+    {
+      "name": "plan_delete",
+      "description": "Delete (tombstone) a meal plan by id.",
+      "inputSchema": { "type": "object", "required": ["id"], "properties": { "id": { "type": "string" } } }
+    },
+    {
+      "name": "plan_feed",
+      "description": "Meal-plan webcal feed (text/calendar) for the enrolled household.",
+      "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+    },
+    {
+      "name": "menu_list",
+      "description": "List menus in the enrolled household.",
+      "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+    },
+    {
+      "name": "menu_get",
+      "description": "Get one menu by id.",
+      "inputSchema": { "type": "object", "required": ["id"], "properties": { "id": { "type": "string" } } }
+    },
+    {
+      "name": "menu_create",
+      "description": "Create a menu.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string" },
+          "householdId": { "type": "string" },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "dayOffset": { "type": "integer" },
+                "meal": { "type": "string" },
+                "recipeId": { "type": "string" },
+                "servings": { "type": "number" }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "menu_update",
+      "description": "Replace a menu by id.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id", "name"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "householdId": { "type": "string" },
+          "entries": { "type": "array", "items": { "type": "object" } }
+        }
+      }
+    },
+    {
+      "name": "menu_delete",
+      "description": "Delete (tombstone) a menu by id.",
+      "inputSchema": { "type": "object", "required": ["id"], "properties": { "id": { "type": "string" } } }
+    },
+    {
+      "name": "clip",
+      "description": "Parse a recipe from a URL (JSON-LD/reader) or a pasted caption. Never hallucinates: empty input yields an untitled stub with warnings.",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "url": { "type": "string" }, "caption": { "type": "string" } },
+        "anyOf": [{ "required": ["url"] }, { "required": ["caption"] }]
+      }
+    },
+    {
+      "name": "scale_recipe",
+      "description": "Return a recipe with ingredient quantities scaled to servings (fraction-rounded display strings).",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id", "servings"],
+        "properties": { "id": { "type": "string" }, "servings": { "type": "number", "minimum": 0.25, "maximum": 100 } }
+      }
+    },
+    {
+      "name": "share_cookbook",
+      "description": "Create an owner-scoped cookbook share link for recipe ids.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["recipeIds"],
+        "properties": {
+          "recipeIds": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+          "expiresInDays": { "type": "integer", "default": 30 },
+          "householdId": { "type": "string" }
+        }
+      }
+    },
+    {
+      "name": "export_recipe",
+      "description": "Export a recipe as json (object), md, or html (self-contained Schema.org).",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": { "id": { "type": "string" }, "format": { "type": "string", "enum": ["json", "md", "html"], "default": "json" } }
+      }
+    },
+    {
+      "name": "sync_pull",
+      "description": "Blind v2 pull: encrypted envelopes for the enrolled household bucket since a timestamp. Decrypt client-side with the data key.",
+      "inputSchema": { "type": "object", "properties": { "since": { "type": "string", "format": "date-time" } } }
+    },
+    {
+      "name": "sync_push",
+      "description": "Blind v2 push: upsert encrypted envelopes (LWW per id). Encrypt client-side; standalone ingredient/step envelopes are rejected.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["envelopes"],
+        "properties": {
+          "envelopes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["v", "alg", "kid", "householdHash", "id", "entity", "updatedAt", "deviceId", "nonce", "ciphertext"],
+              "properties": {
+                "v": { "type": "integer", "const": 2 },
+                "alg": { "type": "string", "const": "AES-GCM-256" },
+                "kid": { "type": "string" },
+                "householdHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                "id": { "type": "string", "format": "uuid" },
+                "entity": { "type": "string", "enum": ["recipe", "list", "pantryItem", "plan", "menu"] },
+                "updatedAt": { "type": "string", "format": "date-time" },
+                "deviceId": { "type": "string" },
+                "deleted": { "type": "boolean" },
+                "nonce": { "type": "string" },
+                "ciphertext": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "photos_sign",
+      "description": "Mint an HMAC-signed R2 photo URL (<15min TTL). Keys outside the enrolled household are rejected.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["key"],
+        "properties": { "key": { "type": "string" }, "ttl": { "type": "integer" } }
+      }
+    }
+  ]
+}

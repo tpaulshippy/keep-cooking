@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { MemoryStore, newId, type Store, type SyncEnvelopeWire } from './store';
 import { D1Store } from './d1store';
-import { authAttach, createBetaGate, getUser, isProdBaseUrl, requireOwnerRole, requireWriteRole } from './auth';
+import { authAttach, agentAttach, createBetaGate, getAgent, getUser, isProdBaseUrl, requireAgentScope, requireOwnerRole, requireWriteRole } from './auth';
 import { clipRecipe } from './clip';
 import { scaleRecipe } from './scale';
 import { signKey, variantKeys, DEFAULT_SIGNED_URL_TTL_SECONDS } from './photos';
@@ -19,7 +19,9 @@ import {
   syncEnvelopeSchema,
   entitySchema,
 } from './zod';
-import { E2E_HASH_RE, HASH_LOG_PREFIX_LEN, encryptedEnvelopeSchema, type EncryptedEnvelope } from './e2e';
+import { E2E_HASH_RE, HASH_LOG_PREFIX_LEN, validateE2EPushBatch, type EncryptedEnvelope } from './e2e';
+import { agentEnrollSchema, agentShortHash, AGENT_TOKEN_HEADER } from './agent';
+import { handleMcp } from './mcp';
 import openApiJson from '../../packages/contracts/openapi.json';
 
 export interface Env {
@@ -88,6 +90,9 @@ export function createApp(
   // v1 routes still enforce household RBAC below.
   app.use('*', createBetaGate({ betaToken, prod }));
   app.use('*', authAttach);
+  // Key-only agent auth (#26): no x-agent-token header → passthrough
+  // (existing behavior byte-identical); header present → must verify (401).
+  app.use('*', agentAttach(store));
   app.use('*', async (c, next) => {
     c.set('store' as never, store as never);
     await next();
@@ -106,6 +111,38 @@ export function createApp(
   app.get('/health', (c) => c.json({ ok: true, version }));
   app.get('/openapi.json', (c) => c.json(openApiJson));
 
+  // ---------- key-only agent auth (#26) ----------
+  // POST /agent/enroll binds {householdHash, householdId, verifier}. Open:
+  // knowledge of the unguessable householdHash IS the capability (same trust
+  // as the /v2 bucket itself). Re-enroll rotates the token verifier without
+  // rotating the data key. Never receives key material — only hashes/labels.
+  app.post('/agent/enroll', async (c) => {
+    const body = parseOrThrow(agentEnrollSchema, await c.req.json().catch(() => ({})));
+    await getStore().ensureHousehold(body.householdId, body.householdId);
+    const e = await getStore().agentEnroll({ ...body, updatedAt: new Date().toISOString() });
+    return c.json(
+      { ok: true, householdId: e.householdId, householdHash: e.householdHash, hashPrefix8: agentShortHash(e.householdHash) },
+      201,
+    );
+  });
+  app.get('/agent/status', async (c) => {
+    const a = getAgent(c);
+    if (!a) {
+      const err = new Error(`missing or unknown ${AGENT_TOKEN_HEADER} (enroll with POST /agent/enroll)`) as Error & { status?: number };
+      err.status = 401;
+      throw err;
+    }
+    return c.json({ householdId: a.householdId, hashPrefix8: agentShortHash(a.householdHash), deviceId: a.deviceId });
+  });
+
+  // ---------- MCP (stateless JSON-RPC on this Worker; x-agent-token required) ----------
+  app.post('/mcp', async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const { status, body: out } = await handleMcp(getStore(), { secret, baseUrl }, body, getAgent(c));
+    return c.json(out, status);
+  });
+  app.get('/mcp', (c) => c.json({ error: 'use POST /mcp with a JSON-RPC 2.0 body' }, 405));
+
   // ---------- clip ----------
   app.post('/clip', async (c) => {
     const body = parseOrThrow(clipRequestSchema, await c.req.json().catch(() => ({})));
@@ -118,10 +155,20 @@ export function createApp(
   // ---------- recipes ----------
   app.get('/recipes', async (c) => {
     const householdId = c.req.query('householdId');
+    const a = getAgent(c);
+    if (a) {
+      if (householdId && householdId !== a.householdId) {
+        const err = new Error(`agent token is scoped to household '${a.householdId}'`) as Error & { status?: number };
+        err.status = 403;
+        throw err;
+      }
+      return c.json(await getStore().listRecipes(a.householdId));
+    }
     return c.json(await getStore().listRecipes(householdId));
   });
   app.post('/recipes', async (c) => {
     const body = parseOrThrow(recipeInputSchema, await c.req.json().catch(() => ({})));
+    requireAgentScope(c, body.householdId);
     await requireWriteRole(c, getStore(), body.householdId);
     const user = getUser(c);
     const r = await getStore().createRecipe(body, { deviceId: user.deviceId });
@@ -130,13 +177,18 @@ export function createApp(
   app.get('/recipes/:id', async (c) => {
     const r = await getStore().getRecipe(c.req.param('id'));
     if (!r) return c.json({ error: 'not found' }, 404);
+    const a = getAgent(c);
+    if (a && r.householdId !== a.householdId) return c.json({ error: 'not found' }, 404);
     return c.json(r);
   });
   app.put('/recipes/:id', async (c) => {
     const id = c.req.param('id');
     const cur = await getStore().getRecipe(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
+    const a = getAgent(c);
+    if (a && cur.householdId !== a.householdId) return c.json({ error: 'not found' }, 404);
     const body = parseOrThrow(recipeInputSchema, await c.req.json().catch(() => ({})));
+    requireAgentScope(c, body.householdId ?? cur.householdId);
     await requireWriteRole(c, getStore(), body.householdId ?? cur.householdId);
     const user = getUser(c);
     const r = await getStore().updateRecipe(id, body, { deviceId: user.deviceId });
@@ -146,6 +198,9 @@ export function createApp(
     const id = c.req.param('id');
     const cur = await getStore().getRecipe(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
+    const a = getAgent(c);
+    if (a && cur.householdId !== a.householdId) return c.json({ error: 'not found' }, 404);
+    requireAgentScope(c, cur.householdId);
     await requireWriteRole(c, getStore(), cur.householdId);
     const user = getUser(c);
     await getStore().deleteRecipe(id, user.deviceId);
@@ -155,15 +210,22 @@ export function createApp(
     const id = c.req.param('id');
     const r = await getStore().getRecipe(id);
     if (!r) return c.json({ error: 'not found' }, 404);
+    const a = getAgent(c);
+    if (a && r.householdId !== a.householdId) return c.json({ error: 'not found' }, 404);
     const body = parseOrThrow(scaleRequestSchema, await c.req.json().catch(() => ({})));
     const { ingredients } = scaleRecipe(r.ingredients, r.servings, body.servings);
     return c.json({ ...r, servings: body.servings, ingredients });
   });
 
   // ---------- lists ----------
-  app.get('/lists', async (c) => c.json(await getStore().listLists()));
+  app.get('/lists', async (c) => {
+    const all = await getStore().listLists();
+    const a = getAgent(c);
+    return c.json(a ? all.filter((l) => l.householdId === a.householdId) : all);
+  });
   app.post('/lists', async (c) => {
     const body = parseOrThrow(shoppingListInputSchema, await c.req.json().catch(() => ({})));
+    requireAgentScope(c, body.householdId);
     await requireWriteRole(c, getStore(), body.householdId);
     const user = getUser(c);
     return c.json(await getStore().createList(body, { deviceId: user.deviceId }), 201);
@@ -171,13 +233,18 @@ export function createApp(
   app.get('/lists/:id', async (c) => {
     const l = await getStore().getList(c.req.param('id'));
     if (!l) return c.json({ error: 'not found' }, 404);
+    const a = getAgent(c);
+    if (a && l.householdId !== a.householdId) return c.json({ error: 'not found' }, 404);
     return c.json(l);
   });
   app.put('/lists/:id', async (c) => {
     const id = c.req.param('id');
     const cur = await getStore().getList(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
+    const a = getAgent(c);
+    if (a && cur.householdId !== a.householdId) return c.json({ error: 'not found' }, 404);
     const body = parseOrThrow(shoppingListInputSchema, await c.req.json().catch(() => ({})));
+    requireAgentScope(c, body.householdId ?? cur.householdId);
     await requireWriteRole(c, getStore(), body.householdId ?? cur.householdId);
     const user = getUser(c);
     return c.json(await getStore().updateList(id, body, { deviceId: user.deviceId }));
@@ -186,6 +253,9 @@ export function createApp(
     const id = c.req.param('id');
     const cur = await getStore().getList(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
+    const a = getAgent(c);
+    if (a && cur.householdId !== a.householdId) return c.json({ error: 'not found' }, 404);
+    requireAgentScope(c, cur.householdId);
     await requireWriteRole(c, getStore(), cur.householdId);
     const user = getUser(c);
     await getStore().deleteList(id, user.deviceId);
@@ -193,9 +263,14 @@ export function createApp(
   });
 
   // ---------- pantry ----------
-  app.get('/pantry', async (c) => c.json(await getStore().listPantry()));
+  app.get('/pantry', async (c) => {
+    const all = await getStore().listPantry();
+    const a = getAgent(c);
+    return c.json(a ? all.filter((p) => p.householdId === a.householdId) : all);
+  });
   app.post('/pantry', async (c) => {
     const body = parseOrThrow(pantryInputSchema, await c.req.json().catch(() => ({})));
+    requireAgentScope(c, body.householdId);
     await requireWriteRole(c, getStore(), body.householdId);
     const user = getUser(c);
     return c.json(await getStore().createPantry(body, { deviceId: user.deviceId }), 201);
@@ -204,7 +279,10 @@ export function createApp(
     const id = c.req.param('id');
     const cur = await getStore().getPantry(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
+    const a = getAgent(c);
+    if (a && cur.householdId !== a.householdId) return c.json({ error: 'not found' }, 404);
     const body = parseOrThrow(pantryInputSchema, await c.req.json().catch(() => ({})));
+    requireAgentScope(c, body.householdId ?? cur.householdId);
     await requireWriteRole(c, getStore(), body.householdId ?? cur.householdId);
     const user = getUser(c);
     return c.json(await getStore().updatePantry(id, body, { deviceId: user.deviceId }));
@@ -213,6 +291,9 @@ export function createApp(
     const id = c.req.param('id');
     const cur = await getStore().getPantry(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
+    const a = getAgent(c);
+    if (a && cur.householdId !== a.householdId) return c.json({ error: 'not found' }, 404);
+    requireAgentScope(c, cur.householdId);
     await requireWriteRole(c, getStore(), cur.householdId);
     const user = getUser(c);
     await getStore().deletePantry(id, user.deviceId);
@@ -221,16 +302,23 @@ export function createApp(
 
   // ---------- plans feed (before :id) ----------
   app.get('/plans/feed.ics', async (c) => {
-    const plans = await getStore().listPlans();
+    const allPlans = await getStore().listPlans();
+    const a = getAgent(c);
+    const plans = a ? allPlans.filter((p) => p.householdId === a.householdId) : allPlans;
     const byId = new Map((await getStore().listRecipes()).map((r) => [r.id, r.title] as const));
     const ics = plansToIcs(plans, (rid) => byId.get(rid ?? '') ?? null);
     return new Response(ics, { headers: { 'content-type': 'text/calendar; charset=utf-8' } });
   });
 
   // ---------- plans ----------
-  app.get('/plans', async (c) => c.json(await getStore().listPlans()));
+  app.get('/plans', async (c) => {
+    const all = await getStore().listPlans();
+    const a = getAgent(c);
+    return c.json(a ? all.filter((p) => p.householdId === a.householdId) : all);
+  });
   app.post('/plans', async (c) => {
     const body = parseOrThrow(planInputSchema, await c.req.json().catch(() => ({})));
+    requireAgentScope(c, body.householdId);
     await requireWriteRole(c, getStore(), body.householdId);
     const user = getUser(c);
     return c.json(await getStore().createPlan(body, { deviceId: user.deviceId }), 201);
@@ -238,13 +326,18 @@ export function createApp(
   app.get('/plans/:id', async (c) => {
     const p = await getStore().getPlan(c.req.param('id'));
     if (!p) return c.json({ error: 'not found' }, 404);
+    const a = getAgent(c);
+    if (a && p.householdId !== a.householdId) return c.json({ error: 'not found' }, 404);
     return c.json(p);
   });
   app.put('/plans/:id', async (c) => {
     const id = c.req.param('id');
     const cur = await getStore().getPlan(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
+    const a = getAgent(c);
+    if (a && cur.householdId !== a.householdId) return c.json({ error: 'not found' }, 404);
     const body = parseOrThrow(planInputSchema, await c.req.json().catch(() => ({})));
+    requireAgentScope(c, body.householdId ?? cur.householdId);
     await requireWriteRole(c, getStore(), body.householdId ?? cur.householdId);
     const user = getUser(c);
     return c.json(await getStore().updatePlan(id, body, { deviceId: user.deviceId }));
@@ -253,6 +346,9 @@ export function createApp(
     const id = c.req.param('id');
     const cur = await getStore().getPlan(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
+    const a = getAgent(c);
+    if (a && cur.householdId !== a.householdId) return c.json({ error: 'not found' }, 404);
+    requireAgentScope(c, cur.householdId);
     await requireWriteRole(c, getStore(), cur.householdId);
     const user = getUser(c);
     await getStore().deletePlan(id, user.deviceId);
@@ -260,9 +356,14 @@ export function createApp(
   });
 
   // ---------- menus ----------
-  app.get('/menus', async (c) => c.json(await getStore().listMenus()));
+  app.get('/menus', async (c) => {
+    const all = await getStore().listMenus();
+    const a = getAgent(c);
+    return c.json(a ? all.filter((m) => m.householdId === a.householdId) : all);
+  });
   app.post('/menus', async (c) => {
     const body = parseOrThrow(menuInputSchema, await c.req.json().catch(() => ({})));
+    requireAgentScope(c, body.householdId);
     await requireWriteRole(c, getStore(), body.householdId);
     const user = getUser(c);
     return c.json(await getStore().createMenu(body, { deviceId: user.deviceId }), 201);
@@ -270,13 +371,18 @@ export function createApp(
   app.get('/menus/:id', async (c) => {
     const m = await getStore().getMenu(c.req.param('id'));
     if (!m) return c.json({ error: 'not found' }, 404);
+    const a = getAgent(c);
+    if (a && m.householdId !== a.householdId) return c.json({ error: 'not found' }, 404);
     return c.json(m);
   });
   app.put('/menus/:id', async (c) => {
     const id = c.req.param('id');
     const cur = await getStore().getMenu(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
+    const a = getAgent(c);
+    if (a && cur.householdId !== a.householdId) return c.json({ error: 'not found' }, 404);
     const body = parseOrThrow(menuInputSchema, await c.req.json().catch(() => ({})));
+    requireAgentScope(c, body.householdId ?? cur.householdId);
     await requireWriteRole(c, getStore(), body.householdId ?? cur.householdId);
     const user = getUser(c);
     return c.json(await getStore().updateMenu(id, body, { deviceId: user.deviceId }));
@@ -285,6 +391,9 @@ export function createApp(
     const id = c.req.param('id');
     const cur = await getStore().getMenu(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
+    const a = getAgent(c);
+    if (a && cur.householdId !== a.householdId) return c.json({ error: 'not found' }, 404);
+    requireAgentScope(c, cur.householdId);
     await requireWriteRole(c, getStore(), cur.householdId);
     const user = getUser(c);
     await getStore().deleteMenu(id, user.deviceId);
@@ -294,6 +403,7 @@ export function createApp(
   // ---------- share ----------
   app.post('/share/cookbook', async (c) => {
     const body = parseOrThrow(shareRequestSchema, await c.req.json().catch(() => ({})));
+    requireAgentScope(c, body.householdId);
     await requireOwnerRole(c, getStore(), body.householdId);
     const id = newId();
     const expiresAt = new Date(Date.now() + (body.expiresInDays ?? 30) * 86400_000).toISOString();
@@ -312,6 +422,8 @@ export function createApp(
     if (!m) return c.json({ error: 'not found' }, 404);
     const r = await getStore().getRecipe(m[1]!);
     if (!r) return c.json({ error: 'not found' }, 404);
+    const a = getAgent(c);
+    if (a && r.householdId !== a.householdId) return c.json({ error: 'not found' }, 404);
     const ext = m[2]!;
     if (ext === 'json') return c.json(r);
     if (ext === 'md') return new Response(recipeToMarkdown(r), { headers: { 'content-type': 'text/markdown; charset=utf-8' } });
@@ -326,6 +438,16 @@ export function createApp(
   app.get('/photos/sign', async (c) => {
     const key = c.req.query('key') ?? '';
     if (!key) return c.json({ error: 'key is required' }, 400);
+    // Agent scope (best-effort): a key naming a recipe of another household
+    // is rejected; unparseable keys carry no household signal, so they pass.
+    const a = getAgent(c);
+    if (a) {
+      const km = key.match(/^photos\/([^/]+)\/(original|1024|thumb)\.jpg$/);
+      if (km) {
+        const r = await getStore().getRecipe(km[1]!);
+        if (r && r.householdId !== a.householdId) return c.json({ error: 'photo is outside the enrolled household' }, 403);
+      }
+    }
     const ttl = Number(c.req.query('ttl') ?? DEFAULT_SIGNED_URL_TTL_SECONDS);
     const signed = await signKey(key, { secret, baseUrl, ttlSeconds: Number.isFinite(ttl) ? ttl : DEFAULT_SIGNED_URL_TTL_SECONDS });
     return c.json(signed);
@@ -334,14 +456,42 @@ export function createApp(
   // ---------- sync ----------
   app.get('/sync/pull', async (c) => {
     const since = c.req.query('since') ?? '1970-01-01T00:00:00Z';
-    return c.json(await getStore().pullSince(since));
+    const all = await getStore().pullSince(since);
+    const a = getAgent(c);
+    if (!a) return c.json(all);
+    // Legacy plaintext pipe: scope to the enrolled household. Envelopes
+    // without a household label are dropped for agents (no scope signal).
+    return c.json(
+      all.filter((e) => (e.payload as { householdId?: unknown } | undefined)?.householdId === a.householdId),
+    );
   });
   app.post('/sync/push', async (c) => {
     const raw = await c.req.json().catch(() => null);
     if (!Array.isArray(raw)) return c.json({ error: 'expected an array of SyncEnvelopes' }, 400);
     const conflicts: SyncEnvelopeWire[] = [];
+    const a = getAgent(c);
     for (const item of raw) {
       const env = parseOrThrow(syncEnvelopeSchema, item) as SyncEnvelopeWire;
+      if (a) {
+        // Agent plaintext-push scope: every envelope must name the enrolled
+        // household. Child rows resolve through the parent recipe; unknown
+        // parents are dropped (client will re-pull), as for app callers.
+        if (env.entity === 'ingredient' || env.entity === 'step') {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const payload = (env.payload ?? {}) as Record<string, any>;
+          const parent = await getStore().getRecipeRow(String(payload.recipeId ?? env.id));
+          if (!parent) continue;
+          if (parent.householdId !== a.householdId) {
+            const err = new Error(`agent token is scoped to household '${a.householdId}'`) as Error & { status?: number };
+            err.status = 403;
+            throw err;
+          }
+        } else {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const hh = ((env.payload ?? {}) as Record<string, any>).householdId;
+          requireAgentScope(c, typeof hh === 'string' ? hh : undefined);
+        }
+      }
       if (!entitySchema.safeParse(env.entity).success) {
         const err = new Error(`unknown entity: ${env.entity}`) as Error & { status?: number };
         err.status = 400;
@@ -424,25 +574,15 @@ export function createApp(
     const hash = c.req.param('hash') ?? '';
     if (!E2E_HASH_RE.test(hash)) return c.json({ error: 'invalid household hash' }, 400);
     const raw = await c.req.json().catch(() => null);
-    if (!Array.isArray(raw)) return c.json({ error: 'expected an array of encrypted envelopes' }, 400);
-    // Validate-first: parse every envelope (schema + householdHash match +
-    // entity set) before writing any, so a bad batch never partially lands.
-    const batch: EncryptedEnvelope[] = [];
-    for (const item of raw) {
-      const entity = (item as { entity?: unknown } | null | undefined)?.entity;
-      if (entity === 'ingredient' || entity === 'step') {
-        return c.json(
-          {
-            error: 'standalone ingredient/step envelopes are not accepted; fold children into the parent recipe envelope before encrypting',
-            entity,
-          },
-          422,
-        );
-      }
-      const parsed = parseOrThrow(encryptedEnvelopeSchema, item);
-      const env: EncryptedEnvelope = { ...parsed, deleted: parsed.deleted ?? false };
-      if (env.householdHash !== hash) return c.json({ error: 'householdHash mismatch' }, 400);
-      batch.push(env);
+    // Validate-first (shared with the MCP sync_push tool): a bad batch never
+    // partially lands. The 422 shape keeps its `entity` field for clients.
+    let batch: EncryptedEnvelope[];
+    try {
+      batch = validateE2EPushBatch(hash, raw);
+    } catch (e) {
+      const err = e as Error & { status?: number; entity?: string };
+      if (err.status === 422) return c.json({ error: err.message, entity: err.entity }, 422);
+      throw e;
     }
     const stored: string[] = [];
     for (const env of batch) {
