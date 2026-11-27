@@ -194,6 +194,7 @@ targets:
       - path: Features/Cook/CookSession.swift
       - path: Features/Cook/VoiceCommandParser.swift
       - path: Features/Plan/PlanAggregation.swift
+      - path: Features/Plan/MenuPlanning.swift
       - path: Features/Shop/ShopHelpers.swift
       - path: Features/Library/DuplicateFinder.swift
       - path: Features/Library/LibrarySearch.swift
@@ -202,6 +203,7 @@ targets:
       - path: Features/Ingest/IngredientParserTests.swift
       - path: Features/Ingest/IngestHumanPolishTests.swift
       - path: Features/Cook/CookTests.swift
+      - path: Features/Plan/MenuPlanningTests.swift
       - path: Features/Library/DuplicateFinderTests.swift
       - path: Features/Library/LibrarySearchTests.swift
     info:

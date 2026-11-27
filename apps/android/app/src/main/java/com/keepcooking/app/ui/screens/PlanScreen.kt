@@ -12,15 +12,19 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -32,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.keepcooking.app.AppContainer
 import com.keepcooking.app.cook.fractionDisplayString
@@ -43,9 +48,17 @@ import com.keepcooking.app.data.PlanEntity
 import com.keepcooking.app.data.RecipeEntity
 import com.keepcooking.app.data.ShoppingListEntity
 import com.keepcooking.app.network.SyncEnvelopeDto
+import com.keepcooking.app.plan.ExpandedMenuEntry
 import com.keepcooking.app.plan.PlanGroceryInput
 import com.keepcooking.app.plan.aggregateWeekToList
+import com.keepcooking.app.plan.expandMenuEntries
+import com.keepcooking.app.plan.filterSkipped
+import com.keepcooking.app.plan.menuDayCount
+import com.keepcooking.app.plan.menuMealSlots
+import com.keepcooking.app.plan.normalizeMeal
 import com.keepcooking.app.plan.planFeedSubscribeUrl
+import com.keepcooking.app.plan.planMealForMenuSlot
+import com.keepcooking.app.plan.validateDayCount
 import com.keepcooking.app.widgets.SnapshotWriter
 import java.time.DayOfWeek
 import java.time.Instant
@@ -57,6 +70,7 @@ import java.time.format.FormatStyle
 import java.time.temporal.TemporalAdjusters
 import java.util.UUID
 import kotlinx.coroutines.launch
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -83,10 +97,53 @@ private fun PlanEntity.localDate(): LocalDate =
 private fun menuEntriesOf(menu: MenuEntity): List<MenuEntry> =
     runCatching {
         planJson.decodeFromString<List<MenuEntry>>(
-            kotlinx.serialization.builtins.ListSerializer(MenuEntry.serializer()),
+            ListSerializer(MenuEntry.serializer()),
             menu.entriesJson,
         )
     }.getOrDefault(emptyList())
+
+private fun encodeMenuEntries(entries: List<MenuEntry>): String =
+    runCatching {
+        planJson.encodeToString(ListSerializer(MenuEntry.serializer()), entries)
+    }.getOrDefault("[]")
+
+/** Entry-backed grid days for the stepper/editor: min(max(growTarget, entryMax+1), 28). */
+private fun gridDaysFor(entries: List<MenuEntry>, growTarget: Int?): Int {
+    val backed = maxOf((entries.maxOfOrNull { it.dayOffset } ?: -1) + 1, 1)
+    return minOf(maxOf(growTarget ?: backed, backed), 28)
+}
+
+private fun menuSyncPayload(menu: MenuEntity, entries: List<MenuEntry>) = buildJsonObject {
+    put("id", menu.id)
+    put("householdId", menu.householdId)
+    put("name", menu.name)
+    put(
+        "entries",
+        JsonArray(
+            entries.map { e ->
+                buildJsonObject {
+                    put("dayOffset", e.dayOffset)
+                    put("meal", e.meal)
+                    put("recipeId", e.recipeId)
+                    put("servings", e.servings)
+                }
+            },
+        ),
+    )
+}
+
+private fun planSyncPayload(row: PlanEntity) = buildJsonObject {
+    put("id", row.id)
+    put("householdId", row.householdId)
+    put(
+        "date",
+        Instant.ofEpochMilli(row.date).atZone(ZoneOffset.UTC).toLocalDate().toString(),
+    )
+    put("meal", row.mealRaw)
+    row.recipeId?.let { put("recipeId", it) }
+    put("note", row.note)
+    row.servings?.let { put("servings", it) }
+}
 
 /**
  * Plan tab — parity with iOS Features/Plan/PlanViews.swift.
@@ -125,7 +182,55 @@ fun PlanScreen(container: AppContainer? = null) {
         runCatching { SnapshotWriter.refresh(context, db) }
     }
 
-    fun applyMenu(menu: MenuEntity, weekStart: LocalDate) {
+    // --- Menu CRUD dialog / editor state ---
+    var newMenuName by remember { mutableStateOf("") }
+    var skipFilled by remember { mutableStateOf(true) }
+    var renamingMenu by remember { mutableStateOf<MenuEntity?>(null) }
+    var renameText by remember { mutableStateOf("") }
+    var slotsMenu by remember { mutableStateOf<MenuEntity?>(null) }
+    var slotsText by remember { mutableStateOf("") }
+    // Editor-local day-count growth beyond the entry-backed max (persisted
+    // entries always drive the stored day count; see gridDaysFor).
+    var editorExtraDays by remember { mutableStateOf(mapOf<String, Int>()) }
+    var pendingShrink by remember { mutableStateOf<Pair<MenuEntity, Int>?>(null) }
+    var editingMenu by remember { mutableStateOf<MenuEntity?>(null) }
+    var editingEntries by remember { mutableStateOf(listOf<MenuEntry>()) }
+    var pickerDay by remember { mutableStateOf<Int?>(null) }
+    var pickerMeal by remember { mutableStateOf<String?>(null) }
+    var pickerQuery by remember { mutableStateOf("") }
+    var pickerServings by remember { mutableStateOf("4") }
+
+    fun persistMenu(menu: MenuEntity, entries: List<MenuEntry>) {
+        val db = container?.db ?: return
+        scope.launch {
+            runCatching {
+                val now = System.currentTimeMillis()
+                val did = deviceId.ifEmpty { container.syncEngine.deviceId() }
+                val row = menu.copy(
+                    entriesJson = encodeMenuEntries(entries),
+                    updatedAt = now,
+                    deviceId = did,
+                )
+                db.menus().upsertAll(listOf(row))
+                container.syncEngine.enqueue(
+                    SyncEnvelopeDto(
+                        id = row.id,
+                        updatedAt = Instant.ofEpochMilli(now).toString(),
+                        deviceId = did,
+                        deleted = row.deleted,
+                        entity = "menu",
+                        payload = menuSyncPayload(row, entries),
+                    ),
+                )
+                menus = db.menus().liveMenus()
+                refreshSnapshot()
+            }.onFailure {
+                aggResult = "Couldn't save menu (${it.message})."
+            }
+        }
+    }
+
+    fun applyMenu(menu: MenuEntity, weekStart: LocalDate, skip: Boolean) {
         val db = container?.db ?: return
         val entries = menuEntriesOf(menu)
         if (entries.isEmpty()) {
@@ -136,7 +241,39 @@ fun PlanScreen(container: AppContainer? = null) {
             runCatching {
                 val now = System.currentTimeMillis()
                 val did = deviceId.ifEmpty { container.syncEngine.deviceId() }
-                val rows = entries.map { e ->
+                // Fresh read: the in-memory plans state may be stale.
+                val freshPlans = db.plans().livePlans()
+                val expanded = expandMenuEntries(entries)
+                    .map { it.copy(meal = planMealForMenuSlot(it.meal)) }
+                val dropped = entries.size - expandMenuEntries(entries).size
+                val occupied = freshPlans.filterNot { it.deleted }
+                    .map { it.localDate() to planMealForMenuSlot(it.mealRaw) }.toSet()
+                val (toInsert, skipped) = filterSkipped(expanded, weekStart, occupied, skip)
+                if (!skip) {
+                    // Overwrite: tombstone conflicting plans (same date + plan
+                    // meal) before inserting, so apply is idempotent per slot.
+                    val conflicts = freshPlans.filterNot { it.deleted }.filter { plan ->
+                        toInsert.any { e ->
+                            plan.localDate() == weekStart.plusDays(e.dayOffset.toLong()) &&
+                                planMealForMenuSlot(plan.mealRaw) == e.meal
+                        }
+                    }
+                    for (conflict in conflicts) {
+                        val tomb = conflict.copy(updatedAt = now, deviceId = did, deleted = true)
+                        db.plans().upsertAll(listOf(tomb))
+                        container.syncEngine.enqueue(
+                            SyncEnvelopeDto(
+                                id = tomb.id,
+                                updatedAt = Instant.ofEpochMilli(now).toString(),
+                                deviceId = did,
+                                deleted = true,
+                                entity = "plan",
+                                payload = planSyncPayload(tomb),
+                            ),
+                        )
+                    }
+                }
+                val rows = toInsert.map { e: ExpandedMenuEntry ->
                     val day = weekStart.plusDays(e.dayOffset.toLong())
                     val millis = day.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
                     PlanEntity(
@@ -159,27 +296,85 @@ fun PlanScreen(container: AppContainer? = null) {
                             updatedAt = Instant.ofEpochMilli(now).toString(),
                             deviceId = did,
                             entity = "plan",
-                            payload = buildJsonObject {
-                                put("id", row.id)
-                                put("householdId", row.householdId)
-                                put(
-                                    "date",
-                                    Instant.ofEpochMilli(row.date).atZone(ZoneOffset.UTC).toLocalDate().toString(),
-                                )
-                                put("meal", row.mealRaw)
-                                row.recipeId?.let { put("recipeId", it) }
-                                put("note", row.note)
-                                row.servings?.let { put("servings", it) }
-                            },
+                            payload = planSyncPayload(row),
                         ),
                     )
                 }
                 plans = db.plans().livePlans()
                 refreshSnapshot()
-                aggResult = "“${menu.name}” applied to week of $weekStart (${rows.size} entries)."
+                val parts = mutableListOf("${rows.size} entries")
+                if (skip && skipped > 0) parts += "$skipped skipped"
+                if (dropped > 0) parts += "$dropped ignored"
+                aggResult = "“${menu.name}” applied to week of $weekStart (${parts.joinToString(", ")})."
             }.onFailure {
                 aggResult = "Couldn't apply “${menu.name}” (${it.message})."
             }
+        }
+    }
+
+    fun createMenu() {
+        val db = container?.db ?: return
+        val name = newMenuName.trim()
+        if (name.isEmpty()) return
+        scope.launch {
+            runCatching {
+                val now = System.currentTimeMillis()
+                val did = deviceId.ifEmpty { container.syncEngine.deviceId() }
+                val row = MenuEntity(
+                    id = UUID.randomUUID().toString(),
+                    householdId = menus.firstOrNull()?.householdId ?: "hh-demo",
+                    name = name,
+                    entriesJson = "[]",
+                    updatedAt = now,
+                    deviceId = did,
+                )
+                db.menus().upsertAll(listOf(row))
+                container.syncEngine.enqueue(
+                    SyncEnvelopeDto(
+                        id = row.id,
+                        updatedAt = Instant.ofEpochMilli(now).toString(),
+                        deviceId = did,
+                        entity = "menu",
+                        payload = menuSyncPayload(row, emptyList()),
+                    ),
+                )
+                menus = db.menus().liveMenus()
+                newMenuName = ""
+                refreshSnapshot()
+            }.onFailure {
+                aggResult = "Couldn't create menu (${it.message})."
+            }
+        }
+    }
+
+    fun duplicateMenu(menu: MenuEntity) {
+        val entries = menuEntriesOf(menu)
+        val now = System.currentTimeMillis()
+        val copy = menu.copy(
+            id = UUID.randomUUID().toString(),
+            name = "${menu.name} copy",
+            updatedAt = now,
+        )
+        persistMenu(copy, entries)
+    }
+
+    fun deleteMenu(menu: MenuEntity) {
+        val entries = menuEntriesOf(menu)
+        persistMenu(menu.copy(deleted = true), entries)
+    }
+
+    fun stepDayCount(menu: MenuEntity, menuEntries: List<MenuEntry>, dayCount: Int, delta: Int) {
+        if (delta >= 0) {
+            editorExtraDays = editorExtraDays + (menu.id to minOf(dayCount + delta, 28))
+            return
+        }
+        val target = validateDayCount(dayCount + delta)
+        if (target == dayCount) return
+        val backed = menuDayCount(menuEntries)
+        if (target < backed) {
+            pendingShrink = menu to target
+        } else {
+            editorExtraDays = editorExtraDays + (menu.id to target)
         }
     }
 
@@ -322,6 +517,8 @@ fun PlanScreen(container: AppContainer? = null) {
             servings = plan.servings,
         )
     }
+    // Preview-only stub: real menus come from Room (db.menus().liveMenus()).
+    val showDemoMenus = container == null && menus.isEmpty()
     val demoMenus = remember {
         listOf(
             DemoMenu("m1", "Easy weeknights", 5),
@@ -428,37 +625,122 @@ fun PlanScreen(container: AppContainer? = null) {
                 }
             }
 
-            if (menus.isNotEmpty() || demoMenus.isNotEmpty()) {
+            if (container != null) {
                 Spacer(Modifier.height(8.dp))
                 Text("Reusable menus", style = MaterialTheme.typography.titleMedium)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = skipFilled, onCheckedChange = { skipFilled = it })
+                    Text("Skip filled slots", style = MaterialTheme.typography.bodyMedium)
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    OutlinedTextField(
+                        value = newMenuName,
+                        onValueChange = { newMenuName = it },
+                        label = { Text("New menu name") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f).testTag("menu-create-field"),
+                    )
+                    Button(
+                        onClick = { createMenu() },
+                        enabled = newMenuName.trim().isNotEmpty(),
+                        modifier = Modifier.testTag("menu-create-button"),
+                    ) { Text("Create") }
+                }
+                if (menus.isEmpty()) {
+                    Text(
+                        "No reusable menus yet — create one above.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                }
                 menus.forEach { menu ->
-                    val count = menuEntriesOf(menu).size
+                    val menuEntries = menuEntriesOf(menu)
+                    val dayCount = gridDaysFor(menuEntries, editorExtraDays[menu.id])
+                    val outOfRange = menuEntries.count { it.dayOffset < 0 || it.dayOffset > 27 }
                     Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(menu.name, style = MaterialTheme.typography.bodyLarge)
-                                Text("$count entries", style = MaterialTheme.typography.labelSmall)
+                        Column(Modifier.padding(12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(menu.name, style = MaterialTheme.typography.bodyLarge)
+                                    Text(
+                                        "${menuEntries.size} entries · $dayCount day(s)",
+                                        style = MaterialTheme.typography.labelSmall,
+                                    )
+                                }
+                                OutlinedButton(
+                                    onClick = { applyMenu(menu, weekStart, skipFilled) },
+                                    enabled = menuEntries.isNotEmpty(),
+                                ) {
+                                    Text("Apply to week")
+                                }
                             }
-                            OutlinedButton(
-                                onClick = { applyMenu(menu, weekStart) },
-                                enabled = container != null && count > 0,
+                            if (outOfRange > 0) {
+                                Text(
+                                    if (outOfRange == 1) {
+                                        "1 entry outside days 1–28 is ignored on apply."
+                                    } else {
+                                        "$outOfRange entries outside days 1–28 are ignored on apply."
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.secondary,
+                                )
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
                             ) {
-                                Text("Apply to week")
+                                Text("Days: $dayCount", style = MaterialTheme.typography.labelSmall)
+                                OutlinedButton(onClick = { stepDayCount(menu, menuEntries, dayCount, -1) }) { Text("-") }
+                                OutlinedButton(onClick = { stepDayCount(menu, menuEntries, dayCount, +1) }) { Text("+") }
+                                OutlinedButton(
+                                    onClick = {
+                                        editingMenu = menu
+                                        editingEntries = menuEntries
+                                    },
+                                ) { Text("Edit") }
+                            }
+                            Text(
+                                "Meals: ${menuMealSlots(menuEntries).joinToString(", ")}",
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                OutlinedButton(
+                                    onClick = {
+                                        slotsMenu = menu
+                                        slotsText = menuMealSlots(menuEntries).joinToString(", ")
+                                    },
+                                ) { Text("Meals") }
+                                OutlinedButton(
+                                    onClick = {
+                                        renamingMenu = menu
+                                        renameText = menu.name
+                                    },
+                                ) { Text("Rename") }
+                                OutlinedButton(onClick = { duplicateMenu(menu) }) { Text("Duplicate") }
+                                OutlinedButton(onClick = { deleteMenu(menu) }) { Text("Delete") }
                             }
                         }
                     }
                 }
-                if (menus.isEmpty()) {
-                    demoMenus.forEach { menu ->
-                        Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(menu.name, style = MaterialTheme.typography.bodyLarge)
-                                    Text("${menu.entryCount} entries", style = MaterialTheme.typography.labelSmall)
-                                }
-                                OutlinedButton(onClick = {}, enabled = false) {
-                                    Text("Apply to week")
-                                }
+            }
+
+            if (showDemoMenus) {
+                Spacer(Modifier.height(8.dp))
+                Text("Reusable menus", style = MaterialTheme.typography.titleMedium)
+                demoMenus.forEach { menu ->
+                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(menu.name, style = MaterialTheme.typography.bodyLarge)
+                                Text("${menu.entryCount} entries", style = MaterialTheme.typography.labelSmall)
+                            }
+                            OutlinedButton(onClick = {}, enabled = false) {
+                                Text("Apply to week")
                             }
                         }
                     }
@@ -485,5 +767,250 @@ fun PlanScreen(container: AppContainer? = null) {
             }
             Spacer(Modifier.height(56.dp))
         }
+    }
+
+    // --- Rename dialog ---
+    renamingMenu?.let { menu ->
+        AlertDialog(
+            onDismissRequest = { renamingMenu = null },
+            title = { Text("Rename menu") },
+            text = {
+                OutlinedTextField(
+                    value = renameText,
+                    onValueChange = { renameText = it },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val name = renameText.trim()
+                        if (name.isNotEmpty()) persistMenu(menu.copy(name = name), menuEntriesOf(menu))
+                        renamingMenu = null
+                    },
+                ) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { renamingMenu = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    // --- Meal slots editor dialog: renames matching entry meals, persists. ---
+    slotsMenu?.let { menu ->
+        AlertDialog(
+            onDismissRequest = { slotsMenu = null },
+            title = { Text("Meal slots") },
+            text = {
+                OutlinedTextField(
+                    value = slotsText,
+                    onValueChange = { slotsText = it },
+                    label = { Text("Comma-separated (e.g. breakfast, lunch, dinner)") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val current = menuEntriesOf(menu)
+                        val oldSlots = menuMealSlots(current)
+                        val newSlots = slotsText.split(",")
+                            .map { normalizeMeal(it) }
+                            .filter { it.isNotEmpty() }
+                            .distinct()
+                        if (newSlots.isNotEmpty()) {
+                            val mapping = oldSlots.mapIndexedNotNull { i, old ->
+                                if (i < newSlots.size) old to newSlots[i] else null
+                            }.toMap()
+                            val renamed = mutableListOf<MenuEntry>()
+                            var dropped = 0
+                            for (e in current) {
+                                val target = mapping[normalizeMeal(e.meal)]
+                                if (target == null) dropped++ else renamed += e.copy(meal = target)
+                            }
+                            slotsMenu = null
+                            persistMenu(menu, renamed)
+                            if (dropped > 0) {
+                                aggResult = "Meals updated ($dropped entr${if (dropped == 1) "y" else "ies"} removed with deleted slots)."
+                            }
+                        } else {
+                            slotsMenu = null
+                        }
+                    },
+                ) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { slotsMenu = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    // --- Shrink day-count confirm dialog (target is a zero-based offset). ---
+    pendingShrink?.let { (menu, target) ->
+        AlertDialog(
+            onDismissRequest = { pendingShrink = null },
+            title = { Text("Shorten menu?") },
+            text = { Text("Entries on day ${target + 1} and later will be removed.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val kept = menuEntriesOf(menu).filter { it.dayOffset < target }
+                        editorExtraDays = editorExtraDays - menu.id
+                        pendingShrink = null
+                        persistMenu(menu, kept)
+                    },
+                ) { Text("Remove") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingShrink = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    // --- Day x meal grid editor dialog ---
+    editingMenu?.let { menu ->
+        val slots = menuMealSlots(editingEntries)
+        val entryBacked = maxOf((editingEntries.maxOfOrNull { it.dayOffset } ?: -1) + 1, 1)
+        val gridDays = minOf(maxOf(editorExtraDays[menu.id] ?: entryBacked, entryBacked), 28)
+        val outOfRangeEdit = editingEntries.count { it.dayOffset < 0 || it.dayOffset > 27 }
+        AlertDialog(
+            onDismissRequest = { editingMenu = null },
+            title = { Text("Edit ${menu.name}") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    if (gridDays > entryBacked) {
+                        Text(
+                            "Extra day(s) are editor-only until you add entries.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
+                    }
+                    if (outOfRangeEdit > 0) {
+                        Text(
+                            "$outOfRangeEdit entr${if (outOfRangeEdit == 1) "y" else "ies"} outside days 1–28 are ignored on apply.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
+                    }
+                    for (day in 0 until gridDays) {
+                        Text("Day ${day + 1}", style = MaterialTheme.typography.titleSmall)
+                        for (slot in slots) {
+                            val cell = editingEntries.filter {
+                                it.dayOffset == day && normalizeMeal(it.meal) == slot
+                            }
+                            val label = if (cell.isEmpty()) {
+                                "Empty"
+                            } else {
+                                cell.joinToString("; ") { e ->
+                                    val title = recipesById[e.recipeId]?.title ?: e.recipeId
+                                    "$title (${fractionDisplayString(e.servings)})"
+                                }
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    slot.replaceFirstChar { it.uppercase() },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                OutlinedButton(
+                                    onClick = {
+                                        pickerDay = day
+                                        pickerMeal = slot
+                                        pickerQuery = ""
+                                        val first = cell.firstOrNull()
+                                        pickerServings = first?.servings?.toString() ?: "4"
+                                    },
+                                ) { Text(label.take(28)) }
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        editorExtraDays = editorExtraDays - menu.id
+                        editingMenu = null
+                        persistMenu(menu, editingEntries)
+                    },
+                ) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingMenu = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    // --- Recipe picker dialog for one grid cell (adds one entry per tap). ---
+    if (pickerDay != null && pickerMeal != null) {
+        val day = pickerDay ?: 0
+        val meal = pickerMeal ?: ""
+        val query = pickerQuery.lowercase()
+        val candidates = recipesById.values
+            .filter { query.isBlank() || it.title.lowercase().contains(query) }
+            .sortedBy { it.title }
+            .take(30)
+        AlertDialog(
+            onDismissRequest = {
+                pickerDay = null
+                pickerMeal = null
+            },
+            title = { Text("Day ${day + 1} · $meal") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    OutlinedTextField(
+                        value = pickerQuery,
+                        onValueChange = { pickerQuery = it },
+                        label = { Text("Search recipes") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = pickerServings,
+                        onValueChange = { pickerServings = it },
+                        label = { Text("Servings (0.25–100)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    candidates.forEach { recipe ->
+                        OutlinedButton(
+                            onClick = {
+                                val servings = pickerServings.toDoubleOrNull()?.coerceIn(0.25, 100.0) ?: 4.0
+                                editingEntries = editingEntries + MenuEntry(
+                                    dayOffset = day,
+                                    meal = meal,
+                                    recipeId = recipe.id,
+                                    servings = servings,
+                                )
+                                pickerDay = null
+                                pickerMeal = null
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(recipe.title.take(32)) }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        editingEntries = editingEntries.filterNot {
+                            it.dayOffset == day && normalizeMeal(it.meal) == meal
+                        }
+                        pickerDay = null
+                        pickerMeal = null
+                    },
+                ) { Text("Clear") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        pickerDay = null
+                        pickerMeal = null
+                    },
+                ) { Text("Cancel") }
+            },
+        )
     }
 }
