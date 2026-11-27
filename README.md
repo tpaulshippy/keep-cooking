@@ -30,7 +30,7 @@ GitHub: github.com/tpaulshippy/keep-cooking · Domain: KeepCooking.app
 - App: SwiftUI (iOS 17+), SwiftData + CloudKit mirror stub, SyncEngine (outbox, LWW + tombstones)
 - API: Hono on Cloudflare Workers, OpenAPI at `/openapi.json` (byte-matches contracts)
 - DB: D1 (SQLite) via Drizzle, R2 for photos (thumb/1024/original)
-- Auth: single device encryption key (open auth, no login; header stub in dev)
+- Auth: none (open access, no login); single device signing key is the credential, household E2E key never leaves the device; header stub in dev
 - Format: JSON + Markdown + self-contained Schema.org HTML export
 
 ## Deploy (free tier: 1 Worker + 1 D1 + 1 R2)
