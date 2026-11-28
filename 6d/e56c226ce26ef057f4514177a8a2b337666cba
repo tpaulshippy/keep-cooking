@@ -1,0 +1,86 @@
+.github/workflows/android-check.yml
+  h_6bbd00fe0a456a 1-44
+.github/workflows/deploy.yml
+  h_6bbd00fe0a456a 58
+api/README.md
+  h_6bbd00fe0a456a 46-47,51-64,68-76,82-93,99-101,131-132,180-181
+api/drizzle/0004_agent_enrollments.sql
+  h_6bbd00fe0a456a 1-19
+api/package.json
+  h_6bbd00fe0a456a 13-14
+api/src/agent.ts
+  h_6bbd00fe0a456a 1-106
+api/src/auth.ts
+  h_6bbd00fe0a456a 3,170-177,252-254,326-380
+api/src/d1store.ts
+  h_6bbd00fe0a456a 21,92,444-542
+api/src/drizzle-schema.ts
+  h_6bbd00fe0a456a 1,132-146
+api/src/e2e.ts
+  h_6bbd00fe0a456a 2,87-134
+api/src/index.ts
+  h_6bbd00fe0a456a 4,8,23-25,36-42,79,85,99-104,112-113,126-132,134,173-230,243-251,256,265-266,273-274,276,286-288,298-299,306-310,313,321-322,329-330,332,341-343,351-355,358,367-368,370,379-381,390-392,399-403,406,414-415,422-423,425,434-436,444-448,451,459-460,467-468,470,479-481,491,493-502,520-521,536-545,550-566,571-578,584,587-606,662-672,688-689,696-697,703-706,708-716,727-730,751-753,759-764
+api/src/mcp.ts
+  h_6bbd00fe0a456a 1-399
+api/src/photos.ts
+  h_6bbd00fe0a456a 31-33,51-54,56
+api/src/store.ts
+  h_6bbd00fe0a456a 3,260-271,643-694
+api/test/agent.test.ts
+  h_6bbd00fe0a456a 1-1161
+api/test/docs-lib.d.ts
+  h_6bbd00fe0a456a 1-48
+apps/android/README.md
+  h_6bbd00fe0a456a 39,44-46
+apps/android/app/build.gradle.kts
+  h_6bbd00fe0a456a 42-47
+apps/android/app/src/test/java/com/keepcooking/app/MenuPlanningTest.kt
+  h_6bbd00fe0a456a 116
+apps/android/gradlew
+  h_6bbd00fe0a456a 1-132,134-141,143-248
+apps/android/gradlew.bat
+  h_6bbd00fe0a456a 1-112
+apps/ios/App/DemoFlows.swift
+  h_6bbd00fe0a456a 1745-1751,1761-1766,1769-1788,1801-1802,1806
+apps/ios/App/KeepCookingApp.swift
+  h_6bbd00fe0a456a 867-870,1030
+apps/ios/App/MenusPaprikaViews.swift
+  h_6bbd00fe0a456a 1-1139
+apps/ios/Smidgen.xcodeproj/project.pbxproj
+  h_6bbd00fe0a456a 102,151,353,745
+docs/agents/README.md
+  h_6bbd00fe0a456a 1-66
+docs/agents/demo.mjs
+  h_6bbd00fe0a456a 1-99
+docs/agents/lib.mjs
+  h_6bbd00fe0a456a 1-227
+docs/agents/mcp.md
+  h_6bbd00fe0a456a 1-74
+docs/agents/rest.md
+  h_6bbd00fe0a456a 1-110
+packages/contracts/CHANGELOG.md
+  h_6bbd00fe0a456a 2-5
+packages/contracts/README.md
+  h_6bbd00fe0a456a 7,39
+packages/contracts/mcp-tools.json
+  h_6bbd00fe0a456a 1-414
+packages/contracts/openapi.json
+  h_6bbd00fe0a456a 21-85,940-945,973-1028,1059-1061,1205-1207,1230-1232,1290-1332,1385-1387,1410-1412,1470-1472,1535-1537,1560-1562,1600-1602,1607-1660,1709-1711,1751-1753,1811-1813,1871-1873,1896-1898,1956-1958,2008-2010,2064-2066,2137-2139,2233-2235,2268-2270,2350-2352,2360-2362
+packages/contracts/openapi.yaml
+  h_6bbd00fe0a456a 28-85,92,125,153,172,183,217,245,264,285,304,323,344,372,391,412,440,459,479,549,616,655,674-678,684,696-728,731-743,764-773,1043-1065
+packages/contracts/schema.sql
+  h_6bbd00fe0a456a 79-88
+scripts/deploy-backend.sh
+  h_6bbd00fe0a456a 88,134-139,146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6de56c226ce26ef057f4514177a8a2b337666cba",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
