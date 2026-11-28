@@ -25,12 +25,71 @@ paths:
       responses:
         '200':
           description: OpenAPI JSON (must match packages/contracts/openapi.json)
+  /agent/enroll:
+    post:
+      operationId: agentEnroll
+      description: >-
+        Bind a householdHash bucket to a plaintext householdId label plus a
+        token verifier (hex(SHA256(raw agent token))). Open: knowledge of the
+        unguessable householdHash IS the capability. Re-enroll to rotate the
+        token without rotating the data key. Never receives key material.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgentEnrollRequest' }
+      responses:
+        '201':
+          description: enrolled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentEnrollResponse' }
+        '409':
+          description: householdId label already bound to a different hash (present the existing agent token in x-agent-token to re-bind it)
+  /agent/status:
+    get:
+      operationId: agentStatus
+      security: [{ AgentToken: [] }]
+      responses:
+        '200':
+          description: enrolled household for this token
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentStatus' }
+        '401':
+          description: missing or unknown x-agent-token
+  /mcp:
+    post:
+      operationId: mcpRpc
+      security: [{ AgentToken: [] }]
+      description: >-
+        Stateless JSON-RPC 2.0 (Streamable HTTP subset): initialize (legacy
+        handshake, kept for 2025 clients), server/discover (modern
+        handshake), tools/list, tools/call, ping. Every tool call
+        authenticates via x-agent-token; tools are scoped to the enrolled
+        household. Tool schemas are versioned in packages/contracts/mcp-tools.json.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, description: JSON-RPC 2.0 request }
+      responses:
+        '200':
+          description: JSON-RPC 2.0 response (or isError tool result)
+          content:
+            application/json:
+              schema: { type: object }
+        '202':
+          description: notification accepted (no body, per Streamable HTTP)
+        '401':
+          description: missing or unknown x-agent-token
   /clip:
     post:
       security:
         - DeviceId: []
           DeviceTs: []
           DeviceSig: []
+        - AgentToken: []
       operationId: clipRecipe
       requestBody:
         required: true
@@ -63,6 +122,7 @@ paths:
         - DeviceId: []
           DeviceTs: []
           DeviceSig: []
+        - AgentToken: []
       operationId: createRecipe
       requestBody:
         required: true
@@ -90,6 +150,7 @@ paths:
         - DeviceId: []
           DeviceTs: []
           DeviceSig: []
+        - AgentToken: []
       operationId: updateRecipe
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       requestBody:
@@ -108,6 +169,7 @@ paths:
         - DeviceId: []
           DeviceTs: []
           DeviceSig: []
+        - AgentToken: []
       operationId: deleteRecipe
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       responses:
@@ -118,6 +180,7 @@ paths:
         - DeviceId: []
           DeviceTs: []
           DeviceSig: []
+        - AgentToken: []
       operationId: scaleRecipe
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       requestBody:
@@ -151,6 +214,7 @@ paths:
         - DeviceId: []
           DeviceTs: []
           DeviceSig: []
+        - AgentToken: []
       operationId: createShoppingList
       requestBody:
         required: true
@@ -178,6 +242,7 @@ paths:
         - DeviceId: []
           DeviceTs: []
           DeviceSig: []
+        - AgentToken: []
       operationId: updateShoppingList
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       requestBody:
@@ -196,6 +261,7 @@ paths:
         - DeviceId: []
           DeviceTs: []
           DeviceSig: []
+        - AgentToken: []
       operationId: deleteShoppingList
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       responses:
@@ -216,6 +282,7 @@ paths:
         - DeviceId: []
           DeviceTs: []
           DeviceSig: []
+        - AgentToken: []
       operationId: createPantryItem
       requestBody:
         required: true
@@ -234,6 +301,7 @@ paths:
         - DeviceId: []
           DeviceTs: []
           DeviceSig: []
+        - AgentToken: []
       operationId: updatePantryItem
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       requestBody:
@@ -252,6 +320,7 @@ paths:
         - DeviceId: []
           DeviceTs: []
           DeviceSig: []
+        - AgentToken: []
       operationId: deletePantryItem
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       responses:
@@ -272,6 +341,7 @@ paths:
         - DeviceId: []
           DeviceTs: []
           DeviceSig: []
+        - AgentToken: []
       operationId: createPlan
       requestBody:
         required: true
@@ -299,6 +369,7 @@ paths:
         - DeviceId: []
           DeviceTs: []
           DeviceSig: []
+        - AgentToken: []
       operationId: updatePlan
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       requestBody:
@@ -317,6 +388,7 @@ paths:
         - DeviceId: []
           DeviceTs: []
           DeviceSig: []
+        - AgentToken: []
       operationId: deletePlan
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       responses:
@@ -337,6 +409,7 @@ paths:
         - DeviceId: []
           DeviceTs: []
           DeviceSig: []
+        - AgentToken: []
       operationId: createMenu
       requestBody:
         required: true
@@ -364,6 +437,7 @@ paths:
         - DeviceId: []
           DeviceTs: []
           DeviceSig: []
+        - AgentToken: []
       operationId: updateMenu
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       requestBody:
@@ -382,6 +456,7 @@ paths:
         - DeviceId: []
           DeviceTs: []
           DeviceSig: []
+        - AgentToken: []
       operationId: deleteMenu
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       responses:
@@ -401,6 +476,7 @@ paths:
         - DeviceId: []
           DeviceTs: []
           DeviceSig: []
+        - AgentToken: []
       operationId: shareCookbook
       requestBody:
         required: true
@@ -470,6 +546,7 @@ paths:
         - DeviceId: []
           DeviceTs: []
           DeviceSig: []
+        - AgentToken: []
       operationId: syncPush
       requestBody:
         required: true
@@ -536,6 +613,7 @@ paths:
         - DeviceId: []
           DeviceTs: []
           DeviceSig: []
+        - AgentToken: []
       responses:
         '200':
           description: revoked
@@ -574,6 +652,7 @@ paths:
         - DeviceId: []
           DeviceTs: []
           DeviceSig: []
+        - AgentToken: []
       operationId: e2ePush
       requestBody:
         required: true
@@ -592,11 +671,17 @@ paths:
                 required: [stored]
                 properties:
                   stored: { type: array, items: { type: string } }
+        '413':
+          description: >-
+            batch exceeds E2E_MAX_PUSH_BATCH (500 envelopes) — chunk and
+            retry. Native outboxes must split large backlog drains into
+            <=500-envelope pushes.
     delete:
       security:
         - DeviceId: []
           DeviceTs: []
           DeviceSig: []
+        - AgentToken: []
       operationId: e2eWipe
       responses:
         '200':
@@ -608,18 +693,54 @@ paths:
                 required: [wiped]
                 properties:
                   wiped: { type: integer }
+  /photos/dl:
+    get:
+      operationId: photoDownload
+      description: >-
+        Serve R2 photo bytes for a signed URL minted by GET /photos/sign (or
+        the photos_sign MCP tool, which targets this route). Verifies the
+        HMAC exp/sig first; no device signature or agent token required (the
+        signature IS the capability, expiring in <15min).
+      parameters:
+        - name: key
+          in: query
+          required: true
+          schema: { type: string }
+        - name: exp
+          in: query
+          required: true
+          schema: { type: integer }
+        - name: sig
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: photo bytes (image/jpeg)
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+        '400':
+          description: key, exp, or sig missing
+        '403':
+          description: invalid or expired signature
+        '404':
+          description: photo serving unconfigured or key does not exist
 components:
-  parameters:
-    IdParam:
-      name: id
-      in: path
-      required: true
-      schema: { type: string }
-    HouseholdId:
-      name: householdId
-      in: query
-      schema: { type: string }
   securitySchemes:
+    AgentToken:
+      type: apiKey
+      in: header
+      name: x-agent-token
+      description: >-
+        Key-derived bearer (base64url of 32 HKDF-SHA256 bytes, domain-separated
+        from the data key — see docs/agents/). Enroll via POST /agent/enroll,
+        which stores only hex(SHA256(token)). Accepted as an alternative to
+        the Ed25519 device signature on every mutating route (prod): reads
+        are scoped to the enrolled household (out-of-scope reads are 404),
+        writes require an explicit matching householdId (else 403). Blind
+        /v2 envelopes stay opaque — the server verifies the token, never
+        content.
     DeviceId:
       type: apiKey
       in: header
@@ -640,6 +761,16 @@ components:
         hashes as hex(SHA256(""))). Required on every POST/PUT/DELETE except
         POST /v2/devices; GET/HEAD/OPTIONS, /health and /openapi.json stay
         open. Unknown / stale / revoked keys get 401 (self-revoke = logout).
+  parameters:
+    IdParam:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+    HouseholdId:
+      name: householdId
+      in: query
+      schema: { type: string }
   schemas:
     DeviceEnrollRequest:
       type: object
@@ -909,6 +1040,29 @@ components:
         id: { type: string, format: uuid }
         name: { type: string }
         role: { type: string, enum: [owner, member, viewer] }
+    AgentEnrollRequest:
+      type: object
+      description: Binds an unguessable householdHash bucket to a householdId label + token verifier. Carries no key material.
+      required: [householdHash, householdId, verifier]
+      properties:
+        householdHash: { type: string, pattern: '^[0-9a-f]{64}$' }
+        householdId: { type: string }
+        verifier: { type: string, description: hex(SHA256(raw agent-token bytes)), pattern: '^[0-9a-f]{64}$' }
+    AgentEnrollResponse:
+      type: object
+      required: [ok, householdId, householdHash, hashPrefix8]
+      properties:
+        ok: { type: boolean }
+        householdId: { type: string }
+        householdHash: { type: string }
+        hashPrefix8: { type: string }
+    AgentStatus:
+      type: object
+      required: [householdId, hashPrefix8, deviceId]
+      properties:
+        householdId: { type: string }
+        hashPrefix8: { type: string }
+        deviceId: { type: string }
     ShareLink:
       type: object
       required: [id, url]

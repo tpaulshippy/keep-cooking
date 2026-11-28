@@ -18,6 +18,7 @@ import {
   type DeviceKey,
 } from './store';
 import { envelopeHeader, type EncryptedEnvelope } from './e2e';
+import type { AgentEnrollment } from './agent';
 
 // D1-backed store. Uses drizzle() for the connection (D1 via Drizzle) and
 // parameterized raw SQL for queries — table/column names match
@@ -88,6 +89,7 @@ export class D1Store extends MemoryStore implements Store {
         const u = String(m['user_id']);
         this.memberships.set(`${hh}|${u}`, { householdId: hh, userId: u, role: String(m['role']) as Role });
       }
+      await this.loadAgentEnrollments();
       const ingByRecipe = new Map<string, { id: string; recipeId: string; name: string; quantity: number | null; unit: string; display: string; position: number }[]>();
       for (const g of await q('SELECT id, recipe_id, name, quantity, unit, display, position FROM ingredients ORDER BY position')) {
         const rid = String(g['recipe_id']);
@@ -437,6 +439,105 @@ export class D1Store extends MemoryStore implements Store {
     const mem = this.devices.get(deviceId);
     if (mem) mem.revokedAt = finalTs;
     return { deviceId, revokedAt: finalTs };
+  }
+
+  // ---------- key-only agent enrollments (#26; D1 agent_enrollments) ----------
+  // Memory maps stay the read path; D1 is the durable copy loaded in
+  // hydrate(). Unlike legacy rows, the enrollment write throws on D1
+  // failure (only the pre-migration missing-table case falls back to
+  // memory) and is applied to D1 before memory.
+
+  override async agentEnroll(e: AgentEnrollment): Promise<AgentEnrollment> {
+    // A verifier already bound to a different household hash is a 409
+    // (unique verifier index in D1) — reject before touching D1 so a
+    // conflicting write never lands in either store. Same-household reuse is
+    // fine (token rotation re-enrolls the same hash with a new verifier).
+    const clash = await this.agentGetByVerifier(e.verifier);
+    if (clash && clash.householdHash !== e.householdHash) {
+      const err = new Error('verifier is already bound to a different household hash') as Error & { status?: number };
+      err.status = 409;
+      throw err;
+    }
+    // D1 first (durable), then memory: a D1 failure surfaces (HTTP 500)
+    // instead of acking an enrollment that never persisted. Only the
+    // pre-migration "no such table" case falls back to memory-only. The
+    // WHERE predicate keeps a stale rotation from overwriting a newer row
+    // (same LWW rule as the E2E blob upsert).
+    let res: unknown;
+    try {
+      res = await this.db
+        .prepare(
+          'INSERT INTO agent_enrollments (household_hash, household_id, verifier, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(household_hash) DO UPDATE SET household_id = excluded.household_id, verifier = excluded.verifier, updated_at = excluded.updated_at WHERE excluded.updated_at > agent_enrollments.updated_at',
+        )
+        .bind(e.householdHash, e.householdId, e.verifier, e.updatedAt)
+        .run();
+    } catch (err) {
+      if (err instanceof Error && /no such table/i.test(err.message)) return super.agentEnroll(e);
+      // A stale isolate skips the in-memory pre-check above (its maps don't
+      // know the binding yet), so D1 raises the unique-constraint failure
+      // instead. Map it to the documented 409 — a conflicting binding is a
+      // client conflict, never a 500.
+      if (err instanceof Error && /UNIQUE constraint failed: agent_enrollments\.(verifier|household_id)/i.test(err.message)) {
+        const conflict = new Error('agent enrollment conflicts with an existing binding') as Error & { status?: number };
+        conflict.status = 409;
+        throw conflict;
+      }
+      throw err;
+    }
+    const changes = (res as { meta?: { changes?: unknown } } | null | undefined)?.meta?.changes;
+    if (typeof changes === 'number' && changes === 0) {
+      // A concurrent isolate's newer row won: reconcile memory to the D1
+      // winner instead of staging the stale loser.
+      const row = await this.db
+        .prepare('SELECT household_hash, household_id, verifier, updated_at FROM agent_enrollments WHERE household_hash = ?')
+        .bind(e.householdHash)
+        .first();
+      if (row && row['household_hash']) {
+        return super.agentEnroll({
+          householdHash: String(row['household_hash']),
+          householdId: String(row['household_id'] ?? ''),
+          verifier: String(row['verifier'] ?? ''),
+          updatedAt: String(row['updated_at'] ?? ''),
+        });
+      }
+    }
+    return super.agentEnroll(e);
+  }
+
+  /** Load enrollments without re-persisting (hydrate path only). */
+  async loadAgentEnrollments(): Promise<void> {
+    let rows: Record<string, unknown>[];
+    try {
+      rows = (
+        await this.db
+          .prepare('SELECT household_hash, household_id, verifier, updated_at FROM agent_enrollments')
+          .all()
+      ).results;
+    } catch {
+      return; // pre-migration DB: memory fallback untouched
+    }
+    for (const r of rows) {
+      const e: AgentEnrollment = {
+        householdHash: String(r['household_hash'] ?? ''),
+        householdId: String(r['household_id'] ?? ''),
+        verifier: String(r['verifier'] ?? ''),
+        updatedAt: String(r['updated_at'] ?? ''),
+      };
+      if (e.householdHash && e.householdId && e.verifier) await super.agentEnroll(e);
+    }
+  }
+
+  /** Revoke one hash's enrollment: delete the D1 row, then clear the memory
+   * indexes (D1 is durable, memory is the read path — both must forget the
+   * old token or it keeps authenticating on some isolate). A missing table
+   * (pre-migration DB) still clears memory so the token dies everywhere. */
+  override async agentRevokeByHash(householdHash: string): Promise<boolean> {
+    try {
+      await this.db.prepare('DELETE FROM agent_enrollments WHERE household_hash = ?').bind(householdHash).run();
+    } catch (e) {
+      if (!(e instanceof Error) || !/no such table/i.test(e.message)) throw e;
+    }
+    return super.agentRevokeByHash(householdHash);
   }
 
   override async createRecipe(input: any, meta: { deviceId: string; id?: string; updatedAt?: string }): Promise<Recipe> {

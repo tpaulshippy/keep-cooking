@@ -10,8 +10,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "seed": "bun run seed.ts --generate-sql",
-    "db:apply:local": "npx wrangler d1 execute keep-cooking --local --file=./drizzle/0001_init.sql && npx wrangler d1 execute keep-cooking --local --file=./drizzle/0002_e2e_blobs.sql && npx wrangler d1 execute keep-cooking --local --file=./drizzle/0003_device_keys.sql",
-    "db:apply:remote": "npx wrangler d1 execute keep-cooking --remote --file=./drizzle/0001_init.sql && npx wrangler d1 execute keep-cooking --remote --file=./drizzle/0002_e2e_blobs.sql && npx wrangler d1 execute keep-cooking --remote --file=./drizzle/0003_device_keys.sql",
+    "db:apply:local": "npx wrangler d1 execute keep-cooking --local --file=./drizzle/0001_init.sql && npx wrangler d1 execute keep-cooking --local --file=./drizzle/0002_e2e_blobs.sql && npx wrangler d1 execute keep-cooking --local --file=./drizzle/0003_device_keys.sql && npx wrangler d1 execute keep-cooking --local --file=./drizzle/0004_agent_enrollments.sql",
+    "db:apply:remote": "npx wrangler d1 execute keep-cooking --remote --file=./drizzle/0001_init.sql && npx wrangler d1 execute keep-cooking --remote --file=./drizzle/0002_e2e_blobs.sql && npx wrangler d1 execute keep-cooking --remote --file=./drizzle/0003_device_keys.sql && npx wrangler d1 execute keep-cooking --remote --file=./drizzle/0004_agent_enrollments.sql",
     "db:seed:local": "npx wrangler d1 execute keep-cooking --local --file=./drizzle/seed.sql"
   },
   "dependencies": {

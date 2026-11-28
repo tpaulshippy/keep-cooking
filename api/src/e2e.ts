@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { parseOrThrow } from './zod';
 
 // E2E V1 thin blind blob pipe.
 // The server NEVER decrypts: envelopes carry an opaque `ciphertext` plus a
@@ -82,4 +83,52 @@ export function envelopeHeader(env: EncryptedEnvelope): Record<string, unknown> 
   const { ciphertext: _ct, ...header } = env;
   void _ct;
   return header;
+}
+
+export type E2EValidationError = Error & { status?: number; entity?: string };
+
+/**
+ * Validate-first v2 push batch (shared by REST PUT /v2/sync/:hash and the MCP
+ * sync_push tool): schema + householdHash match + entity set, before any
+ * write lands, so a bad batch never partially persists. Throws E2EValidationError
+ * (400 schema/mismatch/non-array, 422 standalone ingredient/step, 413 over
+ * the batch cap).
+ */
+
+/** Max envelopes accepted in one push batch (REST or MCP). Bounds the
+ * per-request D1 rows-read cost: each envelope reloads the household row
+ * set, so one push costs at most this many row-set reads. Clients with more
+ * pending envelopes chunk them across requests. */
+export const E2E_MAX_PUSH_BATCH = 500;
+
+export function validateE2EPushBatch(hash: string, raw: unknown): EncryptedEnvelope[] {
+  const bad = (message: string, status: number, entity?: string): E2EValidationError => {
+    const err = new Error(message) as E2EValidationError;
+    err.status = status;
+    if (entity !== undefined) err.entity = entity;
+    return err;
+  };
+  if (!Array.isArray(raw)) throw bad('expected an array of encrypted envelopes', 400);
+  if (raw.length > E2E_MAX_PUSH_BATCH) {
+    throw bad(
+      `batch too large (max ${E2E_MAX_PUSH_BATCH} envelopes per request; chunk and retry)`,
+      413,
+    );
+  }
+  const batch: EncryptedEnvelope[] = [];
+  for (const item of raw) {
+    const entity = (item as { entity?: unknown } | null | undefined)?.entity;
+    if (entity === 'ingredient' || entity === 'step') {
+      throw bad(
+        'standalone ingredient/step envelopes are not accepted; fold children into the parent recipe envelope before encrypting',
+        422,
+        entity,
+      );
+    }
+    const parsed = parseOrThrow(encryptedEnvelopeSchema, item);
+    const env: EncryptedEnvelope = { ...parsed, deleted: parsed.deleted ?? false };
+    if (env.householdHash !== hash) throw bad('householdHash mismatch', 400);
+    batch.push(env);
+  }
+  return batch;
 }

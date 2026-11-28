@@ -18,6 +18,71 @@
       }
     },
     "schemas": {
+      "AgentEnrollRequest": {
+        "description": "Binds an unguessable householdHash bucket to a householdId label + token verifier. Carries no key material.",
+        "properties": {
+          "householdHash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "householdId": {
+            "type": "string"
+          },
+          "verifier": {
+            "description": "hex(SHA256(raw agent-token bytes))",
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "householdHash",
+          "householdId",
+          "verifier"
+        ],
+        "type": "object"
+      },
+      "AgentEnrollResponse": {
+        "properties": {
+          "hashPrefix8": {
+            "type": "string"
+          },
+          "householdHash": {
+            "type": "string"
+          },
+          "householdId": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "householdId",
+          "householdHash",
+          "hashPrefix8"
+        ],
+        "type": "object"
+      },
+      "AgentStatus": {
+        "properties": {
+          "deviceId": {
+            "type": "string"
+          },
+          "hashPrefix8": {
+            "type": "string"
+          },
+          "householdId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "householdId",
+          "hashPrefix8",
+          "deviceId"
+        ],
+        "type": "object"
+      },
       "ClipReport": {
         "properties": {
           "confidence": {
@@ -872,6 +937,12 @@
       }
     },
     "securitySchemes": {
+      "AgentToken": {
+        "description": "Key-derived bearer (base64url of 32 HKDF-SHA256 bytes, domain-separated from the data key \u2014 see docs/agents/). Enroll via POST /agent/enroll, which stores only hex(SHA256(token)). Accepted as an alternative to the Ed25519 device signature on every mutating route (prod): reads are scoped to the enrolled household (out-of-scope reads are 404), writes require an explicit matching householdId (else 403). Blind /v2 envelopes stay opaque \u2014 the server verifies the token, never content.",
+        "in": "header",
+        "name": "x-agent-token",
+        "type": "apiKey"
+      },
       "DeviceId": {
         "description": "enrolled device id (UUIDv4, from POST /v2/devices)",
         "in": "header",
@@ -899,6 +970,62 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/agent/enroll": {
+      "post": {
+        "description": "Bind a householdHash bucket to a plaintext householdId label plus a token verifier (hex(SHA256(raw agent token))). Open: knowledge of the unguessable householdHash IS the capability. Re-enroll to rotate the token without rotating the data key. Never receives key material.",
+        "operationId": "agentEnroll",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentEnrollRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentEnrollResponse"
+                }
+              }
+            },
+            "description": "enrolled"
+          },
+          "409": {
+            "description": "householdId label already bound to a different hash (present the existing agent token in x-agent-token to re-bind it)"
+          }
+        }
+      }
+    },
+    "/agent/status": {
+      "get": {
+        "operationId": "agentStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentStatus"
+                }
+              }
+            },
+            "description": "enrolled household for this token"
+          },
+          "401": {
+            "description": "missing or unknown x-agent-token"
+          }
+        },
+        "security": [
+          {
+            "AgentToken": []
+          }
+        ]
+      }
+    },
     "/clip": {
       "post": {
         "operationId": "clipRecipe",
@@ -929,6 +1056,9 @@
             "DeviceId": [],
             "DeviceSig": [],
             "DeviceTs": []
+          },
+          {
+            "AgentToken": []
           }
         ]
       }
@@ -1072,6 +1202,9 @@
             "DeviceId": [],
             "DeviceSig": [],
             "DeviceTs": []
+          },
+          {
+            "AgentToken": []
           }
         ]
       }
@@ -1094,6 +1227,9 @@
             "DeviceId": [],
             "DeviceSig": [],
             "DeviceTs": []
+          },
+          {
+            "AgentToken": []
           }
         ]
       },
@@ -1151,6 +1287,49 @@
             "DeviceId": [],
             "DeviceSig": [],
             "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
+      }
+    },
+    "/mcp": {
+      "post": {
+        "description": "Stateless JSON-RPC 2.0 (Streamable HTTP subset): initialize (legacy handshake, kept for 2025 clients), server/discover (modern handshake), tools/list, tools/call, ping. Every tool call authenticates via x-agent-token; tools are scoped to the enrolled household. Tool schemas are versioned in packages/contracts/mcp-tools.json.",
+        "operationId": "mcpRpc",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "JSON-RPC 2.0 request",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "JSON-RPC 2.0 response (or isError tool result)"
+          },
+          "202": {
+            "description": "notification accepted (no body, per Streamable HTTP)"
+          },
+          "401": {
+            "description": "missing or unknown x-agent-token"
+          }
+        },
+        "security": [
+          {
+            "AgentToken": []
           }
         ]
       }
@@ -1203,6 +1382,9 @@
             "DeviceId": [],
             "DeviceSig": [],
             "DeviceTs": []
+          },
+          {
+            "AgentToken": []
           }
         ]
       }
@@ -1225,6 +1407,9 @@
             "DeviceId": [],
             "DeviceSig": [],
             "DeviceTs": []
+          },
+          {
+            "AgentToken": []
           }
         ]
       },
@@ -1282,6 +1467,9 @@
             "DeviceId": [],
             "DeviceSig": [],
             "DeviceTs": []
+          },
+          {
+            "AgentToken": []
           }
         ]
       }
@@ -1344,6 +1532,9 @@
             "DeviceId": [],
             "DeviceSig": [],
             "DeviceTs": []
+          },
+          {
+            "AgentToken": []
           }
         ]
       }
@@ -1366,6 +1557,9 @@
             "DeviceId": [],
             "DeviceSig": [],
             "DeviceTs": []
+          },
+          {
+            "AgentToken": []
           }
         ]
       },
@@ -1403,8 +1597,65 @@
             "DeviceId": [],
             "DeviceSig": [],
             "DeviceTs": []
+          },
+          {
+            "AgentToken": []
           }
         ]
+      }
+    },
+    "/photos/dl": {
+      "get": {
+        "description": "Serve R2 photo bytes for a signed URL minted by GET /photos/sign (or the photos_sign MCP tool, which targets this route). Verifies the HMAC exp/sig first; no device signature or agent token required (the signature IS the capability, expiring in <15min).",
+        "operationId": "photoDownload",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "exp",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sig",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "photo bytes (image/jpeg)"
+          },
+          "400": {
+            "description": "key, exp, or sig missing"
+          },
+          "403": {
+            "description": "invalid or expired signature"
+          },
+          "404": {
+            "description": "photo serving unconfigured or key does not exist"
+          }
+        }
       }
     },
     "/plans": {
@@ -1455,6 +1706,9 @@
             "DeviceId": [],
             "DeviceSig": [],
             "DeviceTs": []
+          },
+          {
+            "AgentToken": []
           }
         ]
       }
@@ -1494,6 +1748,9 @@
             "DeviceId": [],
             "DeviceSig": [],
             "DeviceTs": []
+          },
+          {
+            "AgentToken": []
           }
         ]
       },
@@ -1551,6 +1808,9 @@
             "DeviceId": [],
             "DeviceSig": [],
             "DeviceTs": []
+          },
+          {
+            "AgentToken": []
           }
         ]
       }
@@ -1608,6 +1868,9 @@
             "DeviceId": [],
             "DeviceSig": [],
             "DeviceTs": []
+          },
+          {
+            "AgentToken": []
           }
         ]
       }
@@ -1630,6 +1893,9 @@
             "DeviceId": [],
             "DeviceSig": [],
             "DeviceTs": []
+          },
+          {
+            "AgentToken": []
           }
         ]
       },
@@ -1687,6 +1953,9 @@
             "DeviceId": [],
             "DeviceSig": [],
             "DeviceTs": []
+          },
+          {
+            "AgentToken": []
           }
         ]
       }
@@ -1736,6 +2005,9 @@
             "DeviceId": [],
             "DeviceSig": [],
             "DeviceTs": []
+          },
+          {
+            "AgentToken": []
           }
         ]
       }
@@ -1789,6 +2061,9 @@
             "DeviceId": [],
             "DeviceSig": [],
             "DeviceTs": []
+          },
+          {
+            "AgentToken": []
           }
         ]
       }
@@ -1859,6 +2134,9 @@
             "DeviceId": [],
             "DeviceSig": [],
             "DeviceTs": []
+          },
+          {
+            "AgentToken": []
           }
         ]
       }
@@ -1952,6 +2230,9 @@
             "DeviceId": [],
             "DeviceSig": [],
             "DeviceTs": []
+          },
+          {
+            "AgentToken": []
           }
         ]
       }
@@ -1984,6 +2265,9 @@
             "DeviceId": [],
             "DeviceSig": [],
             "DeviceTs": []
+          },
+          {
+            "AgentToken": []
           }
         ]
       },
@@ -2063,6 +2347,9 @@
               }
             },
             "description": "stored ids (stale writes are idempotent no-ops)"
+          },
+          "413": {
+            "description": "batch exceeds E2E_MAX_PUSH_BATCH (500 envelopes) \u2014 chunk and retry. Native outboxes must split large backlog drains into <=500-envelope pushes."
           }
         },
         "security": [
@@ -2070,6 +2357,9 @@
             "DeviceId": [],
             "DeviceSig": [],
             "DeviceTs": []
+          },
+          {
+            "AgentToken": []
           }
         ]
       }

@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, primaryKey } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, primaryKey, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 // Drizzle schema — 1:1 with packages/contracts/schema.sql (D1).
 // Migrations live in drizzle/0001_init.sql (verbatim schema.sql).
@@ -127,6 +127,21 @@ export const syncBlobsV2 = sqliteTable('sync_blobs_v2', {
   updatedAt: text('updated_at').notNull(),
 }, (t) => ({
   pk: primaryKey({ columns: [t.householdHash, t.id] }),
+}));
+
+// Key-only agent enrollments (#26): verifier is hex(SHA256(raw token)) —
+// a one-way hash, never key material. PK is the unguessable householdHash.
+// household_id carries a UNIQUE index (one label → one bucket; re-binding
+// revokes the old hash first) and verifier carries one too (one token → one
+// bucket) — mirrors 0004_agent_enrollments.sql + schema.sql.
+export const agentEnrollments = sqliteTable('agent_enrollments', {
+  householdHash: text('household_hash').primaryKey(),
+  householdId: text('household_id').notNull(),
+  verifier: text('verifier').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (t) => ({
+  verifierIdx: uniqueIndex('idx_agent_enrollments_verifier').on(t.verifier),
+  labelIdx: uniqueIndex('idx_agent_enrollments_household_id').on(t.householdId),
 }));
 
 // Device keys: 1:1 with drizzle/0003_device_keys.sql (D1). device_id is the

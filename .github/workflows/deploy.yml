@@ -55,7 +55,7 @@ jobs:
           cd api
           # Schema uses CREATE TABLE IF NOT EXISTS, so this is safe to re-run
           # on every deploy. Single source for the migration chain: api/package.json
-          # db:apply:remote (add future 0004+ there, not here).
+          # db:apply:remote (add future 0005+ there, not here).
           # Seed data (drizzle/seed.sql) is a one-time manual step for demo
           # content, not applied here — and no membership seed is applied
           # either: first verified writer on an empty household becomes owner

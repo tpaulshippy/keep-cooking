@@ -85,7 +85,7 @@ else
 fi
 
 echo "==> 3/6 D1 schema (remote)"
-for migration in "$API_DIR/drizzle/0001_init.sql" "$API_DIR/drizzle/0002_e2e_blobs.sql" "$API_DIR/drizzle/0003_device_keys.sql"; do
+for migration in "$API_DIR/drizzle/0001_init.sql" "$API_DIR/drizzle/0002_e2e_blobs.sql" "$API_DIR/drizzle/0003_device_keys.sql" "$API_DIR/drizzle/0004_agent_enrollments.sql"; do
   if [ -f "$migration" ]; then
     echo "    applying $migration --remote"
     wrangler d1 execute keep-cooking --remote --file="$migration"

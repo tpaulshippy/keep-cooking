@@ -4,6 +4,7 @@ Ownership: orchestrator only. Lanes consume, never edit.
 
 Contents:
 - `openapi.yaml` (+ generated `openapi.json` — run `python3 -c "import yaml,json; json.dump(yaml.safe_load(open('openapi.yaml')),open('openapi.json','w'),indent=2)"`)
+- `mcp-tools.json` — versioned MCP tool schemas served verbatim by POST /mcp tools/list (#26)
 - `schema.sql` — D1 SQLite. SwiftData models must be 1:1 (Recipe, Ingredient, Step, List, PantryItem, Plan, Menu).
 - `examples/Recipe.json`, `ClipReport.json`, `SyncEnvelope.json`
 - `PHOTO_VARIANTS.md` — variant rules
@@ -35,6 +36,7 @@ Single device-key auth (open auth, no login). `householdId` on every entity. Rol
 
 ## Endpoints (see openapi.yaml)
 POST /clip, CRUD /recipes, POST /recipes/:id/scale, CRUD /lists + /pantry, CRUD /plans + /menus, GET /plans/feed.ics, POST /share/cookbook, GET /export/:id.(json|md|html), GET /sync/pull, POST /sync/push, GET /health, GET /openapi.json (must byte-match openapi.json).
+Key-only agent access (#26): POST /agent/enroll, GET /agent/status, POST /mcp (stateless JSON-RPC; schemas in mcp-tools.json). For v1 mutations, `x-agent-token` replaces the device signature (or local dev headers); requests are scoped to the enrolled household.
 
 ## Scale rule
 `POST /recipes/:id/scale {servings}` → quantities × servings/baseServings, `display` fraction-rounded to ¼ (½, ⅓, ⅛). Range 0.25x–4x enforced in UI.
