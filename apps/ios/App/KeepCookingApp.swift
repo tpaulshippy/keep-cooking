@@ -864,8 +864,10 @@ struct DrawerShellView: View {
     var body: some View {
         ZStack(alignment: .leading) {
             VStack(spacing: 0) {
-                topBar
-                Divider()
+                if selection != .menus {
+                    topBar
+                    Divider()
+                }
                 content
             }
             .background(Color(.systemBackground))
@@ -1025,7 +1027,7 @@ struct DrawerShellView: View {
             case .plan:
                 PlanTabView()
             case .menus:
-                MenusTabView()
+                MenusTabView(onOpenDrawer: { withAnimation { drawerOpen = true } })
             case .lists:
                 ListsTabView()
             case .pantry:

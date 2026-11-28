@@ -1760,6 +1760,10 @@ struct MenusTabView: View {
     @State private var skipFilled = true
     @State private var sort = MenusPaprikaSort.name
     @State private var editMode: EditMode = .inactive
+    /// Opens the drawer when hosted in the drawer shell (the Paprika
+    /// header is the sole top bar there — the shell hides its own).
+    /// Defaults to no-op for the More-tab push context.
+    var onOpenDrawer: () -> Void = {}
 
     var body: some View {
         NavigationStack {
@@ -1772,7 +1776,8 @@ struct MenusTabView: View {
                 onRename: rename,
                 onDuplicate: duplicate,
                 onDelete: tombstone,
-                onApply: apply
+                onApply: apply,
+                onOpenDrawer: onOpenDrawer
             ) { menu in
                 PaprikaMenuDetailView(
                     menu: menu,

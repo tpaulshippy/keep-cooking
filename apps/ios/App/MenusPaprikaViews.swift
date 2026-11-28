@@ -196,6 +196,10 @@ struct PaprikaMenusScreen<Detail: View>: View {
     var onDuplicate: (Menu) -> Void
     var onDelete: (Menu) -> Void
     var onApply: (Menu) -> Void
+    /// Opens the navigation drawer (drawer shell). The Paprika header is
+    /// the sole top bar on the Menus section, so its hamburger owns this.
+    /// Defaults to no-op for non-drawer contexts (More-tab push).
+    var onOpenDrawer: () -> Void = {}
     @ViewBuilder var detail: (Menu) -> Detail
 
     @State private var showCreate = false
@@ -315,16 +319,7 @@ struct PaprikaMenusScreen<Detail: View>: View {
 
     private var topBar: some View {
         HStack {
-            SwiftUI.Menu {
-                Picker("Sort", selection: $sort) {
-                    ForEach(MenusPaprikaSort.allCases, id: \.self) { option in
-                        Label(option.title, systemImage: option.icon).tag(option)
-                    }
-                }
-                Button(editMode == .active ? "Done editing" : "Edit menus") {
-                    editMode = editMode == .active ? .inactive : .active
-                }
-            } label: {
+            Button(action: onOpenDrawer) {
                 Image(systemName: "line.3.horizontal")
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(MenusPaprikaStyle.accent)
@@ -332,7 +327,9 @@ struct PaprikaMenusScreen<Detail: View>: View {
                     .background(Circle().fill(Color(.secondarySystemBackground)))
                     .overlay(Circle().stroke(Color.primary.opacity(0.12), lineWidth: 1))
             }
-            .accessibilityLabel("Menus options")
+            .buttonStyle(.plain)
+            .accessibilityLabel("Open navigation menu")
+            .accessibilityIdentifier("drawer-hamburger")
             Spacer()
             Text("Menus")
                 .font(.title2.weight(.bold))
