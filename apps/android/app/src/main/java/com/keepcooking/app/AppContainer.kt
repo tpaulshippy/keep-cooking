@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.room.Room
 import com.keepcooking.app.data.AppDatabase
+import com.keepcooking.app.data.MIGRATION_2_3
 import com.keepcooking.app.data.SeedLoader
 import com.keepcooking.app.export.RecipeExporter
 import com.keepcooking.app.network.ApiService
@@ -29,6 +30,7 @@ class AppContainer(private val context: Context) {
 
     val db: AppDatabase by lazy {
         Room.databaseBuilder(context, AppDatabase::class.java, "keepcooking.db")
+            .addMigrations(MIGRATION_2_3)
             .fallbackToDestructiveMigration()
             .build()
     }

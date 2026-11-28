@@ -248,6 +248,7 @@ class SyncEngine(
                 photoOriginal = photos?.str("original"),
                 photoLarge1024 = photos?.str("large1024"),
                 photoThumb = photos?.str("thumb"),
+                nutritionText = p.str("nutritionText") ?: "",
                 updatedAt = remoteTs,
                 deviceId = env.deviceId,
                 deleted = env.deleted,

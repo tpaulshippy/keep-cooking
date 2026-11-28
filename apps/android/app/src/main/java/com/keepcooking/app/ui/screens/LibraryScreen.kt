@@ -57,6 +57,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -554,7 +555,7 @@ fun RecipeDetailScreen(
     var showDelete by remember { mutableStateOf(false) }
     var deleteError by remember { mutableStateOf<String?>(null) }
     var nutritionText by remember { mutableStateOf("") }
-    var nutritionExpanded by remember { mutableStateOf(true) }
+    var nutritionExpanded by rememberSaveable { mutableStateOf(true) }
     LaunchedEffect(recipeId) {
         val r = container.db.recipes().byId(recipeId)
         if (r != null) {
