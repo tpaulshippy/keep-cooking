@@ -1,0 +1,22 @@
+api/src/index.ts
+  h_6bbd00fe0a456a 520-524,538-540,588-589
+api/src/paprika.ts
+  h_6bbd00fe0a456a 832,847,850-855,941-954
+api/test/agent.test.ts
+  h_6bbd00fe0a456a 368-392
+api/test/paprika.test.ts
+  h_6bbd00fe0a456a 282-302
+apps/android/app/src/main/java/com/keepcooking/app/import/RecipeImporter.kt
+  h_6bbd00fe0a456a 219,546-549,553-570,573-574,576-585,610,613
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "63d265ce1e8402cf01c136660f7556d9ba77b13e",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
