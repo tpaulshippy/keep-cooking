@@ -1,0 +1,20 @@
+apps/web/README.md
+  h_6bbd00fe0a456a 27-37,52-58
+apps/web/src/lists.test.ts
+  h_6bbd00fe0a456a 32,35
+apps/web/src/lists.ts
+  h_6bbd00fe0a456a 26-28
+apps/web/src/styles.css
+  h_6bbd00fe0a456a 52-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bffae297156f7c759ce62fce05e667abc94a423c",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
