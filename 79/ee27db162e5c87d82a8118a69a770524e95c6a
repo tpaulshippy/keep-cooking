@@ -1,0 +1,30 @@
+apps/android/app/src/main/java/com/keepcooking/app/AppContainer.kt
+  h_6bbd00fe0a456a 9,33
+apps/android/app/src/main/java/com/keepcooking/app/data/AppDatabase.kt
+  h_6bbd00fe0a456a 5-12
+apps/android/app/src/main/java/com/keepcooking/app/import/RecipeImporter.kt
+  h_6bbd00fe0a456a 24,770-777,786-823
+apps/android/app/src/main/java/com/keepcooking/app/navigation/NavGraph.kt
+  h_6bbd00fe0a456a 119,271
+apps/android/app/src/main/java/com/keepcooking/app/shortcuts/AppShortcuts.kt
+  h_6bbd00fe0a456a 251
+apps/android/app/src/main/java/com/keepcooking/app/sync/SyncEngine.kt
+  h_6bbd00fe0a456a 248
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/LibraryScreen.kt
+  h_6bbd00fe0a456a 41,496
+apps/ios/App/KeepCookingApp.swift
+  h_6bbd00fe0a456a 484,600,659
+apps/web/src/main.ts
+  h_6bbd00fe0a456a 31-34,279,296-298
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "79ee27db162e5c87d82a8118a69a770524e95c6a",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
