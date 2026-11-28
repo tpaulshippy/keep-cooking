@@ -157,8 +157,11 @@ function photoUrlFor(key: string): Promise<string | null> {
   );
 }
 
-/** Fill every `img[data-photo-key]` in scope: signed R2 URLs load lazily,
- *  failures remove the element so lists stay clean offline / without R2. */
+/** Fill every `img[data-photo-key]` in scope: signed R2 URLs load lazily.
+ *  The image stays hidden until its bytes actually load; missing objects
+ *  (unsigned R2, offline, unconfigured photo serving) remove the `img`
+ *  instead of showing a broken icon. List rows keep a styled initial tile
+ *  as fallback; hero images collapse their wrapper. */
 function hydrateRecipePhotos(scope: ParentNode = document): void {
   for (const node of scope.querySelectorAll('img[data-photo-key]')) {
     const img = node as HTMLImageElement;
@@ -171,13 +174,38 @@ function hydrateRecipePhotos(scope: ParentNode = document): void {
     }
     void photoUrlFor(key).then((url) => {
       if (!url || !img.isConnected) {
-        if (!url) img.remove();
+        if (!url) dropRecipePhoto(img);
         return;
       }
+      img.addEventListener('load', () => {
+        img.hidden = false;
+        img.closest('li')?.querySelector('.recipe-thumb--fallback')?.remove();
+      }, { once: true });
+      img.addEventListener('error', () => dropRecipePhoto(img), { once: true });
       img.src = url;
-      img.hidden = false;
     });
   }
+}
+
+/** Remove a photo that failed to resolve: the list-row fallback tile (if
+ *  any) stays; hero images collapse their wrapping paragraph. */
+function dropRecipePhoto(img: HTMLImageElement): void {
+  if (img.classList.contains('recipe-hero')) {
+    img.closest('p')?.remove();
+  }
+  img.remove();
+}
+
+/** Styled initial tile rendered under list-row photos: always visible, so
+ *  rows look designed even when the photo bytes are missing. Removed once
+ *  the real image loads. */
+function fallbackThumb(title: string): string {
+  const ch = (title.trim()[0] ?? '•').toUpperCase();
+  const hues = [16, 36, 96, 160, 200, 262, 300];
+  let h = 0;
+  for (const c of title) h = (h * 31 + (c.codePointAt(0) ?? 0)) % 997;
+  const hue = hues[h % hues.length];
+  return `<span class="recipe-thumb recipe-thumb--fallback" style="background:hsl(${hue} 45% 85%)" aria-hidden="true">${esc(ch)}</span>`;
 }
 
 /** Number field helper: blank/invalid -> undefined (field left unset). */
@@ -221,9 +249,10 @@ function viewHome(): void {
   <h2>Recent recipes</h2>
   <ul class="cards">${recipes.map((r) => {
     const p = r.payload as { title?: string } & Record<string, unknown>;
+    const title = p.title ?? r.id;
     const key = recipePhotoKey(p, 'thumb');
     const thumb = key ? `<img class="recipe-thumb" data-photo-key="${esc(key)}" alt="" loading="lazy" hidden />` : '';
-    return `<li class="recipe-card">${thumb}<a href="${href('/recipes/' + r.id)}">${esc(p.title ?? r.id)}</a></li>`;
+    return `<li class="recipe-card">${fallbackThumb(title)}${thumb}<a href="${href('/recipes/' + r.id)}">${esc(title)}</a></li>`;
   }).join('') || '<li>No recipes yet.</li>'}</ul>
   <p><a href="${href('/ingest')}">Clip a recipe</a> · <a href="${href('/plan')}">Plan the week</a></p>`);
   hydrateRecipePhotos();
@@ -239,9 +268,10 @@ function libraryResultsHtml(query: string): string {
   });
   return list.map((r) => {
     const p = r.payload as { title?: string; servings?: number } & Record<string, unknown>;
+    const title = p.title ?? r.id;
     const key = recipePhotoKey(p, 'thumb');
     const thumb = key ? `<img class="recipe-thumb" data-photo-key="${esc(key)}" alt="" loading="lazy" hidden />` : '';
-    return `<li class="recipe-card">${thumb}<span><a href="${href('/recipes/' + r.id)}">${esc(p.title ?? r.id)}</a> <span class="muted">serves ${esc(p.servings ?? 4)}</span> <a href="${href('/cook/' + r.id)}">Cook</a></span></li>`;
+    return `<li class="recipe-card">${fallbackThumb(title)}${thumb}<span><a href="${href('/recipes/' + r.id)}">${esc(title)}</a> <span class="muted">serves ${esc(p.servings ?? 4)}</span> <a href="${href('/cook/' + r.id)}">Cook</a></span></li>`;
   }).join('') || '<li>No matches.</li>';
 }
 
