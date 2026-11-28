@@ -19,7 +19,7 @@ PUBLIC_BASE_URL = "https://keepcooking.app/api"
 binding = "DB"
 database_name = "keep-cooking"
 # Replace with the real id from `wrangler d1 create keep-cooking` before first deploy.
-database_id = "local-keepcooking-placeholder"
+database_id = "f82ce751-9846-4b1c-a312-713a353abc8b"
 
 [[r2_buckets]]
 binding = "PHOTOS"
