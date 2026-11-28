@@ -1384,8 +1384,8 @@ function viewSettings(): void {
   <p id="syncstatus" role="status" aria-live="polite"></p>
   <h2>Export</h2>
   <p id="exportcount" role="status" aria-live="polite"></p>
-  <p><label><input type="checkbox" id="exportselectall" checked /> Select all</label></p>
-  <div>${exportRecipes.map((r) => `<label><input type="checkbox" data-export-id="${esc(r.id)}" checked /> ${esc((r.payload as { title?: string }).title ?? r.id)}</label>`).join('') || '<p>No recipes to export.</p>'}</div>
+  <p><label class="checkrow"><input type="checkbox" id="exportselectall" checked /> Select all</label></p>
+  <div>${exportRecipes.map((r) => `<label class="checkrow"><input type="checkbox" data-export-id="${esc(r.id)}" checked /> ${esc((r.payload as { title?: string }).title ?? r.id)}</label>`).join('') || '<p>No recipes to export.</p>'}</div>
   <p><label>Format <select id="exportformat"><option value="json">JSON</option><option value="md">Markdown</option><option value="html">HTML</option><option value="paprikarecipes">Paprika (.paprikarecipes)</option><option value="yaml">YAML</option></select></label>
   <button type="button" id="doexport">Export</button></p>
   <p id="exportstatus" role="status" aria-live="polite"></p>
@@ -1412,8 +1412,8 @@ function viewSettings(): void {
   <option value="mcb">My CookBook (.mcb)</option>
   <option value="recipe-manager-txt">Recipe Manager TXT</option>
   </select></label>
-  <label><input id="importcookbooks" type="checkbox" checked /> Import cookbooks from file</label>
-  <label><input id="importdryrun" type="checkbox" /> Dry run (preview only)</label>
+  <label class="checkrow"><input id="importcookbooks" type="checkbox" checked /> Import cookbooks from file</label>
+  <label class="checkrow"><input id="importdryrun" type="checkbox" /> Dry run (preview only)</label>
   <button type="submit">Import</button></form>
   <p id="importstatus" role="status" aria-live="polite"></p>
   <p class="muted">Accepts .paprikarecipes, .paprikarecipe, .yml/.yaml, .html, .zip, .xml and P1 formats (.mx2, .mxp, .mz2, .mmf, .fdx/.fdxz, Pepperplate, Copy Me That, Yum). Offline: text imports (JSON/YAML/HTML) are parsed locally; binary bundles need a server connection.</p>`);
