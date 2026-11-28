@@ -1,0 +1,18 @@
+apps/ios/App/DemoFlows.swift
+  h_6bbd00fe0a456a 1745-1751,1761-1762,1765-1783,1796-1797,1801
+apps/ios/App/MenusPaprikaViews.swift
+  h_6bbd00fe0a456a 1-1258
+apps/ios/Smidgen.xcodeproj/project.pbxproj
+  h_6bbd00fe0a456a 102,151,353,745
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "23f2a16455478a72f4fa9ebd368716afc03a25d5",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
