@@ -6,7 +6,7 @@ import { devicesEnroll, devicesRevoke } from './devices';
 import { clipRecipe } from './clip';
 import { scaleRecipe } from './scale';
 import { signKey, variantKeys, verifySignature, DEFAULT_SIGNED_URL_TTL_SECONDS } from './photos';
-import { recipeToHtml, recipeToMarkdown, plansToIcs } from './export';
+import { recipeToHtml, recipeToMarkdown, recipesToHtml, recipesToMarkdown, plansToIcs } from './export';
 import { exportPaprika, exportSinglePaprikaRecipe, exportYaml, b64ToBytes } from './paprika';
 import { runImport } from './import';
 import {
@@ -507,6 +507,57 @@ export function createApp(
     const url = `${baseUrl}/s/${id}`;
     const s = await getStore().createShare({ id, householdId: body.householdId, recipeIds: body.recipeIds, url, expiresAt });
     return c.json({ id: s.id, url: s.url, expiresAt: s.expiresAt }, 201);
+  });
+
+  // ---------- bulk export (contracts: GET /export?format=&all|ids|cookbook=) ----------
+  // Reads are open (GET). Selection: all=true exports the household;
+  // otherwise ids= (comma-separated) or a single id=; cookbook= further
+  // limits to recipes whose categories include that cookbook name
+  // (cookbooks fold into categories server-side).
+  api.get('/export', async (c) => {
+    const a = getAgent(c);
+    const scopeHousehold = a?.householdId;
+    const qHousehold = c.req.query('householdId');
+    if (scopeHousehold && qHousehold && qHousehold !== scopeHousehold) return c.json({ error: 'not found' }, 404);
+    const format = (c.req.query('format') ?? 'json').toLowerCase();
+    if (!['json', 'md', 'html', 'paprikarecipes', 'yaml'].includes(format)) {
+      return c.json({ error: 'not found' }, 404);
+    }
+    const all = c.req.query('all') === 'true';
+    const ids = (c.req.query('ids') ?? c.req.query('id') ?? '')
+      .split(',').map((s) => s.trim()).filter(Boolean);
+    const cookbook = (c.req.query('cookbook') ?? '').trim();
+    if (!all && ids.length === 0 && !cookbook) {
+      return c.json({ error: 'export needs all=true, ids=, id= or cookbook=' }, 400);
+    }
+    const visible = await getStore().listRecipes(qHousehold ?? scopeHousehold);
+    let recipes = all ? visible : visible.filter((r) => ids.includes(r.id));
+    if (cookbook) {
+      const want = cookbook.toLowerCase();
+      recipes = recipes.filter((r) => (r.categories ?? []).some((cat) => cat.toLowerCase() === want));
+    }
+    if (recipes.length === 0) return c.json({ error: 'not found' }, 404);
+    const dl = (name: string) => ({ 'content-disposition': `attachment; filename="${name}"` });
+    if (format === 'json') return c.json(recipes);
+    if (format === 'md') {
+      return new Response(recipesToMarkdown(recipes), {
+        headers: { 'content-type': 'text/markdown; charset=utf-8', ...dl('export.md') },
+      });
+    }
+    if (format === 'html') {
+      return new Response(recipesToHtml(recipes), {
+        headers: { 'content-type': 'text/html; charset=utf-8', ...dl('export.html') },
+      });
+    }
+    if (format === 'paprikarecipes') {
+      const zip = await exportPaprika(recipes);
+      return new Response(zip, {
+        headers: { 'content-type': 'application/zip', ...dl('export.paprikarecipes') },
+      });
+    }
+    return new Response(exportYaml(recipes), {
+      headers: { 'content-type': 'text/yaml; charset=utf-8', ...dl('export.yaml') },
+    });
   });
 
   // ---------- export ----------

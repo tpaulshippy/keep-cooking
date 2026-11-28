@@ -139,23 +139,39 @@ class RecipeExporter(private val context: Context) {
             r.cookMinutes?.let { append(""","cookTime":"PT${it}M"""") }
             append("}")
         }.replace("<", "\\u003c")
-        val ings = r.ingredients.joinToString("") { "<li>${escHtml(it.text)}</li>" }
-        val stepsHtml = steps.joinToString("") { "<li>${escHtml(it.text)}</li>" }
-        val desc = if (r.description.isEmpty()) "" else "<p>${escHtml(r.description)}</p>"
         return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">" +
             "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" +
             "<title>${escHtml(r.title)}</title>" +
             "<script type=\"application/ld+json\">$jsonLd</script>" +
             "<style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem}</style>" +
-            "</head><body><h1>${escHtml(r.title)}</h1>$desc" +
-            "<p>Servings: ${escHtml(formatServings(r.servings))}</p>" +
-            "<h2>Ingredients</h2><ul>$ings</ul><h2>Steps</h2><ol>$stepsHtml</ol></body></html>"
+            "</head><body>${toHtmlBody(r)}</body></html>"
     }
 
     suspend fun exportHTML(db: AppDatabase, recipeId: String): String =
         loadRecipe(db, recipeId)?.let { toHtml(it) } ?: "<!doctype html><html><body>Not found</body></html>"
 
     suspend fun exportMarkdown(db: AppDatabase, recipeId: String): String = toMarkdown(db, recipeId)
+
+    /** Single recipe → HTML article body (no document shell). */
+    fun toHtmlBody(r: ExportableRecipe): String {
+        val steps = r.steps.sortedBy { it.position }
+        val ings = r.ingredients.joinToString("") { "<li>${escHtml(it.text)}</li>" }
+        val stepsHtml = steps.joinToString("") { "<li>${escHtml(it.text)}</li>" }
+        val desc = if (r.description.isEmpty()) "" else "<p>${escHtml(r.description)}</p>"
+        return "<h1>${escHtml(r.title)}</h1>$desc" +
+            "<p>Servings: ${escHtml(formatServings(r.servings))}</p>" +
+            "<h2>Ingredients</h2><ul>$ings</ul><h2>Steps</h2><ol>$stepsHtml</ol>"
+    }
+
+    /** Multi-recipe → one HTML document, one <article> per recipe joined by <hr/>. */
+    fun toHtmlPage(recipes: List<ExportableRecipe>): String {
+        val bodies = recipes.joinToString("\n<hr/>\n") { "<article>${toHtmlBody(it)}</article>" }
+        return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">" +
+            "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" +
+            "<title>Keep Cooking export</title>" +
+            "<style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem}</style>" +
+            "</head><body><h1>Keep Cooking export</h1>$bodies</body></html>"
+    }
 
     /** Stable filename for a recipe export (mirrors iOS writeTempFile). */
     fun fileNameFor(title: String, ext: String): String {

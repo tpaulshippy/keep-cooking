@@ -49,6 +49,9 @@ li { margin: 0.25rem 0; }
 input[type="checkbox"] { width: 1.25rem; height: 1.25rem; accent-color: var(--accent); flex: none; }
 li > label { display: flex; align-items: flex-start; gap: 0.6rem; font-weight: 400; cursor: pointer; }
 li > label input[type="checkbox"] { margin-top: 0.2rem; }
+/* Standalone checkbox rows (Settings export/import): same inline treatment
+   as li > label — the global form-label grid would stack box over text. */
+.checkrow { display: flex; align-items: center; gap: 0.5rem; font-weight: 400; cursor: pointer; }
 /* Checked-off items strike the whole label (name + quantity/aisle span),
    not just the name span next to the checkbox. */
 li > label:has(input:checked) { text-decoration: line-through; color: var(--muted); }
