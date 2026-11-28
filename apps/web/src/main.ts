@@ -173,7 +173,7 @@ function viewLibrary(q: string): void {
 interface RecipeFormPayload {
   title?: string; description?: string; servings?: number;
   prepMinutes?: number | null; cookMinutes?: number | null; rating?: number | null;
-  source?: string; sourceUrl?: string; categories?: string[];
+  isFavorite?: boolean; source?: string; sourceUrl?: string; categories?: string[];
 }
 
 // ---- Recipe new/edit (shared form) ----
@@ -193,6 +193,7 @@ function viewRecipeForm(editId: string | null): void {
   <label>Prep minutes <input name="prepMinutes" type="number" min="0" step="1" value="${esc(p.prepMinutes ?? '')}" /></label>
   <label>Cook minutes <input name="cookMinutes" type="number" min="0" step="1" value="${esc(p.cookMinutes ?? '')}" /></label>
   <label>Rating (0–5) <input name="rating" type="number" min="0" max="5" step="0.5" value="${esc(p.rating ?? '')}" /></label>
+  <label><input name="isFavorite" type="checkbox"${p.isFavorite ? ' checked' : ''} /> Favorite</label>
   <label>Source <input name="source" value="${esc(p.source ?? '')}" /></label>
   <label>Source URL <input name="sourceUrl" type="url" value="${esc(p.sourceUrl ?? '')}" /></label>
   <label>Categories (comma-separated) <input name="categories" value="${esc(cats)}" /></label>
@@ -208,6 +209,7 @@ function viewRecipeForm(editId: string | null): void {
       title,
       description: String(fd.get('description') || ''),
       servings,
+      isFavorite: (e.target as HTMLFormElement).querySelector<HTMLInputElement>('input[name="isFavorite"]')!.checked,
       source: String(fd.get('source') || ''),
       sourceUrl: String(fd.get('sourceUrl') || ''),
       categories: String(fd.get('categories') || '').split(',').map((s) => s.trim()).filter(Boolean),
@@ -238,7 +240,7 @@ function viewRecipeDetail(id: string): void {
   }
   const p = env.payload as {
     title?: string; description?: string; servings?: number;
-    prepMinutes?: number; cookMinutes?: number; rating?: number;
+    prepMinutes?: number; cookMinutes?: number; rating?: number; isFavorite?: boolean;
     source?: string; sourceUrl?: string; categories?: string[];
     ingredients?: RecipeIngredient[]; steps?: RecipeStep[];
   };
@@ -246,6 +248,7 @@ function viewRecipeDetail(id: string): void {
   if (p.prepMinutes != null) meta.push(`prep ${esc(p.prepMinutes)} min`);
   if (p.cookMinutes != null) meta.push(`cook ${esc(p.cookMinutes)} min`);
   if (p.rating != null) meta.push(`rating ${esc(p.rating)}/5`);
+  if (p.isFavorite) meta.push('★ favorite');
   // Non-http(s) source URLs render as plain text, never href (XSS allowlist).
   const srcLink = safeHttpUrl(p.sourceUrl);
   const srcHtml = srcLink

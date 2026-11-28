@@ -52,6 +52,7 @@ suspend fun loadLibraryRows(container: AppContainer): List<LibraryRecipeRow> {
             prepMinutes = r.prepMinutes,
             cookMinutes = r.cookMinutes,
             rating = r.rating,
+            isFavorite = r.isFavorite,
             source = r.source,
             categories = cats,
             ingredientNames = ings.map { it.name },
@@ -112,7 +113,10 @@ fun RecipesScreen(
                                 .clickable { onRecipeClick(r.recipeId) },
                         ) {
                             Column(Modifier.padding(16.dp)) {
-                                Text(r.title, style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    if (r.isFavorite) "♥ ${r.title}" else r.title,
+                                    style = MaterialTheme.typography.titleMedium,
+                                )
                                 if (r.recipeDescription.isNotBlank()) {
                                     Text(
                                         r.recipeDescription.take(120),

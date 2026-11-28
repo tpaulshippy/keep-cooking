@@ -237,6 +237,7 @@ object AppShortcuts {
                 put("title", JsonPrimitive(recipe.title))
                 put("description", JsonPrimitive(recipe.recipeDescription))
                 put("servings", JsonPrimitive(recipe.servings))
+                put("isFavorite", JsonPrimitive(recipe.isFavorite))
                 put("source", JsonPrimitive(recipe.source))
                 put("sourceUrl", JsonPrimitive(recipe.sourceUrl))
                 put("categories", categories)

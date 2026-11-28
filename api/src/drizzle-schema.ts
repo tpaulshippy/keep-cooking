@@ -24,6 +24,7 @@ export const recipes = sqliteTable('recipes', {
   prepMinutes: integer('prep_minutes'),
   cookMinutes: integer('cook_minutes'),
   rating: real('rating'),
+  isFavorite: integer('is_favorite').notNull().default(0),
   source: text('source').default(''),
   sourceUrl: text('source_url').default(''),
   categories: text('categories').default('[]'),

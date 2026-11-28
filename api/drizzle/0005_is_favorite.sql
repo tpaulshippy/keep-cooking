@@ -1,0 +1,17 @@
+-- Keep Cooking isFavorite backfill (#38): existing D1 databases created
+-- from an older 0001_init.sql have a recipes table without is_favorite.
+-- Fresh DBs already get the column from 0001_init.sql (CREATE TABLE IF
+-- NOT EXISTS), so this file is a one-time backfill for those older DBs.
+--
+-- Canonical migration chain: apply drizzle/0001_init.sql, then
+-- 0002_e2e_blobs.sql, then 0003_device_keys.sql, then
+-- 0004_agent_enrollments.sql, then this file (0005).
+-- (`npm run db:apply:local` / `db:apply:remote` do all in order;
+-- scripts/deploy-backend.sh applies the same order.)
+--
+-- Re-apply note: SQLite has no ADD COLUMN IF NOT EXISTS, so re-running
+-- this file on a DB that already has the column fails with
+-- "duplicate column name: is_favorite". That failure is benign — the
+-- deploy scripts tolerate it (see deploy-backend.sh / package.json).
+-- Prefer running once per DB; re-runs are safe to ignore.
+ALTER TABLE recipes ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0;

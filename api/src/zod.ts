@@ -58,6 +58,7 @@ export const recipeInputSchema = z.object({
   prepMinutes: z.number().int().min(0).max(10080).nullable().optional(),
   cookMinutes: z.number().int().min(0).max(10080).nullable().optional(),
   rating: z.number().min(0).max(5).nullable().optional(),
+  isFavorite: z.boolean().optional(),
   source: z.string().max(300).optional().default(''),
   sourceUrl: z.string().max(2000).optional().default(''),
   categories: z.array(z.string().max(60)).max(30).optional().default([]),

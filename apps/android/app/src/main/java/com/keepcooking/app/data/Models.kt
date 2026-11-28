@@ -70,6 +70,7 @@ data class RecipeEntity(
     val prepMinutes: Int? = null,
     val cookMinutes: Int? = null,
     val rating: Double? = null,
+    val isFavorite: Boolean = false,
     val source: String = "",
     val sourceUrl: String = "",
     val categoriesJson: String = "[]", // [String] encoded
