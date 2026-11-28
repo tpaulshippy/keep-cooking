@@ -5,6 +5,7 @@ import { Store, visible, type SyncEnvelope } from './store';
 import { parsePath, href, navigate, initRouter } from './router';
 import { scaleQuantity, formatQuantity } from './scale';
 import { aggregateWeekToList, collectPlanIngredients, scaleIngredientsForServings } from './aggregate';
+import { sortedRows, toggleItemChecked, shopRowHtml } from './lists';
 import { pushOutbox, type PushTransport } from './sync';
 
 const store = new Store();
@@ -37,6 +38,15 @@ const webTransport: PushTransport = {
       case 'pantryItem': return api.deletePantryItem(id);
       case 'plan': return api.deletePlan(id);
       case 'menu': return api.deleteMenu(id);
+    }
+  },
+  list: (entity) => {
+    switch (entity) {
+      case 'recipe': return api.listRecipes();
+      case 'list': return api.listLists();
+      case 'pantryItem': return api.listPantry();
+      case 'plan': return api.listPlans();
+      case 'menu': return api.listMenus();
     }
   },
 };
@@ -267,18 +277,14 @@ function viewLists(): void {
   const lists = visible(store.state.lists);
   const current = lists[lists.length - 1];
   const cp = current?.payload as { name?: string; items?: { name: string; quantity?: string; aisle?: string; checked?: boolean }[] } | undefined;
-  // Sort a copy but keep each row's ORIGINAL index: toggling maps the sorted
-  // row back to the unsorted array instead of the wrong item.
-  const rows = (cp?.items ?? [])
-    .map((it, i) => ({ it, i }))
-    .sort((a, b) => (a.it.aisle ?? '').localeCompare(b.it.aisle ?? '') || a.it.name.localeCompare(b.it.name));
+  const rows = sortedRows(cp?.items ?? []);
   shell(`<h1>Shopping lists</h1>
   <form id="newlist"><label>Name <input name="name" required value="Weekly shop" /></label><button type="submit">New list</button></form>
   <h2>Aisle-sorted pantry</h2>
   <form id="addpantry"><label>Item <input name="name" required /></label><label>Qty <input name="quantity" /></label><button type="submit">Add to pantry</button></form>
   <ul>${visible(store.state.pantry).map((pi) => `<li>${esc((pi.payload as { name?: string }).name)} <span class="muted">${esc((pi.payload as { quantity?: string }).quantity ?? '')}</span></li>`).join('') || '<li>Pantry empty.</li>'}</ul>
   <h2>${esc(cp?.name ?? 'No list yet')}</h2>
-  <ul>${rows.map(({ it, i }) => `<li><label><input type="checkbox" data-item="${i}"${it.checked ? ' checked' : ''} /> ${esc(it.name)} <span class="muted">${esc(it.quantity ?? '')} · ${esc(it.aisle ?? 'Other')}</span></label></li>`).join('') || '<li>No items.</li>'}</ul>`);
+  <ul>${rows.map(({ it, i }) => shopRowHtml(it, i, esc)).join('') || '<li>No items.</li>'}</ul>`);
   (document.getElementById('newlist') as HTMLFormElement).addEventListener('submit', (e) => {
     e.preventDefault();
     const name = String(new FormData(e.target as HTMLFormElement).get('name'));
@@ -295,8 +301,13 @@ function viewLists(): void {
     document.querySelectorAll<HTMLInputElement>('[data-item]').forEach((box) => {
       box.addEventListener('change', () => {
         const idx = Number(box.dataset.item);
-        const nextItems = (cp!.items ?? []).map((it, i) => (i === idx ? { ...it, checked: box.checked } : it));
-        store.upsert('list', current.id, { ...(cp as object), items: nextItems });
+        // Re-read the latest payload: a previous toggle in this render may
+        // already have stored a newer revision than the `cp` closure holds.
+        const latest = store.state.lists.find((l) => l.id === current.id);
+        const payload = (latest?.payload ?? cp) as { name?: string; items?: { name: string; quantity?: string; aisle?: string; checked?: boolean }[] };
+        const nextItems = toggleItemChecked(payload.items ?? [], idx, box.checked);
+        store.upsert('list', current.id, { ...(payload as object), items: nextItems });
+        render(); // refresh closures so the next toggle reads fresh state
       });
     });
   }

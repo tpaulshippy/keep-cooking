@@ -74,6 +74,33 @@ describe('outbox converge (airplane-mode edit)', () => {
     const got = store.state.recipes.find((e) => e.id === 'r1')?.payload as { title: string };
     expect(got.title).toBe('Server title');
   });
+
+  it('drops the queued local envelope when the remote tie winner is applied', () => {
+    const store = new Store();
+    store.clearAll();
+    const t = '2026-03-01T12:00:00.000Z';
+    const local = store.upsert('recipe', 'r1', { title: 'Local title' });
+    // Same timestamp, different device: the remote wins the tie...
+    store.state.recipes = [{ ...local, updatedAt: t, deviceId: 'device-local' }];
+    store.state.outbox = [{ ...local, updatedAt: t, deviceId: 'device-local' }];
+    store.applyRemote(env('r1', t, 'Server title', false, 'device-server'));
+    const got = store.state.recipes.find((e) => e.id === 'r1')?.payload as { title: string };
+    expect(got.title).toBe('Server title');
+    // ...and the superseded local envelope no longer sits in the outbox.
+    expect(store.state.outbox.filter((e) => e.id === 'r1')).toHaveLength(0);
+  });
+
+  it('keeps a newer local edit queued when an older remote arrives', () => {
+    const store = new Store();
+    store.clearAll();
+    const local = store.upsert('recipe', 'r1', { title: 'Local v2' });
+    store.state.recipes = [{ ...local, updatedAt: '2026-03-02T00:00:00.000Z' }];
+    store.state.outbox = [{ ...local, updatedAt: '2026-03-02T00:00:00.000Z' }];
+    store.applyRemote(env('r1', '2026-03-01T00:00:00.000Z', 'Stale server', false, 'device-server'));
+    const got = store.state.recipes.find((e) => e.id === 'r1')?.payload as { title: string };
+    expect(got.title).toBe('Local v2');
+    expect(store.state.outbox.filter((e) => e.id === 'r1')).toHaveLength(1);
+  });
 });
 
 describe('drainOutbox identity', () => {

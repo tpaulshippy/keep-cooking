@@ -21,7 +21,7 @@ function check(name, cond) {
 for (const f of [
   'package.json', 'vite.config.ts', 'tsconfig.json', 'index.html', 'README.md',
   'src/api.ts', 'src/store.ts', 'src/router.ts', 'src/main.ts', 'src/styles.css',
-  'src/scale.ts', 'src/aggregate.ts', 'src/sync.ts',
+  'src/scale.ts', 'src/aggregate.ts', 'src/sync.ts', 'src/lists.ts',
 ]) {
   check(`file ${f}`, existsSync(join(webRoot, f)));
 }
@@ -44,14 +44,45 @@ check('router uses history API', routerSrc.includes('pushState') && routerSrc.in
 // 5. BEHAVIORAL: bundle the pure helpers and run a real aggregation.
 //    Doubling one recipe's servings must double its measured quantity,
 //    unmeasured 'to taste' must survive, and 'ice cream' must sort Frozen.
+//    Bundling uses esbuild's JS API (createRequire) so no platform-specific
+//    .bin/.cmd shell shim is needed; a .bin fallback covers exotic installs.
 try {
-  const esbuild = join(webRoot, 'node_modules', '.bin', 'esbuild');
-  if (!existsSync(esbuild)) throw new Error('esbuild not installed; run npm install');
-  const out = join(tmpdir(), `kc-smoke-${process.pid}.mjs`);
-  execFileSync(esbuild, ['src/aggregate.ts', '--bundle', '--platform=node', '--format=esm', `--outfile=${out}`], {
-    cwd: webRoot, stdio: 'pipe',
-  });
-  const agg = await import(pathToFileURL(out).href);
+  let builtCode = null;
+  try {
+    const { createRequire } = await import('node:module');
+    const require = createRequire(join(webRoot, 'package.json'));
+    const { buildSync } = require('esbuild');
+    const result = buildSync({
+      entryPoints: [join(webRoot, 'src/aggregate.ts')],
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+      write: false,
+    });
+    builtCode = result.outputFiles[0].text;
+  } catch (apiErr) {
+    const exe = `esbuild${process.platform === 'win32' ? '.cmd' : ''}`;
+    const esbuild = join(webRoot, 'node_modules', '.bin', exe);
+    if (!existsSync(esbuild)) throw new Error(`esbuild JS API failed (${apiErr.message}) and ${exe} not installed; run npm install`);
+    const out = join(tmpdir(), `kc-smoke-${process.pid}.mjs`);
+    execFileSync(esbuild, ['src/aggregate.ts', '--bundle', '--platform=node', '--format=esm', `--outfile=${out}`], {
+      cwd: webRoot, stdio: 'pipe', shell: process.platform === 'win32',
+    });
+    const agg = await import(pathToFileURL(out).href);
+    checkBehavioral(agg);
+  }
+  if (builtCode !== null) {
+    const out = join(tmpdir(), `kc-smoke-${process.pid}.mjs`);
+    const { writeFileSync } = await import('node:fs');
+    writeFileSync(out, builtCode);
+    const agg = await import(pathToFileURL(out).href);
+    checkBehavioral(agg);
+  }
+} catch (err) {
+  check(`behavioral aggregate threw: ${err.message}`, false);
+}
+
+function checkBehavioral(agg) {
   const got = agg.aggregateWeekToList(
     agg.collectPlanIngredients(
       [
@@ -69,25 +100,28 @@ try {
     got.find((i) => i.name === 'Spaghetti')?.quantity === '24 oz' &&
     got.some((i) => i.name === 'Salt' && i.quantity === 'to taste') &&
     got.find((i) => i.name === 'Ice cream')?.aisle === 'Frozen');
-} catch (err) {
-  check(`behavioral aggregate threw: ${err.message}`, false);
 }
 
-// 6. Optional API probe (informational only, never fails offline).
+// 6. Optional API probe (informational only, never fails offline). The abort
+// timeout stays armed until the body is consumed (slow bodies can hang); it
+// is always cleared in `finally`.
 const base = process.env.API_BASE_URL ?? 'http://localhost:8787';
-try {
+{
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), 3000);
-  const res = await fetch(`${base}/health`, { signal: ctl.signal });
-  clearTimeout(t);
-  let version = 'n/a';
   try {
-    const data = await res.json();
-    version = data?.version ?? 'n/a';
-  } catch { /* non-JSON body */ }
-  console.log(`info - API ${base} responded ${res.status} version=${version} (optional)`);
-} catch {
-  console.log(`info - no API at ${base}; offline store smoke only (this is fine)`);
+    const res = await fetch(`${base}/health`, { signal: ctl.signal });
+    let version = 'n/a';
+    try {
+      const data = await res.json();
+      version = data?.version ?? 'n/a';
+    } catch { /* non-JSON body */ }
+    console.log(`info - API ${base} responded ${res.status} version=${version} (optional)`);
+  } catch {
+    console.log(`info - no API at ${base}; offline store smoke only (this is fine)`);
+  } finally {
+    clearTimeout(t);
+  }
 }
 
 process.exit(failures ? 1 : 0);

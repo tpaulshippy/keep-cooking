@@ -20,6 +20,7 @@ function scripted(impl: Partial<PushTransport>): PushTransport {
     update: () => { throw offline(); },
     create: () => { throw offline(); },
     remove: async () => {},
+    list: async () => [],
     ...impl,
   };
 }
@@ -104,6 +105,129 @@ describe('pushOutbox', () => {
     const result = await pushOutbox(store, transport);
     expect(result).toEqual({ pushed: 1, failed: false });
     expect(store.state.recipes.map((e) => e.id)).toEqual(['srv-1']);
+    expect(store.state.outbox).toHaveLength(0);
+  });
+
+  it('adopts a committed-but-unacked create on retry instead of duplicating', async () => {
+    const store = new Store();
+    store.clearAll();
+    const local = store.upsert('recipe', 'local-draft', { title: 'Clipped', servings: 4 });
+    // Server side of the fake: the first create commits, but its response is
+    // lost (throw) — the retry must adopt it, not create a second record.
+    const committed: ServerRecord[] = [];
+    let creates = 0;
+    const transport = scripted({
+      update: async () => { throw notFound('recipes/local-draft'); },
+      create: async (_e, input): Promise<ServerRecord> => {
+        creates++;
+        if (creates === 1) {
+          committed.push({ id: 'srv-1', updatedAt: '2026-05-02T00:00:00.000Z', deviceId: local.deviceId, ...(input as object) });
+          throw new Error('socket hang up (response lost after commit)');
+        }
+        throw new Error('must not create twice');
+      },
+      list: async () => [...committed],
+    });
+    expect(await pushOutbox(store, transport)).toEqual({ pushed: 0, failed: true });
+    expect(creates).toBe(1);
+    expect(await pushOutbox(store, transport)).toEqual({ pushed: 1, failed: false });
+    expect(creates).toBe(1); // no second create
+    expect(store.state.recipes.map((e) => e.id)).toEqual(['srv-1']);
+    expect(store.state.outbox).toHaveLength(0);
+  });
+
+  it('refuses to adopt on ambiguous matches (creates instead of wrong-merge)', async () => {
+    const store = new Store();
+    store.clearAll();
+    const local = store.upsert('recipe', 'local-draft', { title: 'Same', servings: 4 });
+    const mk = (id: string): ServerRecord => ({ id, updatedAt: '2026-05-02T00:00:00.000Z', deviceId: local.deviceId, title: 'Same', servings: 4 });
+    const transport = scripted({
+      update: async () => { throw notFound('recipes/local-draft'); },
+      list: async () => [mk('srv-a'), mk('srv-b')], // two identical: ambiguous
+      create: async (_e, input): Promise<ServerRecord> => ({ id: 'srv-new', ...(input as object) }),
+    });
+    expect(await pushOutbox(store, transport)).toEqual({ pushed: 1, failed: false });
+    expect(store.state.recipes.map((e) => e.id)).toEqual(['srv-new']);
+  });
+
+  it('does not collapse two intentional same-content drafts into one', async () => {
+    const store = new Store();
+    store.clearAll();
+    const d1 = store.upsert('recipe', 'draft-1', { title: 'Same', servings: 4 });
+    store.upsert('recipe', 'draft-2', { title: 'Same', servings: 4 });
+    const transport = scripted({
+      update: async () => { throw notFound('x'); },
+      // Even though a matching server record exists, two local peers make it
+      // ambiguous: both drafts must create their own records.
+      list: async () => [{ id: 'srv-1', deviceId: d1.deviceId, title: 'Same', servings: 4 }],
+      create: async (_e, input): Promise<ServerRecord> => ({
+        id: `srv-${Math.random().toString(36).slice(2)}`, ...(input as object),
+      }),
+    });
+    const result = await pushOutbox(store, transport);
+    expect(result.failed).toBe(false);
+    expect(store.state.recipes).toHaveLength(2);
+    expect(new Set(store.state.recipes.map((e) => e.id)).size).toBe(2);
+  });
+
+  it('pushes both revisions of a twice-edited offline record in one run', async () => {
+    const store = new Store();
+    store.clearAll();
+    store.upsert('recipe', 'local-draft', { title: 'v1' });
+    store.state.outbox[0] = { ...store.state.outbox[0], updatedAt: '2026-05-01T00:00:00.000Z' };
+    store.upsert('recipe', 'local-draft', { title: 'v2' });
+    store.state.outbox[1] = { ...store.state.outbox[1], updatedAt: '2026-05-02T00:00:00.000Z' };
+    const updates: { id: string; title: unknown }[] = [];
+    let creates = 0;
+    let clock = 3;
+    const stamp = () => `2026-05-0${clock++}T00:00:00.000Z`;
+    const transport = scripted({
+      update: async (entity, id, input) => {
+        if (id === 'local-draft') throw notFound('recipes/local-draft');
+        updates.push({ id, title: (input as Record<string, unknown>).title });
+        return { id, updatedAt: stamp(), ...(input as object) };
+      },
+      create: async (_e, input): Promise<ServerRecord> => {
+        creates++;
+        return { id: 'srv-1', updatedAt: stamp(), ...(input as object) };
+      },
+    });
+    const result = await pushOutbox(store, transport);
+    expect(result).toEqual({ pushed: 2, failed: false });
+    expect(creates).toBe(1);
+    // The rewritten second revision updates the adopted server id in-run.
+    expect(updates).toEqual([{ id: 'srv-1', title: 'v2' }]);
+    expect(store.state.outbox).toHaveLength(0);
+    expect((store.state.recipes[0].payload as { title: string }).title).toBe('v2');
+  });
+
+  it('offline-created-then-deleted never resurrects: create skipped, tombstone kept', async () => {
+    const store = new Store();
+    store.clearAll();
+    store.upsert('recipe', 'local-draft', { title: 'Clipped' });
+    store.remove('recipe', 'local-draft');
+    // Distinct timestamps so both envelopes are processed separately
+    // (same-ms create+tombstone would share one identity and drain together).
+    store.state.outbox[0] = { ...store.state.outbox[0], updatedAt: '2026-05-01T00:00:00.000Z' };
+    store.state.outbox[1] = { ...store.state.outbox[1], updatedAt: '2026-05-02T00:00:00.000Z' };
+    const creates: string[] = [];
+    const removes: string[] = [];
+    const transport = scripted({
+      update: async () => { throw notFound('recipes/local-draft'); },
+      create: async () => {
+        creates.push('create');
+        return { id: 'srv-nope' };
+      },
+      remove: async (entity, id) => {
+        removes.push(`${entity}/${id}`);
+      },
+    });
+    const result = await pushOutbox(store, transport);
+    expect(result).toEqual({ pushed: 2, failed: false });
+    expect(creates).toEqual([]); // create never attempted
+    expect(removes).toEqual(['recipe/local-draft']); // tombstone still sent
+    expect(store.state.recipes).toHaveLength(1);
+    expect(store.state.recipes[0].deleted).toBe(true); // tombstone preserved
     expect(store.state.outbox).toHaveLength(0);
   });
 });

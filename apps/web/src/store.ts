@@ -197,10 +197,29 @@ export class Store {
     this.state[key] = (idx === -1 ? [...col, env] : col.map((e, i) => (i === idx ? env : e))) as never;
   }
 
-  /** Apply a remote envelope (pull): LWW merge, no outbox enqueue. */
-  applyRemote(env: SyncEnvelope): void {
+  /** Apply a remote envelope (pull): LWW merge, no outbox enqueue. When the
+   * remote wins, queued local revisions of the same record at-or-before its
+   * timestamp are superseded — drop them so the next push can't overwrite the
+   * just-applied winner. Newer local edits are always retained.
+   * Push echoes pass { pruneSuperseded: false }: the push drains what it sent
+   * explicitly, and the server's fresh timestamp must not strand newer queued
+   * revisions the echo doesn't confirm. */
+  applyRemote(env: SyncEnvelope, opts?: { pruneSuperseded?: boolean }): void {
     const key = this.collectionKey(env.entity);
-    this.state[key] = mergeInto(this.state[key] as SyncEnvelope[], env) as never;
+    const col = this.state[key] as SyncEnvelope[];
+    const merged = mergeInto(col, env);
+    this.state[key] = merged as never;
+    if (opts?.pruneSuperseded === false) {
+      this.persist();
+      return;
+    }
+    if (merged.some((e) => e === env)) {
+      const remoteTs = Date.parse(env.updatedAt);
+      this.state.outbox = this.state.outbox.filter(
+        (e) =>
+          !(e.entity === env.entity && e.id === env.id && Date.parse(e.updatedAt) <= remoteTs),
+      );
+    }
     this.persist();
   }
 
@@ -222,7 +241,7 @@ export class Store {
    * and rewrite pending outbox revisions to the server id so follow-up edits
    * update instead of re-creating.
    */
-  reconcileLocalId(localId: string, server: SyncEnvelope): void {
+  reconcileLocalId(localId: string, server: SyncEnvelope, opts?: { pruneSuperseded?: boolean }): void {
     if (server.id !== localId) {
       const key = this.collectionKey(server.entity);
       this.state[key] = (this.state[key] as SyncEnvelope[]).filter((e) => e.id !== localId) as never;
@@ -230,7 +249,7 @@ export class Store {
         e.id === localId ? { ...e, id: server.id } : e,
       );
     }
-    this.applyRemote(server);
+    this.applyRemote(server, opts);
   }
 
   clearAll(): void {

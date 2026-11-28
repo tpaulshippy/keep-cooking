@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { aggregateWeekToList, guessAisle, scaleIngredientsForServings, collectPlanIngredients } from './aggregate';
+import {
+  aggregateWeekToList, guessAisle, scaleIngredientsForServings,
+  collectPlanIngredients, splitLeadingQuantity, rescaleDisplay,
+} from './aggregate';
 
 describe('guessAisle', () => {
   it('classifies staples', () => {
@@ -67,6 +70,44 @@ describe('scaleIngredientsForServings', () => {
     );
     expect(out[0]).toMatchObject({ quantity: 4, display: '4 cups' });
     expect(out[1]).toEqual({ name: 'Salt', display: 'to taste' });
+  });
+
+  it('preserves descriptive display text while rescaling the number', () => {
+    const out = scaleIngredientsForServings(
+      [
+        { name: 'Tomatoes', quantity: 2, unit: '', display: '2 ripe, diced' },
+        { name: 'Flour', quantity: 1.5, unit: 'cups', display: '1 1/2 cups sifted' },
+      ],
+      4,
+      8,
+    );
+    expect(out[0]).toMatchObject({ quantity: 4, display: '4 ripe, diced' });
+    expect(out[1]).toMatchObject({ quantity: 3, display: '3 cups sifted' });
+  });
+
+  it('keeps display text without a leading number unchanged', () => {
+    const out = scaleIngredientsForServings(
+      [{ name: 'Salt', quantity: 1, unit: 'pinch', display: 'a pinch of salt' }],
+      4,
+      8,
+    );
+    expect(out[0]).toMatchObject({ quantity: 2, display: 'a pinch of salt' });
+  });
+});
+
+describe('splitLeadingQuantity / rescaleDisplay', () => {
+  it('parses integers, decimals and fractions', () => {
+    expect(splitLeadingQuantity('12 oz')).toEqual({ value: 12, rest: 'oz' });
+    expect(splitLeadingQuantity('1 1/2 cups ripe')).toEqual({ value: 1.5, rest: 'cups ripe' });
+    expect(splitLeadingQuantity('3/4 tsp')).toEqual({ value: 0.75, rest: 'tsp' });
+    expect(splitLeadingQuantity('0.5 l')).toEqual({ value: 0.5, rest: 'l' });
+    expect(splitLeadingQuantity('to taste')).toBeNull();
+  });
+
+  it('rescales the prefix only', () => {
+    expect(rescaleDisplay('2 ripe, diced', 2)).toBe('4 ripe, diced');
+    expect(rescaleDisplay('12 oz', 0.5)).toBe('6 oz');
+    expect(rescaleDisplay('to taste', 4)).toBe('to taste');
   });
 });
 

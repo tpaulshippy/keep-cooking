@@ -64,9 +64,41 @@ export function aggregateWeekToList(ingredients: AggIngredient[]): AggItem[] {
     .sort((a, b) => a.aisle.localeCompare(b.aisle) || a.name.localeCompare(b.name));
 }
 
+/** Split "1 1/2 cups ripe, diced" into value 1.5 + rest "cups ripe, diced".
+ * Returns null when the text has no leading number. */
+export function splitLeadingQuantity(text: string): { value: number; rest: string } | null {
+  const m = text.match(/^\s*(\d+\s+\d+\s*\/\s*\d+|\d+\s*\/\s*\d+|\d+(?:\.\d+)?)\s*(.*)$/);
+  if (!m) return null;
+  const [, num, rest] = m;
+  let value: number;
+  if (num.includes('/')) {
+    const [whole, frac] = num.split(/\s+/).length > 1
+      ? [num.split(/\s+/)[0], num.split(/\s+/).slice(1).join(' ')]
+      : ['0', num];
+    const [n, d] = frac.split('/').map(Number);
+    if (!isFinite(n) || !isFinite(d) || d === 0) return null;
+    value = Number(whole) + n / d;
+  } else {
+    value = Number(num);
+  }
+  if (!isFinite(value)) return null;
+  return { value, rest: rest.trim() };
+}
+
+/** Rescale a display string's numeric prefix by factor, preserving the
+ * remaining text ('2 ripe, diced' ×2 → '4 ripe, diced'). No leading number →
+ * display returned unchanged. */
+export function rescaleDisplay(display: string, factor: number): string {
+  const parsed = splitLeadingQuantity(display);
+  if (!parsed) return display;
+  const scaled = formatQuantity(parsed.value * factor);
+  return parsed.rest ? `${scaled} ${parsed.rest}` : scaled;
+}
+
 /** Scale a recipe's ingredients from its base servings to a target (e.g. a
- * plan's servings). Measured quantities scale numerically with a recomputed
- * display; unmeasured entries ('to taste') pass through untouched. */
+ * plan's servings). Measured quantities scale numerically; the display keeps
+ * any descriptive text ('2 ripe, diced' ×2 → '4 ripe, diced'). Unmeasured
+ * entries ('to taste') pass through untouched. */
 export function scaleIngredientsForServings(
   ingredients: AggIngredient[],
   recipeServings: number | null | undefined,
@@ -78,7 +110,8 @@ export function scaleIngredientsForServings(
     if (typeof ing.quantity !== 'number' || !isFinite(ing.quantity)) return ing;
     const q = scaleQuantity(ing.quantity, base, target);
     const unit = (ing.unit ?? '').trim();
-    return { ...ing, quantity: q, display: formatQuantity(q, unit) };
+    const baseDisplay = ing.display?.trim() ? ing.display.trim() : formatQuantity(ing.quantity, unit);
+    return { ...ing, quantity: q, display: rescaleDisplay(baseDisplay, target / base) };
   });
 }
 

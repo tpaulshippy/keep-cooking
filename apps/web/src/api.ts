@@ -234,6 +234,7 @@ export const api = {
   updatePlan: (id: string, input: { date: string; meal: string; recipeId?: string | null; note?: string; servings?: number }, base?: string) =>
     req<Plan>('PUT', `/plans/${id}`, input, true, base ?? resolveApiBase()),
   deletePlan: (id: string, base?: string) => req<void>('DELETE', `/plans/${id}`, undefined, true, base ?? resolveApiBase()),
+  listMenus: (base?: string) => req<Menu[]>('GET', '/menus', undefined, false, base ?? resolveApiBase()),
   createMenu: (input: { name: string; entries?: { dayOffset?: number; meal?: string; recipeId?: string; servings?: number }[] }, base?: string) =>
     req<Menu>('POST', '/menus', input, true, base ?? resolveApiBase()),
   updateMenu: (id: string, input: { name: string; entries?: { dayOffset?: number; meal?: string; recipeId?: string; servings?: number }[] }, base?: string) =>
