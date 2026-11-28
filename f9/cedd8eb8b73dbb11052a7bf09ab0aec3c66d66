@@ -1,0 +1,16 @@
+apps/web/src/main.ts
+  h_6bbd00fe0a456a 1387-1388,1415-1416
+apps/web/src/styles.css
+  h_6bbd00fe0a456a 52-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f9cedd8eb8b73dbb11052a7bf09ab0aec3c66d66",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
