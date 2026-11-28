@@ -336,6 +336,8 @@ describe('POST /api/import + GET /export round-trip', () => {
     expect(files).toHaveLength(2);
     // Filenames sanitized (no slashes/stars).
     for (const f of files) expect(f.name).not.toMatch(/[/:*?"<>|]/);
+    // Duplicate titles are deduped: member names are unique.
+    expect(new Set(files.map((f) => f.name)).size).toBe(files.length);
     // Bulk YAML is a JSON array = valid YAML.
     const y = exportYaml([{ ...r, entity: 'recipe' as const }]);
     expect(JSON.parse(y).name).toBe('Export: Cake/Bad*Name');

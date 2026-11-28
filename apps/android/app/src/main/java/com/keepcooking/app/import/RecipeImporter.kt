@@ -25,9 +25,10 @@ import kotlinx.serialization.json.jsonPrimitive
 /**
  * File import — Paprika native (`.paprikarecipe`/`.paprikarecipes`), Paprika
  * YAML (`.yml`/`.yaml`, including JSON-as-YAML), plus best-effort P1
- * third-party formats Paprika itself imports (spec /tmp/paprika-spec.md §4:
- * MX2/MXP/MZ2, MMF, FDX/FDXZ, Pepperplate ZIP, Copy Me That ZIP, Yum XML,
- * My CookBook MCB, Recipe Manager TXT).
+ * third-party formats Paprika itself imports (see
+ * packages/contracts/openapi.yaml `POST /import` format enum and
+ * api/src/import.ts: MX2/MXP/MZ2, MMF, FDX/FDXZ, Pepperplate ZIP, Copy Me That
+ * ZIP, Yum XML, My CookBook MCB, Recipe Manager TXT).
  *
  * Parsing is pure (no Android APIs) so it runs in JVM unit tests and works
  * fully offline. The UI calls [importParsed] to upsert into Room.

@@ -30,11 +30,13 @@ Zero-knowledge scope is the `/v2/sync/:hash` route only — legacy
 ## ImportReport
 `{ imported: Recipe[], updated: number, warnings[], dryRun?, cookbooksCreated? }`.
 Mirrors ClipReport conventions (parsed recipes + warnings[]). POST /import accepts
-`{ householdId, format, payload (base64) | payloadJson, importCookbooks?, dryRun? }`;
-`format` covers Paprika native (paprika-json|paprika-zip|paprika-recipe), yaml, html,
-plus third-party formats Paprika imports (mx2|mxp|mz2|mmf|fdx|fdxz|pepperplate-zip|
-pepperplate-db|copymethat-zip|yum-xml|ysr|mgourmet|dvo|mcb|recipe-manager-txt|hcb|
-myrecipebook-sqlite|rbox). `paprikaUid` is the upsert key (re-import updates in place);
+`{ householdId, format, payload (base64) | payloadJson, importCookbooks?, dryRun? }`.
+Actually parsed today: Paprika native (paprika-json, paprika-zip incl. paprika-recipe
+single-file alias), yaml, html. 415-stubbed with re-export guidance (parsers not
+landed): mx2|mxp|mz2|mmf|fdx|fdxz|pepperplate|copymethat|yum. Remaining contract
+enum values (pepperplate-zip|pepperplate-db|copymethat-zip|yum-xml|ysr|mgourmet|dvo|
+mcb|recipe-manager-txt|hcb|myrecipebook-sqlite|rbox) have no handler yet → 400
+unsupported. `paprikaUid` is the upsert key (re-import updates in place);
 YAML is create-only (no identity). Optional Paprika extension fields on Recipe/RecipeInput
 (all optional, non-breaking): notes, nutritionText, difficulty, servingsText,
 prepTimeText/cookTimeText/totalTimeText, paprikaUid, paprikaRaw, cookbooks[], isFavorite, scaleFactor.

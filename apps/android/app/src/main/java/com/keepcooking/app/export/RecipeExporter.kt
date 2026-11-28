@@ -37,9 +37,9 @@ class RecipeExporter(private val context: Context) {
         val categories: List<String>,
         val ingredients: List<ExportableIngredient>,
         val steps: List<ExportableStep>,
-        // Paprika round-trip fields (spec /tmp/paprika-spec.md §1.4). Room has
-        // no columns for these, so they default empty and callers/importers
-        // fill them when known. All optional — existing call sites unaffected.
+        // Paprika round-trip uid: derived deterministically from the local
+        // recipe id (see paprikaUidFor) since Room has no paprikaUid column.
+        // Optional — existing call sites unaffected.
         val uid: String = "",
         val notes: String = "",
         val difficulty: String? = null,
@@ -68,6 +68,11 @@ class RecipeExporter(private val context: Context) {
             cookMinutes = recipe.cookMinutes, rating = recipe.rating,
             source = recipe.source, sourceUrl = recipe.sourceUrl,
             categories = categories, ingredients = ingredients, steps = steps,
+            // Stable uid: Room stores no paprikaUid, so derive it from the
+            // local recipe id — re-exporting yields the same uid, and both
+            // the server (uid upsert) and importParsed (title match) treat
+            // re-imports as updates, not duplicates.
+            uid = paprikaUidForId(recipe.id),
         )
     }
 
@@ -174,7 +179,7 @@ class RecipeExporter(private val context: Context) {
 
     // --- Paprika (.paprikarecipes ZIP of gzipped JSON) + YAML (JSON-as-YAML) ---
 
-    /** Single recipe → Paprika JSON string (spec §1.4). */
+    /** Single recipe → Paprika JSON string (single-recipe Paprika JSON shape). */
     fun toPaprikaJson(r: ExportableRecipe): String = paprikaJsonFor(r)
 
     /** Single recipe → `.paprikarecipes` ZIP bytes (one gzip member). */
@@ -183,7 +188,7 @@ class RecipeExporter(private val context: Context) {
     /** Recipe list → `.paprikarecipes` ZIP bytes (one gzip member per recipe). */
     fun toPaprikaZip(recipes: List<ExportableRecipe>): ByteArray = paprikaZipFor(recipes)
 
-    /** Single recipe → YAML text (emitted as a JSON array: valid YAML, spec §2). */
+    /** Single recipe → YAML text (emitted as a JSON array: valid YAML). */
     fun toYaml(r: ExportableRecipe): String = yamlFor(r)
 
     fun shareText(markdown: String): String = markdown // callers wrap in ACTION_SEND chooser
@@ -197,13 +202,27 @@ enum class ExportFormat(val ext: String, val title: String, val mime: String) {
     YAML("yml", "YAML", "text/yaml"),
 }
 
-/** Stable Paprika uid: reuse the stored one, else mint an uppercase UUID (spec §1.4). */
+/**
+ * Stable Paprika uid: reuse the stored one, else derive a deterministic
+ * uppercase UUID from the local recipe id (v3 name-based UUID over a
+ * namespaced seed). Room has no paprikaUid column, so this derivation is the
+ * stability guarantee: every export of the same recipe mints the SAME uid,
+ * and the server's uid upsert (api/src/import.ts runImport: same uid →
+ * update in place) plus the on-device title match treat re-imports as
+ * updates rather than duplicates. (A random UUID here would mint a fresh
+ * identity per export and duplicate on every re-import.)
+ */
 fun paprikaUidFor(r: RecipeExporter.ExportableRecipe): String =
-    r.uid.ifBlank { java.util.UUID.randomUUID().toString().uppercase(java.util.Locale.US) }
+    r.uid.ifBlank { paprikaUidForId(r.id) }
+
+/** Deterministic uid for a local recipe id (uppercased v3 UUID). */
+fun paprikaUidForId(recipeId: String): String =
+    java.util.UUID.nameUUIDFromBytes("keepcooking:recipe:$recipeId".toByteArray(Charsets.UTF_8))
+        .toString().uppercase(java.util.Locale.US)
 
 /** Paprika `photo` filename: keep the stored one, else synthesize `${UID}.jpg`
- * when photo bytes are present — a `photo_data` with null/absent `photo`
- * crashes Paprika mid-import (spec §1.2 #19). */
+ * when photo bytes are present — Paprika crashes mid-import on a `photo_data`
+ * with a null/absent `photo` filename. */
 fun paprikaPhotoNameFor(r: RecipeExporter.ExportableRecipe, uid: String): String? =
     if (r.photoBase64.isNullOrBlank()) null
     else r.photoFileName?.ifBlank { null } ?: "$uid.jpg"
@@ -212,7 +231,10 @@ fun paprikaPhotoNameFor(r: RecipeExporter.ExportableRecipe, uid: String): String
 internal fun paprikaMinutes(m: Int?): String? = m?.let { "$it minutes" }
 
 /**
- * Keep Cooking recipe → Paprika recipe JSON object (spec §1.4). Pure function
+ * Keep Cooking recipe → Paprika recipe JSON object (single-recipe Paprika
+ * JSON shape: uid/name/ingredients/directions/servings/categories/rating/
+ * description/notes/difficulty/nutritional_info/source/source_url/created/
+ * hash + optional prep_time/cook_time/total_time/cookbook/photo). Pure function
  * (no Context) so JVM unit tests can cover it without Robolectric.
  */
 fun paprikaJsonFor(r: RecipeExporter.ExportableRecipe): String {
@@ -256,15 +278,26 @@ fun paprikaGzip(json: String): ByteArray {
 
 /**
  * Recipes → `.paprikarecipes` ZIP bytes: one `*.paprikarecipe` gzip member per
- * recipe (spec §1.1/§1.4). Unicode titles are sanitized to filesystem-safe names.
+ * recipe. Unicode titles are sanitized to filesystem-safe names; names are
+ * made unique with an index suffix so two recipes with the same (or
+ * same-after-sanitizing) title never collide in one archive — a duplicate
+ * entry name throws `ZipException` and aborts the whole export.
  */
 fun paprikaZipFor(recipes: List<RecipeExporter.ExportableRecipe>): ByteArray {
     val out = java.io.ByteArrayOutputStream()
+    val used = mutableSetOf<String>()
     java.util.zip.ZipOutputStream(out).use { zip ->
         recipes.forEachIndexed { i, r ->
             val safe = r.title.lowercase().map { if (it.isLetterOrDigit()) it else '-' }
                 .joinToString("").take(40).ifBlank { "recipe-${i + 1}" }
-            zip.putNextEntry(java.util.zip.ZipEntry("$safe.paprikarecipe"))
+            // First recipe keeps the clean name; later collisions get -2, -3…
+            var entryName = "$safe.paprikarecipe"
+            var n = 2
+            while (!used.add(entryName)) {
+                entryName = "$safe-$n.paprikarecipe"
+                n++
+            }
+            zip.putNextEntry(java.util.zip.ZipEntry(entryName))
             zip.write(paprikaGzip(paprikaJsonFor(r)))
             zip.closeEntry()
         }
@@ -281,9 +314,9 @@ internal fun paprikaNow(): String {
 }
 
 /**
- * Recipe → YAML text. Emission strategy per spec §2: the recipe as a JSON
- * array (`[{...}]`) with a `.yml` extension — JSON is valid YAML, so this
- * avoids all pipe-block indentation risk. Photo bytes reuse `photo_data`
+ * Recipe → YAML text. Emission strategy: the recipe as a JSON array
+ * (`[{...}]`) with a `.yml` extension — JSON is valid YAML, so this avoids
+ * all pipe-block indentation risk. Photo bytes reuse `photo_data`
  * semantics under the YAML `photo` key.
  */
 fun yamlFor(r: RecipeExporter.ExportableRecipe): String {

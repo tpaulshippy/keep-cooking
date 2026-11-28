@@ -59,7 +59,8 @@ Merge (`planMerge`): survivor = most ingredients → has photo → highest ratin
 
 ## Validation (this machine, no Xcode project in repo)
 
-- `swiftc -parse` on all 11 files: clean.- `swiftc -typecheck` (macOS SDK): all library/export/widget/watch/intents sources typecheck with **zero errors** (one fix applied along the way: removed iOS-only `textInputAutocapitalization`; `AnyObject`-protocol alignment with Lane 2's `Syncable` precedent).
+- `swiftc -parse` on all 11 files: clean.
+- `swiftc -typecheck` (macOS SDK): all library/export/widget/watch/intents sources typecheck with **zero errors** (one fix applied along the way: removed iOS-only `textInputAutocapitalization`; `AnyObject`-protocol alignment with Lane 2's `Syncable` precedent).
 - `DuplicateFinderTests.swift`: `swiftc -parse` clean. Full `xctest` execution is **not possible with raw `swiftc` in this environment** (even a trivial `import XCTest` file fails the same way — the toolchain needs the xcodebuild test-bundle pipeline). Instead, **every assertion in the XCTest file is mirrored in a standalone harness** compiled against the real shipped sources (`LibrarySearch` + `DuplicateFinder` + `RecipeExporter` + `WidgetSnapshot`): **18/18 PASS** — all 3 seeded dupes caught, no false positives on distinct seeds, merge keeps best photo + unions ingredients, all filter dimensions, HTML escaping + single JSON-LD block, snapshot roundtrip + corrupt-tolerance.
 - Export samples validated with Python `json` + string checks (see above).
 - No auth/sync/Core changes: `git status` shows only Lane 5 paths (plus this README).
@@ -75,4 +76,4 @@ Merge (`planMerge`): survivor = most ingredients → has photo → highest ratin
 - Server-side household membership/invite redemption (`POST /households/:id/invites` + `POST /invites/redeem`) — invites are local + out-of-band only. Every button in `HouseholdInvitesView` works against that local model.
 - Actual widget/watch screenshots — no `.xcodeproj` exists in the repo so nothing can be screenshotted here; see `Widgets/PREVIEW_NOTES.md` and `watch/PREVIEW_NOTES.md` for the exact preview configuration to capture them from.
 - Cookbook cover art, drag-reorder of cookbook members, full-text stemming/stop-words (substring matching only).
-- File import UI + Paprika/YAML export have landed (`Features/Ingest/ImportView.swift`, `PaprikaImport.swift`, exporter Paprika/YAML) — the remaining gap is Mela format + server `POST /import` (client posts it best-effort and falls back to on-device save until the route exists).
+- File import UI + Paprika/YAML export have landed (`Features/Ingest/ImportView.swift`, `PaprikaImport.swift`, exporter Paprika/YAML) — the remaining gap is Mela format. Server `POST /api/import` exists (`api/src/index.ts`); the client posts it best-effort and falls back to on-device save when unreachable.

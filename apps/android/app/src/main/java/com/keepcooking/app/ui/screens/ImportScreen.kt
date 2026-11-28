@@ -44,28 +44,25 @@ import com.keepcooking.app.import.IMPORT_EXTENSIONS
 import com.keepcooking.app.import.ParsedFile
 import com.keepcooking.app.import.RecipeFileParser
 import com.keepcooking.app.import.importParsed
+import com.keepcooking.app.network.ImportReportDto
+import com.keepcooking.app.network.ImportRequestDto
 import java.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.put
 
 /**
  * File import UI — Paprika native (`.paprikarecipe`/`.paprikarecipes`), Paprika
- * YAML, and the P1 third-party formats Paprika imports (spec
- * /tmp/paprika-spec.md §4).
+ * YAML, and the P1 third-party formats Paprika imports (see
+ * packages/contracts/openapi.yaml `POST /import` format enum and
+ * api/src/import.ts).
  *
  * Flow: SAF picker ([ActivityResultContracts.OpenDocument]) → bytes → try the
- * API import endpoint ([com.keepcooking.app.network.ApiService.importPaprika]),
+ * API import endpoint ([com.keepcooking.app.network.ApiService.importFile]),
  * fall back to the offline on-device parser ([RecipeFileParser]) → upsert into
  * Room ([importParsed]) → result snackbar (imported / updated / warnings).
- * Cookbook destination folds into categories (Menu-or-categories fallback,
- * spec §1.3); “Import cookbooks” creates Menu rows for file cookbooks.
+ * Cookbook destination folds into categories (Menu-or-categories fallback);
+ * “Import cookbooks” creates Menu rows for file cookbooks.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -102,20 +99,23 @@ fun ImportScreen(container: AppContainer) {
             busy = true
             lastWarnings = emptyList()
             try {
-                // 1. Prefer server-side import when the route exists…
-                val viaApi = runCatching {
-                    val req = buildJsonObject {
-                        put("fileName", name)
-                        put("contentBase64", Base64.getEncoder().encodeToString(bytes))
-                        val menuId = selectedMenuId
-                        menus.firstOrNull { (id, _) -> id == menuId }
-                            ?.let { put("cookbook", it.second) }
-                        put("importCookbooks", importCookbooks)
-                    }
-                    apiImport(container, req)
+                // 1. Prefer server-side import when the route exists (the server
+                //    persists via uid upsert) — then pull so the rows appear
+                //    locally without a second local upsert (which would create
+                //    duplicate ids, one per side).
+                val serverReport = runCatching {
+                    apiImport(container, name, bytes, importCookbooks)
                 }.getOrNull()
+                if (serverReport != null) {
+                    runCatching { container.syncEngine.sync() }
+                    lastResult = "Imported ${serverReport.imported} from $name."
+                    lastWarnings = serverReport.warnings
+                    val warnSuffix = if (serverReport.warnings.isEmpty()) "" else " (${serverReport.warnings.size} warnings)"
+                    snackbar.showSnackbar(lastResult + warnSuffix)
+                    return@launch
+                }
                 // 2. …otherwise parse fully offline (works without connectivity).
-                val parsed: ParsedFile = viaApi ?: withContext(Dispatchers.Default) {
+                val parsed: ParsedFile = withContext(Dispatchers.Default) {
                     RecipeFileParser.parse(name, bytes)
                 }
                 val targetCookbook = selectedMenuId?.let { id ->
@@ -233,23 +233,51 @@ fun ImportScreen(container: AppContainer) {
 }
 
 /**
- * Server-side import attempt. Returns null on any failure (route missing,
- * offline, bad payload) so the caller falls back to offline parsing.
+ * Server-side import attempt (`POST /import` with `{ filename, payload
+ * (base64), format?, householdId?, importCookbooks? }`; see
+ * packages/contracts/openapi.yaml ImportRequest and api/src/import.ts).
+ * Returns the server's [ImportReportDto] (`{ imported (count), ids,
+ * warnings }`) on success, null on any failure (route missing, offline, bad
+ * payload) so the caller falls back to offline parsing.
  * Exported for tests.
  */
-suspend fun apiImport(container: AppContainer, request: JsonObject): ParsedFile? {
+suspend fun apiImport(
+    container: AppContainer,
+    filename: String,
+    bytes: ByteArray,
+    importCookbooks: Boolean = true,
+): ImportReportDto? {
     return try {
-        val res = container.api.importPaprika(null, request)
-        val recipes = (res["recipes"] as? JsonArray)
-            ?.mapNotNull { it as? JsonObject }
-            ?.map { RecipeFileParser.jsonToParsed("server", it, mutableListOf()).recipes.firstOrNull() }
-            ?.filterNotNull()
-            ?: return null
-        val warnings = (res["warnings"] as? JsonArray)
-            ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
-            .orEmpty()
-        ParsedFile(recipes, warnings = warnings)
+        val ext = filename.substringAfterLast('.', "").lowercase()
+        val request = ImportRequestDto(
+            filename = filename,
+            payload = Base64.getEncoder().encodeToString(bytes),
+            format = importFormatForExtension(ext),
+            householdId = "hh-demo",
+            importCookbooks = importCookbooks,
+        )
+        container.api.importFile(null, request)
     } catch (_: Exception) {
         null
     }
+}
+
+/** Map a file extension to the `POST /import` format enum; null lets the
+ * server sniff filename/content (api/src/import.ts detectImportFormat). */
+internal fun importFormatForExtension(ext: String): String? = when (ext) {
+    "paprikarecipe" -> "paprika-recipe"
+    "paprikarecipes", "zip" -> "paprika-zip"
+    "json" -> "paprika-json"
+    "yml", "yaml" -> "yaml"
+    "html", "htm" -> "html"
+    "mx2" -> "mx2"
+    "mxp" -> "mxp"
+    "mz2" -> "mz2"
+    "mmf" -> "mmf"
+    "fdx" -> "fdx"
+    "fdxz" -> "fdxz"
+    "xml" -> "yum-xml"
+    "mcb" -> "mcb"
+    "txt" -> "recipe-manager-txt"
+    else -> null
 }

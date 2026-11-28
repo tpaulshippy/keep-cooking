@@ -43,7 +43,7 @@ public enum ExportFormat: String, CaseIterable, Identifiable {
         case .json: return "public.json"
         case .md: return "net.daringfireball.markdown"
         case .html: return "public.html"
-        case .paprikarecipes: return "com.paprika.recipe"
+        case .paprikarecipes: return "com.paprika.recipes"
         case .yaml: return "public.yaml"
         }
     }

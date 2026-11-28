@@ -15,7 +15,13 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Paprika export/import parity (spec /tmp/paprika-spec.md §§1–2): pure JVM tests, no Android. */
+/**
+ * Paprika export/import parity: single-recipe Paprika JSON objects
+ * (uid/name/ingredients/directions/servings/categories/rating/…) wrapped as
+ * one gzip member per `.paprikarecipe` inside a `.paprikarecipes` ZIP, plus
+ * YAML emitted as a JSON array (valid YAML) with a `.yml` extension.
+ * Pure JVM tests, no Android.
+ */
 class RecipeExportImportTest {
 
     private fun sample() = RecipeExporter.ExportableRecipe(
@@ -65,8 +71,38 @@ class RecipeExportImportTest {
 
     @Test fun `uid minted when absent`() {
         val uid = paprikaUidFor(sample().copy(uid = ""))
-        assertEquals(uid, uid.uppercase())
-        assertTrue(uid.contains("-"))
+        // Full UUID shape: 8-4-4-4-12 uppercase hex (v3 name-based).
+        assertTrue(uid.matches(Regex("[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}")))
+    }
+
+    @Test fun `uid is stable per recipe id`() {
+        // Re-exporting the same recipe must mint the SAME uid, or re-import
+        // duplicates (server uid upsert keys on it).
+        val a = paprikaUidFor(sample().copy(uid = ""))
+        val b = paprikaUidFor(sample().copy(uid = ""))
+        assertEquals(a, b)
+        val other = paprikaUidFor(sample().copy(id = "kc-2", uid = ""))
+        assertTrue(other.matches(Regex("[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}")))
+        assertTrue(a != other)
+    }
+
+    @Test fun `zip entry names stay unique for duplicate titles`() {
+        val dupes = listOf(sample(), sample(), sample().copy(title = "CHILI!!"))
+        val zipBytes = paprikaZipFor(dupes)
+        val names = mutableListOf<String>()
+        ZipInputStream(ByteArrayInputStream(zipBytes)).use { zip ->
+            var entry = zip.nextEntry
+            while (entry != null) {
+                names += entry.name
+                entry = zip.nextEntry
+            }
+        }
+        assertEquals(3, names.size)
+        assertEquals(3, names.toSet().size)
+        assertTrue(names.all { it.endsWith(".paprikarecipe") })
+        // Round-trips: all three members still parse.
+        val parsed = RecipeFileParser.parse("lib.paprikarecipes", zipBytes)
+        assertEquals(3, parsed.recipes.size)
     }
 
     @Test fun `zip wraps gzipped json member`() {

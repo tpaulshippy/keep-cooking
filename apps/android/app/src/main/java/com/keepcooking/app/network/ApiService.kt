@@ -77,20 +77,25 @@ interface ApiService {
     @POST("v2/devices")
     suspend fun enrollDevice(@Body body: DeviceEnrollRequest): Response<JsonObject>
 
-    // --- File import (POST /import/paprika; offline parse fallback when absent) ---
+    // --- File import (POST /import; offline parse fallback when absent) ---
 
     /**
      * Server-side file import (Paprika/YAML/P1 formats). Optional: when the
      * server does not implement this route (404/5xx) callers fall back to the
      * on-device parser in `com.keepcooking.app.import`, so import works offline.
-     * Request: `{ fileName, contentBase64, cookbook?, importCookbooks }`.
-     * Response: `{ recipes: [...KC-shaped...], warnings: [...] }`.
+     * Request (`ImportRequest`, see packages/contracts/openapi.yaml `POST
+     * /import` and api/src/import.ts): `{ filename, payload (base64 file
+     * bytes), format?, text?, householdId?, importCookbooks?, dryRun? }`.
+     * `format` is detected from filename/content when absent. Response
+     * (`ImportReport`): `{ imported (count), ids, warnings }` — the server
+     * persists via uid upsert; the client then relies on sync pull (or its
+     * local offline parse) for the recipe rows.
      */
-    @POST("import/paprika")
-    suspend fun importPaprika(
+    @POST("import")
+    suspend fun importFile(
         @Header("Authorization") auth: String?,
-        @Body body: JsonObject,
-    ): JsonObject
+        @Body body: ImportRequestDto,
+    ): ImportReportDto
 
     // --- Share (POST /share/cookbook — parity with ShareAPIClient) ---
 
@@ -141,6 +146,33 @@ data class E2EPushResponse(val stored: List<String> = emptyList())
 
 @kotlinx.serialization.Serializable
 data class E2EWipeResponse(val wiped: Int = 0)
+
+/** POST /import request body (see packages/contracts/openapi.yaml ImportRequest
+ * and api/src/import.ts: the live server reads `filename` + `payload` (base64
+ * file bytes), with `format` detected from filename/content when absent). */
+@kotlinx.serialization.Serializable
+data class ImportRequestDto(
+    val filename: String,
+    val payload: String, // base64-encoded file bytes
+    val format: String? = null, // paprika-json | paprika-zip | yaml | html | …
+    val text: String? = null, // decoded-text alternative to payload for text formats
+    val householdId: String? = null,
+    val importCookbooks: Boolean = true,
+    val dryRun: Boolean = false,
+)
+
+/** POST /import response body (ImportReport: `{ imported (count), ids, warnings }`). */
+@kotlinx.serialization.Serializable
+data class ImportReportDto(
+    val imported: Int = 0,
+    val ids: List<String> = emptyList(),
+    val warnings: List<String> = emptyList(),
+    // OpenAPI-declared extras the live server may add later; defaulted so
+    // unknown-shape responses still decode (ignoreUnknownKeys is on).
+    val updated: Int = 0,
+    val dryRun: Boolean = false,
+    val cookbooksCreated: List<String> = emptyList(),
+)
 
 @kotlinx.serialization.Serializable
 data class ShareCookbookRequest(

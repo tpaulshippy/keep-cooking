@@ -12,7 +12,9 @@ actually written.
 ## Formats (JSON/Markdown/HTML/Paprika/YAML)
 
 `ExportFormat`: `json` (`public.json`), `md` (`net.daringfireball.markdown`),
-`html` (`public.html`), `paprikarecipes` (`com.paprika.recipe`),
+`html` (`public.html`), `paprikarecipes` (`com.paprika.recipes`,
+archive UTI conforming to `public.zip` — not the single-recipe
+`com.paprika.recipe`),
 `yaml` (`public.yaml`, written `.yml`).
 
 - `exportPaprikaJSON(_:uid:servingsText:created:)` (`RecipeExporter.swift`):
