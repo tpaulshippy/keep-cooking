@@ -131,11 +131,11 @@
             ]
           }
         ],
-        "description": "Clip source hint. `text` = generic pasted text, `photo` = photo/OCR transcript; request requires url or caption (caption max 20000); when url is supplied the JSON-LD -> reader pipeline runs first with caption as fallback.",
+        "description": "Clip source hint. `text` = generic pasted text, `photo` = photo/OCR transcript; request requires url or caption (caption max 20000); when url is supplied the JSON-LD \u2192 reader pipeline runs first with caption as fallback.",
         "properties": {
           "caption": {
-            "type": "string",
-            "maxLength": 20000
+            "maxLength": 20000,
+            "type": "string"
           },
           "source": {
             "enum": [
