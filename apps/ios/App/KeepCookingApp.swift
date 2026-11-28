@@ -66,6 +66,11 @@ struct AdaptiveShell: View {
         .modifier(ImportURLHandler(onFile: { url in
             if ImportPendingStore.stage(url) { showImport = true }
         }))
+        // Share extension "Open in Keep Cooking" (smidgen://clip?url=...).
+        // ImportURLHandler ignores non-file URLs; this claims only host `clip`.
+        .onOpenURL { url in
+            _ = ClipDeepLink.shared.open(url)
+        }
         .sheet(isPresented: $showImport) { ImportView() }
         .task {
             // Airplane-mode demo: seeds load once, then sync when online.
@@ -812,6 +817,44 @@ extension SyncCoordinator {
         }
     }
 }
+// MARK: - Clip deep link (Share extension "Open in Keep Cooking")
+
+/// Tiny router for `smidgen://clip?url=<pct-encoded>` (Share extension
+/// "Open in Keep Cooking"). The extension also enqueues into ShareStore
+/// (App Group group.com.smidgen.share); the URL query param is the primary
+/// path, ShareStore.drain() stays the fallback when it is absent/undecodable.
+/// Only host `clip` is claimed — `smidgen://invite/<code>` (LibraryModels/
+/// Library README stub) and everything else is ignored here.
+@MainActor
+@Observable
+final class ClipDeepLink {
+    static let shared = ClipDeepLink()
+    /// Set when a clip link arrives; DrawerShellView consumes + clears it.
+    var pendingURL: String? = nil
+
+    @discardableResult
+    func open(_ url: URL) -> Bool {
+        guard let clipped = Self.clippedURL(from: url) else { return false }
+        pendingURL = clipped
+        return true
+    }
+
+    /// Validate + extract the recipe URL. Accepts only scheme `smidgen`,
+    /// host `clip`, empty/`/` path, and a non-empty `url` query item
+    /// (URLComponents already percent-decodes it).
+    static func clippedURL(from url: URL) -> String? {
+        guard url.scheme?.lowercased() == "smidgen",
+              url.host?.lowercased() == "clip" else { return nil }
+        let path = url.path
+        guard path.isEmpty || path == "/" else { return nil }
+        guard let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let raw = comps.queryItems?.first(where: { $0.name == "url" })?.value
+        else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
 // MARK: - Drawer destinations (phone)
 
 enum DrawerSection: String, CaseIterable, Identifiable {
@@ -890,6 +933,11 @@ struct DrawerShellView: View {
     @State private var selection: DrawerSection = .recipes
     @State private var drawerOpen = false
     @State private var quickAdd: QuickAddKind? = nil
+    /// Observed clip-link router (smidgen://clip?url=... via onOpenURL).
+    @State private var clipLink = ClipDeepLink.shared
+    /// URL forwarded into ClipView(urlText:) when a deep link arrives.
+    /// Cleared when the sheet dismisses; ShareStore.drain() stays fallback.
+    @State private var clipURL: String? = nil
     /// Blank-recipe request forwarded to the library (single + menu entry).
     @State private var requestBlankRecipe = false
     /// Recipe filter state (section + sheet + visible count): the top-bar
@@ -931,14 +979,21 @@ struct DrawerShellView: View {
         .animation(.easeInOut(duration: 0.22), value: drawerOpen)
         // Each quick-add destination owns its own NavigationStack —
         // no outer stack here (avoids nested navigation chrome).
-        .sheet(item: $quickAdd) { kind in
+        .sheet(item: $quickAdd, onDismiss: { clipURL = nil }) { kind in
             switch kind {
-            case .clip: ClipView()
+            case .clip: ClipView(urlText: clipURL ?? "")
             case .scan: OCRScanView()
             case .caption: CaptionsImportView()
             case .importFile: ImportView()
             case .paste: PasteImportView()
             }
+        }
+        // Deep-link arrivals: present the Clip review flow with the URL.
+        .onChange(of: clipLink.pendingURL) { _, newValue in
+            guard let newValue else { return }
+            clipURL = newValue
+            clipLink.pendingURL = nil
+            quickAdd = .clip
         }
     }
 
