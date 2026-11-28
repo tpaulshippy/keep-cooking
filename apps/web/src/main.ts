@@ -371,7 +371,9 @@ function viewRecipeEditor(editId: string | null): void {
       <div class="sheet-row-text"><span class="sheet-label">Photos</span>
         <span class="muted">${esc(photos.count)} photo${photos.count === 1 ? '' : 's'}</span></div>
       ${photos.key
-        ? `<img class="sheet-thumb" data-photo-key="${esc(photos.key)}" alt="" loading="lazy" hidden />`
+        // Eager (not lazy): hydrate unhides on load, and a lazy+hidden img
+        // would never intersect to trigger its own load (deadlock).
+        ? `<img class="sheet-thumb" data-photo-key="${esc(photos.key)}" alt="" hidden />`
         : photos.legacyUrl
           ? `<img class="sheet-thumb" src="${esc(photos.legacyUrl)}" alt="" loading="lazy" />`
           : `<span class="sheet-thumb sheet-thumb-empty" aria-hidden="true">📷</span>`}

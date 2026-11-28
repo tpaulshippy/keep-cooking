@@ -59,6 +59,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -629,11 +630,14 @@ fun RecipeDetailScreen(
                 return@Column
             }
             // Signed resolution: R2 storage keys are minted into short-lived
-            // download URLs (GET /photos/sign, cached); absolute URIs pass
-            // through. While resolving (or on failure) show the placeholder.
+            // download URLs (GET /photos/sign, cached until expiry), absolute
+            // URIs pass through. While resolving (or on failure) show the
+            // placeholder; a Coil error invalidates the entry and retries once.
+            val photoCache = remember(container) { photoCacheFor(container) }
             var thumbUrl by remember(photoThumb) { mutableStateOf<String?>(null) }
-            LaunchedEffect(photoThumb) {
-                thumbUrl = photoThumb?.let { resolveRecipePhoto(container, it) }
+            var resolveGen by remember(photoThumb) { mutableStateOf(0) }
+            LaunchedEffect(photoThumb, resolveGen) {
+                thumbUrl = photoThumb?.let { resolveRecipePhoto(container, it, photoCache) }
             }
             if (!photoThumb.isNullOrBlank()) {
                 if (thumbUrl != null) {
@@ -641,6 +645,14 @@ fun RecipeDetailScreen(
                         model = thumbUrl,
                         contentDescription = "Recipe photo",
                         contentScale = ContentScale.Crop,
+                        placeholder = rememberVectorPainter(Icons.Filled.Image),
+                        error = rememberVectorPainter(Icons.Filled.Image),
+                        onError = {
+                            if (resolveGen == 0) {
+                                invalidateSignedPhoto(photoThumb, photoCache)
+                                resolveGen = 1
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth().height(200.dp)
                             .clip(RoundedCornerShape(16.dp)),
                     )

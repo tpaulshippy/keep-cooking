@@ -5,9 +5,12 @@ import com.keepcooking.app.data.RecipeEntity
 import com.keepcooking.app.data.StepEntity
 import com.keepcooking.app.navigation.buildRecipeEditPayload
 import com.keepcooking.app.navigation.effectiveTotalMinutes
+import com.keepcooking.app.ui.screens.SignedPhoto
+import com.keepcooking.app.ui.screens.SignedPhotoCache
 import com.keepcooking.app.ui.screens.formatMinutes
 import com.keepcooking.app.ui.screens.hostOfUrl
 import com.keepcooking.app.ui.screens.ingredientFullLine
+import kotlinx.coroutines.test.runTest
 import com.keepcooking.app.ui.screens.isIngredientHeaderRow
 import com.keepcooking.app.ui.screens.resolvePhotoUrl
 import kotlinx.serialization.json.jsonArray
@@ -195,5 +198,55 @@ class RecipeEditPayloadTest {
         assertEquals("25 min", formatMinutes(25))
         assertEquals("1 hr 25 min", formatMinutes(85))
         assertEquals("", formatMinutes(null))
+    }
+
+    @Test
+    fun `signed cache reuses url within ttl then re-mints after expiry`() = runTest {
+        var now = 1_000_000L
+        var signs = 0
+        val cache = SignedPhotoCache(
+            sign = { signs++; SignedPhoto("https://cdn/x?e=$signs", now + 600_000) },
+            nowMillis = { now },
+            skewMarginMillis = 0,
+        )
+        assertEquals("https://cdn/x?e=1", cache.resolve("photos/a/thumb.jpg"))
+        assertEquals("https://cdn/x?e=1", cache.resolve("photos/a/thumb.jpg"))
+        assertEquals(1, signs)
+        now += 600_001
+        assertEquals("https://cdn/x?e=2", cache.resolve("photos/a/thumb.jpg"))
+        assertEquals(2, signs)
+    }
+
+    @Test
+    fun `skew margin treats nearly-expired urls as expired`() = runTest {
+        var now = 0L
+        var signs = 0
+        val cache = SignedPhotoCache(
+            sign = { signs++; SignedPhoto("u$signs", now + 120_000) },
+            nowMillis = { now },
+        )
+        assertEquals("u1", cache.resolve("k"))
+        now = 61_000 // 59s of TTL left < 60s skew margin
+        assertEquals("u2", cache.resolve("k"))
+        assertEquals(2, signs)
+    }
+
+    @Test
+    fun `invalidate forces re-mint`() = runTest {
+        var signs = 0
+        val cache = SignedPhotoCache(
+            sign = { signs++; SignedPhoto("u$signs", 9_999_999_999L) },
+            nowMillis = { 0L },
+        )
+        assertEquals("u1", cache.resolve("k"))
+        cache.invalidate("k")
+        assertEquals("u2", cache.resolve("k"))
+        assertEquals(2, signs)
+    }
+
+    @Test
+    fun `sign failure resolves null`() = runTest {
+        val cache = SignedPhotoCache(sign = { null }, nowMillis = { 0L })
+        assertNull(cache.resolve("k"))
     }
 }

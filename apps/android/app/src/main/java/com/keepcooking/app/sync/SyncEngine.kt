@@ -258,8 +258,13 @@ class SyncEngine(
         // have no Room columns: merge present keys into the per-recipe
         // DataStore sidecar so the editor hydrates synced values (including
         // clears) instead of resurrecting stale local ones. Shells return
-        // early above; tombstones carry no extras keys.
-        if (!env.deleted) {
+        // early above. A winning deleted envelope drops the sidecar so a
+        // tombstoned recipe cannot retain stale editor metadata.
+        if (env.deleted) {
+            runCatching {
+                dataStore.edit { prefs -> prefs.remove(editorExtrasKey(env.id)) }
+            }
+        } else {
             val extrasKeys = listOf("difficulty", "notes", "nutritionText", "totalMinutes")
             if (extrasKeys.any { p.containsKey(it) }) {
                 runCatching {

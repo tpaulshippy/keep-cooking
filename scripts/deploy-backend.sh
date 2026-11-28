@@ -27,6 +27,11 @@ need wrangler
 need node
 need curl
 
+# Resolve once so the migration helper invokes the exact preflighted binary
+# (never a different copy npx might fetch); exported for apply-migration.sh.
+WRANGLER_BIN="$(command -v wrangler)"
+export WRANGLER_BIN
+
 if [ ! -d "$API_DIR" ]; then
   echo "run from the repo root (expected ./$API_DIR)" >&2
   exit 1

@@ -416,9 +416,11 @@ fun RecipeEditorScreen(
                             )
                         }
                         val thumbKey = d.photoThumb?.takeIf { it.isNotBlank() } ?: d.photoOriginal
+                        val photoCache = remember(container) { photoCacheFor(container) }
                         var thumbUrl by remember(thumbKey) { mutableStateOf<String?>(null) }
-                        LaunchedEffect(thumbKey) {
-                            thumbUrl = thumbKey?.let { resolveRecipePhoto(container, it) }
+                        var resolveGen by remember(thumbKey) { mutableStateOf(0) }
+                        LaunchedEffect(thumbKey, resolveGen) {
+                            thumbUrl = thumbKey?.let { resolveRecipePhoto(container, it, photoCache) }
                         }
                         if (thumbUrl != null) {
                             AsyncImage(
@@ -427,6 +429,12 @@ fun RecipeEditorScreen(
                                 contentScale = ContentScale.Crop,
                                 placeholder = rememberVectorPainter(Icons.Filled.Image),
                                 error = rememberVectorPainter(Icons.Filled.Image),
+                                onError = {
+                                    if (resolveGen == 0) {
+                                        invalidateSignedPhoto(thumbKey, photoCache)
+                                        resolveGen = 1
+                                    }
+                                },
                                 modifier = Modifier.size(96.dp).clip(RoundedCornerShape(16.dp))
                                     .background(MaterialTheme.colorScheme.surfaceContainerHighest),
                             )
