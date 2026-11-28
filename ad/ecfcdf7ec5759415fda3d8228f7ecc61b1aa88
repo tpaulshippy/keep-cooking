@@ -1,0 +1,46 @@
+api/src/clip.ts
+  h_6bbd00fe0a456a 234-236
+api/src/zod.ts
+  h_6bbd00fe0a456a 22
+api/test/clip.test.ts
+  h_6bbd00fe0a456a 3,98-140
+apps/android/app/build.gradle.kts
+  h_6bbd00fe0a456a 84-86
+apps/android/app/src/main/java/com/keepcooking/app/ingest/ClipModels.kt
+  h_6bbd00fe0a456a 20-21
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/IngestScreen.kt
+  h_6bbd00fe0a456a 3-4,20,35,37-39,60-62,110,117-118,324-329,331-465,472-473,484-509,517-523,526,540,558
+apps/android/app/src/test/java/com/keepcooking/app/ingest/PasteIngestTest.kt
+  h_6bbd00fe0a456a 1-42
+apps/ios/App/DemoFlows.swift
+  h_6bbd00fe0a456a 14,118,336,912-913,1656-1657
+apps/ios/App/KeepCookingApp.swift
+  h_6bbd00fe0a456a 838,846,903,956-960
+apps/ios/Features/Ingest/ClipModels.swift
+  h_6bbd00fe0a456a 21-22
+apps/ios/Features/Ingest/PasteImportView.swift
+  h_6bbd00fe0a456a 1-324
+apps/web/src/ingest.test.ts
+  h_6bbd00fe0a456a 1-66
+apps/web/src/ingest.ts
+  h_6bbd00fe0a456a 1-91
+apps/web/src/main.ts
+  h_6bbd00fe0a456a 10,419-424,430-478,517-602
+packages/contracts/CHANGELOG.md
+  h_6bbd00fe0a456a 2-4
+packages/contracts/openapi.json
+  h_6bbd00fe0a456a 134,146-148
+packages/contracts/openapi.yaml
+  h_6bbd00fe0a456a 922-925,929
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "adecfcdf7ec5759415fda3d8228f7ecc61b1aa88",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
