@@ -78,9 +78,12 @@ struct AdaptiveShell: View {
         }
         .sheet(isPresented: $showImport) { ImportView() }
         // Deep-link arrivals: present Clip review above whichever idiom
-        // is showing (phone drawer or iPad split).
+        // is showing (phone drawer or iPad split). The .id() re-creates the
+        // ClipView per URL so a second link arriving while the sheet is open
+        // replaces the flow instead of being consumed and discarded.
         .sheet(isPresented: $showClip, onDismiss: { clipURL = nil }) {
             ClipView(urlText: clipURL ?? "")
+                .id(clipURL ?? "clip-empty")
         }
         .onChange(of: clipLink.pendingURL) { _, newValue in
             guard let newValue else { return }
