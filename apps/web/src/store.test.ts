@@ -143,6 +143,48 @@ describe('reconcileLocalId', () => {
   });
 });
 
+describe('legacy demo-seed migration', () => {
+  beforeEach(() => localStorage.clear());
+
+  function seedIds(store: Store): string[] {
+    return store.state.recipes.map((e) => e.id).sort();
+  }
+
+  it('migrates a legacy-only store to the 15 contract seeds', () => {
+    localStorage.setItem('kc.recipes', JSON.stringify([
+      env('demo-pasta', '2026-01-01T00:00:00.000Z', 'Demo Pasta'),
+      env('demo-tacos', '2026-01-01T00:00:00.000Z', 'Demo Tacos'),
+      env('demo-soup', '2026-01-01T00:00:00.000Z', 'Demo Soup'),
+    ]));
+    const store = new Store();
+    expect(store.state.recipes).toHaveLength(15);
+    expect(seedIds(store).some((id) => id.startsWith('demo-'))).toBe(false);
+    // Persisted so the migration runs once.
+    const again = new Store();
+    expect(seedIds(again)).toEqual(seedIds(store));
+  });
+
+  it('preserves user records while dropping legacy demos', () => {
+    localStorage.setItem('kc.recipes', JSON.stringify([
+      env('demo-pasta', '2026-01-01T00:00:00.000Z', 'Demo Pasta'),
+      env('demo-tacos', '2026-01-01T00:00:00.000Z', 'Demo Tacos'),
+      env('demo-soup', '2026-01-01T00:00:00.000Z', 'Demo Soup'),
+      env('user-1', '2026-02-01T00:00:00.000Z', 'My Recipe'),
+    ]));
+    const store = new Store();
+    expect(store.state.recipes).toHaveLength(16);
+    expect(store.state.recipes.find((e) => e.id === 'user-1')?.payload).toEqual({ title: 'My Recipe' });
+    expect(seedIds(store).some((id) => id.startsWith('demo-'))).toBe(false);
+  });
+
+  it('leaves a clean contract-seeded store untouched on reload', () => {
+    const first = new Store();
+    expect(first.state.recipes).toHaveLength(15);
+    const second = new Store();
+    expect(seedIds(second)).toEqual(seedIds(first));
+  });
+});
+
 describe('serverKnown provenance', () => {
   beforeEach(() => localStorage.clear());
 

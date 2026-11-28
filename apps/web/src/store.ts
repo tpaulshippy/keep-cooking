@@ -136,9 +136,25 @@ export class Store {
   state: StoreState;
 
   constructor() {
-    const recipes = load<SyncEnvelope[]>('recipes', []);
+    const stored = load<SyncEnvelope[]>('recipes', []);
+    // One-time migration from the 3 hardcoded web demos (demo-pasta,
+    // demo-tacos, demo-soup) to the 15 frozen contract seeds: installs that
+    // persisted the legacy demos would otherwise keep them forever via the
+    // non-empty check below. Match any `demo-` id for safety, drop those
+    // envelopes, keep user records, and union in missing contract seeds.
+    let recipes: SyncEnvelope[];
+    let migrated = false;
+    if (stored.some((e) => e.id.startsWith('demo-'))) {
+      const seeds = seedRecipes();
+      const kept = stored.filter((e) => !e.id.startsWith('demo-'));
+      const ids = new Set(kept.map((e) => e.id));
+      recipes = [...kept, ...seeds.filter((s) => !ids.has(s.id))];
+      migrated = true;
+    } else {
+      recipes = stored.length ? stored : seedRecipes();
+    }
     this.state = {
-      recipes: recipes.length ? recipes : seedRecipes(),
+      recipes,
       plans: load<SyncEnvelope[]>('plans', []),
       menus: load<SyncEnvelope[]>('menus', []),
       lists: load<SyncEnvelope[]>('lists', []),
@@ -146,7 +162,7 @@ export class Store {
       outbox: load<SyncEnvelope[]>('outbox', []),
       serverKnown: load<Record<string, true>>('serverKnown', {}),
     };
-    if (!recipes.length) save('recipes', this.state.recipes);
+    if (!stored.length || migrated) save('recipes', this.state.recipes);
   }
 
   private persist(): void {
