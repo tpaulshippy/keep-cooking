@@ -345,6 +345,10 @@
           "display": {
             "type": "string"
           },
+          "id": {
+            "description": "stable client-generated id, echoed back and preserved across updates",
+            "type": "string"
+          },
           "name": {
             "type": "string"
           },
@@ -401,6 +405,10 @@
           },
           "checked": {
             "type": "boolean"
+          },
+          "id": {
+            "description": "stable client-generated id, echoed back and preserved across updates",
+            "type": "string"
           },
           "name": {
             "type": "string"
@@ -867,11 +875,21 @@
       },
       "StepInput": {
         "properties": {
+          "id": {
+            "description": "stable client-generated id, echoed back and preserved across updates",
+            "type": "string"
+          },
           "position": {
             "type": "integer"
           },
           "text": {
             "type": "string"
+          },
+          "timers": {
+            "items": {
+              "$ref": "#/components/schemas/StepTimer"
+            },
+            "type": "array"
           }
         },
         "required": [

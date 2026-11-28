@@ -25,15 +25,22 @@ export const clipRequestSchema = z
 
 // ---- Recipes ----
 export const ingredientInputSchema = z.object({
+  id: z.string().max(120).optional(),
   name: z.string().min(1).max(300),
   quantity: z.number().nullable().optional(),
   unit: z.string().max(60).optional().default(''),
   display: z.string().max(120).optional().default(''),
   position: z.number().int().min(0).optional().default(0),
 });
+export const stepTimerInputSchema = z.object({
+  seconds: z.number().int().min(1),
+  label: z.string().max(120).optional().default('Timer'),
+});
 export const stepInputSchema = z.object({
+  id: z.string().max(120).optional(),
   position: z.number().int().min(0).optional().default(0),
   text: z.string().min(1).max(8000),
+  timers: z.array(stepTimerInputSchema).max(20).optional().default([]),
 });
 export const photoKeysSchema = z
   .object({
@@ -62,6 +69,7 @@ export const recipeInputSchema = z.object({
 
 // ---- Lists ----
 export const listItemInputSchema = z.object({
+  id: z.string().max(120).optional(),
   name: z.string().min(1).max(300),
   quantity: z.string().max(120).optional().default(''),
   aisle: z.string().max(120).optional().default(''),

@@ -62,7 +62,61 @@ li > label:has(input:checked) { text-decoration: line-through; color: var(--mute
 .cards li a:first-child { font-weight: 650; }
 button[type="submit"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 button[type="submit"]:hover { border-color: var(--accent); filter: brightness(0.92); }
-code { background: #f5f5f4; padding: 0.1em 0.3em; border-radius: 0.25rem; }
+code { background: #f5f5f4; padding: 0.1em 0.3em; border-radius: 0.25rem; color: inherit; }
+.topbar button#themebtn { margin-left: auto; background: transparent; }
+/* Dark theme: explicit override via <html data-theme="dark">. */
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #1c1917;
+  --fg: #fafaf9;
+  --accent: #fb923c;
+  --accent-fg: #1c1917;
+  --muted: #d6d3d1;
+  --border: #a8a29e;
+  --focus: #93c5fd;
+}
+/* Automatic dark mode when the user has no explicit override
+   (no data-theme attribute): follow the OS preference. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --bg: #1c1917;
+    --fg: #fafaf9;
+    --accent: #fb923c;
+    --accent-fg: #1c1917;
+    --muted: #d6d3d1;
+    --border: #a8a29e;
+    --focus: #93c5fd;
+  }
+}
+[data-theme="dark"] .topbar { background: #292524; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .topbar { background: #292524; }
+}
+[data-theme="dark"] .cards li { background: #292524; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .cards li { background: #292524; }
+}
+[data-theme="dark"] button { background: #292524; color: var(--fg); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) button { background: #292524; color: var(--fg); }
+}
+[data-theme="dark"] button[type="submit"] { background: var(--accent); color: var(--accent-fg); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) button[type="submit"] { background: var(--accent); color: var(--accent-fg); }
+}
+[data-theme="dark"] input, [data-theme="dark"] select, [data-theme="dark"] textarea {
+  background: #292524; color: var(--fg); color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) input, :root:not([data-theme]) select, :root:not([data-theme]) textarea {
+    background: #292524; color: var(--fg); color-scheme: dark;
+  }
+}
+[data-theme="dark"] code { background: #44403c; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) code { background: #44403c; }
+}
 @media (max-width: 40rem) {
   .view { padding: 0.75rem; }
   h1 { font-size: 1.4rem; }

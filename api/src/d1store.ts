@@ -248,6 +248,18 @@ export class D1Store extends MemoryStore implements Store {
     }
   }
 
+  /** Delete child rows omitted from an update (recipes: ingredients/steps;
+   *  lists: list_items). An empty keep-list deletes all children of the
+   *  parent (NOT IN () is invalid SQL, so branch explicitly). */
+  private async pruneChildren(table: string, parentCol: string, parentId: string, keepIds: string[]): Promise<void> {
+    if (keepIds.length === 0) {
+      await this.persist(`DELETE FROM ${table} WHERE ${parentCol} = ?`, parentId);
+      return;
+    }
+    const placeholders = keepIds.map(() => '?').join(',');
+    await this.persist(`DELETE FROM ${table} WHERE ${parentCol} = ? AND id NOT IN (${placeholders})`, parentId, ...keepIds);
+  }
+
   override async ensureHousehold(id: string, name = id): Promise<Household> {
     const h = await super.ensureHousehold(id, name);
     await this.persist(
@@ -543,7 +555,7 @@ export class D1Store extends MemoryStore implements Store {
   override async createRecipe(input: any, meta: { deviceId: string; id?: string; updatedAt?: string }): Promise<Recipe> {
     const r = await super.createRecipe(input, meta);
     await this.persist(
-      'INSERT INTO recipes (id, household_id, title, description, servings, prep_minutes, cook_minutes, rating, source, source_url, categories, photo_original, photo_large1024, photo_thumb, updated_at, device_id, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0) ON CONFLICT(id) DO UPDATE SET title=excluded.title, description=excluded.description, servings=excluded.servings, updated_at=excluded.updated_at, device_id=excluded.device_id',
+      'INSERT INTO recipes (id, household_id, title, description, servings, prep_minutes, cook_minutes, rating, source, source_url, categories, photo_original, photo_large1024, photo_thumb, updated_at, device_id, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0) ON CONFLICT(id) DO UPDATE SET title=excluded.title, description=excluded.description, servings=excluded.servings, prep_minutes=excluded.prep_minutes, cook_minutes=excluded.cook_minutes, rating=excluded.rating, source=excluded.source, source_url=excluded.source_url, categories=excluded.categories, photo_original=excluded.photo_original, photo_large1024=excluded.photo_large1024, photo_thumb=excluded.photo_thumb, updated_at=excluded.updated_at, device_id=excluded.device_id',
       r.id, r.householdId, r.title, r.description, r.servings, r.prepMinutes, r.cookMinutes, r.rating,
       r.source, r.sourceUrl, JSON.stringify(r.categories),
       r.photoKeys.original, r.photoKeys.large1024, r.photoKeys.thumb, r.updatedAt, r.deviceId,
@@ -560,6 +572,10 @@ export class D1Store extends MemoryStore implements Store {
         s.id, r.id, s.position, s.text, JSON.stringify(s.timers),
       );
     }
+    // Omitted children were deleted by the update: prune stale D1 rows so a
+    // later hydrate can't resurrect them. Empty set deletes all children.
+    await this.pruneChildren('ingredients', 'recipe_id', r.id, r.ingredients.map((g) => g.id));
+    await this.pruneChildren('steps', 'recipe_id', r.id, r.steps.map((s) => s.id));
     return r;
   }
   override async deleteRecipe(id: string, deviceId: string): Promise<boolean> {
@@ -576,10 +592,11 @@ export class D1Store extends MemoryStore implements Store {
     );
     for (const it of l.items) {
       await this.persist(
-        'INSERT INTO list_items (id, list_id, name, quantity, aisle, checked, recipe_id) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, quantity=excluded.quantity, aisle=excluded.aisle, checked=excluded.checked',
+        'INSERT INTO list_items (id, list_id, name, quantity, aisle, checked, recipe_id) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET list_id=excluded.list_id, name=excluded.name, quantity=excluded.quantity, aisle=excluded.aisle, checked=excluded.checked, recipe_id=excluded.recipe_id',
         it.id, l.id, it.name, it.quantity, it.aisle, it.checked ? 1 : 0, it.recipeId,
       );
     }
+    await this.pruneChildren('list_items', 'list_id', l.id, l.items.map((it) => it.id));
     return l;
   }
   override async deleteList(id: string, deviceId: string): Promise<boolean> {
@@ -591,7 +608,7 @@ export class D1Store extends MemoryStore implements Store {
   override async createPantry(input: any, meta: { deviceId: string; id?: string; updatedAt?: string }): Promise<PantryItem> {
     const p = await super.createPantry(input, meta);
     await this.persist(
-      'INSERT INTO pantry_items (id, household_id, name, quantity, location, expires_at, low_threshold, barcode, updated_at, device_id, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0) ON CONFLICT(id) DO UPDATE SET name=excluded.name, quantity=excluded.quantity, updated_at=excluded.updated_at, device_id=excluded.device_id',
+      'INSERT INTO pantry_items (id, household_id, name, quantity, location, expires_at, low_threshold, barcode, updated_at, device_id, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0) ON CONFLICT(id) DO UPDATE SET name=excluded.name, quantity=excluded.quantity, location=excluded.location, expires_at=excluded.expires_at, low_threshold=excluded.low_threshold, barcode=excluded.barcode, updated_at=excluded.updated_at, device_id=excluded.device_id',
       p.id, p.householdId, p.name, p.quantity, p.location, p.expiresAt, p.lowThreshold, p.barcode, p.updatedAt, p.deviceId,
     );
     return p;

@@ -6,7 +6,7 @@
 export const BASE = '/app';
 
 export type RouteName =
-  | 'home' | 'recipes' | 'recipeDetail' | 'cook' | 'plan'
+  | 'home' | 'recipes' | 'recipeNew' | 'recipeDetail' | 'recipeEdit' | 'cook' | 'plan'
   | 'lists' | 'menus' | 'ingest' | 'settings';
 
 export interface Route { name: RouteName; params: Record<string, string>; }
@@ -30,6 +30,11 @@ export function parsePath(pathname: string): Route {
   const seg = path.split('/').filter(Boolean);
   if (seg.length === 0) return { name: 'home', params: {} };
   const [a, b, c] = seg;
+  if (a === 'recipes' && b === 'new' && c === undefined) return { name: 'recipeNew', params: {} };
+  if (a === 'recipes' && b && c === 'edit') {
+    const id = safeDecode(b);
+    return id === null ? { name: 'home', params: {} } : { name: 'recipeEdit', params: { id } };
+  }
   if (a === 'recipes' && b && c === undefined) {
     const id = safeDecode(b);
     return id === null ? { name: 'home', params: {} } : { name: 'recipeDetail', params: { id } };

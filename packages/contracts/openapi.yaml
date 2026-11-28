@@ -887,6 +887,7 @@ components:
       type: object
       required: [name]
       properties:
+        id: { type: string, description: "stable client-generated id, echoed back and preserved across updates" }
         name: { type: string }
         quantity: { type: number, nullable: true }
         unit: { type: string }
@@ -905,8 +906,10 @@ components:
       type: object
       required: [text]
       properties:
+        id: { type: string, description: "stable client-generated id, echoed back and preserved across updates" }
         position: { type: integer }
         text: { type: string }
+        timers: { type: array, items: { $ref: '#/components/schemas/StepTimer' } }
     StepTimer:
       type: object
       required: [seconds, label]
@@ -946,6 +949,7 @@ components:
       type: object
       required: [name]
       properties:
+        id: { type: string, description: "stable client-generated id, echoed back and preserved across updates" }
         name: { type: string }
         quantity: { type: string }
         aisle: { type: string }
