@@ -928,6 +928,7 @@ struct RecipeDetailView: View {
     @State private var pane: DetailPane = .ingredients
     @State private var showEditor = false
     @State private var showDeleteConfirm = false
+    @State private var nutritionExpanded = true
 
     /// Paprika-style segmented pane (custom capsule toggle, no copy).
     private enum DetailPane: String, CaseIterable {
@@ -1234,6 +1235,17 @@ struct RecipeDetailView: View {
                 .buttonStyle(.plain)
                 Divider()
             }
+            DisclosureGroup(isExpanded: $nutritionExpanded) {
+                let trimmed = (recipe.nutritionText ?? "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                Text(trimmed.isEmpty ? "No nutrition info yet." : trimmed)
+                    .font(.body)
+                    .foregroundStyle(trimmed.isEmpty ? .secondary : .primary)
+            } label: {
+                Text("Nutrition")
+                    .font(.headline)
+            }
+            .accessibilityIdentifier("nutrition-panel")
         }
     }
 

@@ -737,6 +737,7 @@ suspend fun importParsed(
                 source = r.source.ifBlank { existing?.source.orEmpty() },
                 sourceUrl = r.sourceUrl.ifBlank { existing?.sourceUrl.orEmpty() },
                 categoriesJson = JsonArray(tags.map { JsonPrimitive(it) }).toString(),
+                nutritionText = r.nutritionalInfo.ifBlank { existing?.nutritionText.orEmpty() },
                 updatedAt = now,
                 deviceId = deviceId,
             ),

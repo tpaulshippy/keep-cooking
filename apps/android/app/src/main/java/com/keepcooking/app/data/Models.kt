@@ -77,6 +77,7 @@ data class RecipeEntity(
     val photoOriginal: String? = null,
     val photoLarge1024: String? = null,
     val photoThumb: String? = null,
+    val nutritionText: String = "",
     val updatedAt: Long = System.currentTimeMillis(),
     val deviceId: String = "",
     val deleted: Boolean = false,

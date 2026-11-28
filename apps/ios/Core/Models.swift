@@ -101,15 +101,6 @@ public final class Recipe {
     public var photoOriginal: String?
     public var photoLarge1024: String?
     public var photoThumb: String?
-    /// Editor metadata (recipe-editor feature). All optional so pre-feature
-    /// stores migrate by lightweight inference (nil = unset). Synced via the
-    /// recipe envelope (`difficulty`, `notes`, `nutritionText`,
-    /// `totalMinutes`) — never local-only.
-    public var difficulty: String?
-    public var notes: String?
-    public var nutritionText: String?
-    /// Explicit total override (e.g. from another client). Nil = derive from
-    /// prep + cook. The editor preserves a foreign total until times are edited.
     public var totalMinutes: Int?
     public var updatedAt: Date
     public var deviceId: String
@@ -136,9 +127,6 @@ public final class Recipe {
         photoOriginal: String? = nil,
         photoLarge1024: String? = nil,
         photoThumb: String? = nil,
-        difficulty: String? = nil,
-        notes: String? = nil,
-        nutritionText: String? = nil,
         totalMinutes: Int? = nil,
         updatedAt: Date = Date(),
         deviceId: String,
@@ -159,9 +147,6 @@ public final class Recipe {
         self.photoOriginal = photoOriginal
         self.photoLarge1024 = photoLarge1024
         self.photoThumb = photoThumb
-        self.difficulty = difficulty
-        self.notes = notes
-        self.nutritionText = nutritionText
         self.totalMinutes = totalMinutes
         self.updatedAt = updatedAt
         self.deviceId = deviceId

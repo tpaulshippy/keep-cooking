@@ -433,6 +433,7 @@ public struct ImportView: View {
                 match.isFavorite = pr.isFavorite
                 match.source = pr.source
                 match.sourceUrl = pr.sourceUrl
+                match.nutritionText = pr.nutritionText
                 match.categories = pr.categories
                 match.updatedAt = Date()
                 match.deviceId = deviceId
@@ -443,7 +444,8 @@ public struct ImportView: View {
                     prepMinutes: pr.prepMinutes, cookMinutes: pr.cookMinutes,
                     rating: pr.rating, isFavorite: pr.isFavorite,
                     source: pr.source.isEmpty ? "import" : pr.source, sourceUrl: pr.sourceUrl,
-                    categories: pr.categories, updatedAt: Date(), deviceId: deviceId)
+                    categories: pr.categories, nutritionText: pr.nutritionText,
+                    updatedAt: Date(), deviceId: deviceId)
                 context.insert(recipe)
                 imported += 1
             }

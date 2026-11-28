@@ -3,6 +3,8 @@ package com.keepcooking.app.ui.screens
 import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -551,6 +553,8 @@ fun RecipeDetailScreen(
     var photoThumb by remember { mutableStateOf<String?>(null) }
     var showDelete by remember { mutableStateOf(false) }
     var deleteError by remember { mutableStateOf<String?>(null) }
+    var nutritionText by remember { mutableStateOf("") }
+    var nutritionExpanded by remember { mutableStateOf(true) }
     LaunchedEffect(recipeId) {
         val r = container.db.recipes().byId(recipeId)
         if (r != null) {
@@ -563,6 +567,7 @@ fun RecipeDetailScreen(
             cookMinutes = r.cookMinutes
             source = r.source
             sourceUrl = r.sourceUrl
+            nutritionText = r.nutritionText
             photoThumb = r.photoThumb?.takeIf { it.isNotBlank() } ?: r.photoOriginal
             categories = runCatching {
                 kotlinx.serialization.json.Json.parseToJsonElement(r.categoriesJson)
@@ -827,6 +832,23 @@ fun RecipeDetailScreen(
                     )
                 } else {
                     Text("• $line", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            Card(modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                Column(Modifier.padding(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Nutrition", style = MaterialTheme.typography.titleSmall)
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = { nutritionExpanded = !nutritionExpanded }) {
+                            Text(if (nutritionExpanded) "Hide" else "Show")
+                        }
+                    }
+                    if (nutritionExpanded) {
+                        Text(
+                            nutritionText.ifBlank { "No nutrition info yet." },
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
                 }
             }
             Text("Steps", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))

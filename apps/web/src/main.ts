@@ -675,7 +675,7 @@ function viewRecipeDetail(id: string): void {
   <h2>Steps</h2>
   <ol>${steps.map((s) => `<li>${esc(s.text)}</li>`).join('') || '<li>No steps yet.</li>'}</ol>
   ${typeof p.notes === 'string' && p.notes ? `<h2>Notes</h2><p>${esc(p.notes)}</p>` : ''}
-  ${typeof p.nutritionText === 'string' && p.nutritionText ? `<h2>Nutrition</h2><p>${esc(p.nutritionText)}</p>` : ''}
+  ${typeof p.nutritionText === 'string' && p.nutritionText ? `<details open><summary>Nutrition</summary><p>${esc(p.nutritionText)}</p></details>` : `<details open><summary>Nutrition</summary><p class="muted">No nutrition info yet.</p></details>`}
   <p><a href="${href('/cook/' + id)}">Start cook mode</a> · <a href="${href('/recipes/' + id + '/edit')}">Edit recipe</a> · <a href="${href('/recipes')}">Back</a></p>
   <button id="del" type="button">Delete recipe</button>`);
   hydrateRecipePhotos();
