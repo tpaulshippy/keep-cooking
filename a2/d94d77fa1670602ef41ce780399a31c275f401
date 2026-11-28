@@ -1,0 +1,18 @@
+.gitignore
+  h_6bbd00fe0a456a 14-17
+apps/ios/App/DemoFlows.swift
+  h_6bbd00fe0a456a 1655-1656,1659-1660
+apps/ios/App/KeepCookingApp.swift
+  h_6bbd00fe0a456a 49-50,64-69,248-251,253-254,808,821,834,846,856,864,921,974-978,1063-1064,1104
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a2d94d77fa1670602ef41ce780399a31c275f401",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
