@@ -1,0 +1,26 @@
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/IngestScreen.kt
+  h_6bbd00fe0a456a 345-346,374,489,492-493,506
+apps/android/app/src/test/java/com/keepcooking/app/ingest/ClipModelsTest.kt
+  h_6bbd00fe0a456a 10,37-44
+apps/ios/Features/Ingest/PasteImportView.swift
+  h_6bbd00fe0a456a 35-37,215-223,225,236,240-242,284-289
+apps/web/src/ingest.test.ts
+  h_6bbd00fe0a456a 45-46,48-52,55-56,63-68,75-78
+apps/web/src/ingest.ts
+  h_6bbd00fe0a456a 66-69,73-74,76-93,105-111,113,115-116,119
+apps/web/src/main.ts
+  h_6bbd00fe0a456a 986,1006,1018,1032
+packages/contracts/CHANGELOG.md
+  h_6bbd00fe0a456a 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "eb1e56349077f6ac5f5e5fd1e7fbeeecbe4186aa",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
