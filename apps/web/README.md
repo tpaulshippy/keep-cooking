@@ -67,7 +67,7 @@ append it to the `kc.outbox` queue. Merge is last-writer-wins on
 convergence, identical same-device replays are no-ops, and tombstones
 (`deleted: true`) filter from views but still merge — the same semantics as
 the native `SyncEngine` (`mergeOutcome` in `apps/ios/Sync/SyncEngine.swift`).
-First paint is useful offline: the store ships with 3 seeded demo recipes.
+First paint is useful offline: the store ships with the 15 frozen contract seeds (packages/contracts/seed/recipe-*.json — the same files iOS and Android load).
 Push (`src/sync.ts`) attempts each queued envelope and acks only envelopes
 whose mutation actually succeeded, by `(id, updatedAt)` identity — failures
 stop the run and stay queued; update-404 falls back to create + reconcile
