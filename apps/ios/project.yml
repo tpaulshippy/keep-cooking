@@ -166,6 +166,22 @@ targets:
         buildPhase: resources
     info:
       path: Config/Info-Share.plist
+      # Generation-safety: `xcodegen generate` rewrites Config/Info-*.plist
+      # from scratch — these keys are the source of truth and are merged
+      # back on every regen. Must match Config/Info-Share.plist.
+      # NSExtensionPrincipalClass MUST stay module-qualified
+      # ($(PRODUCT_MODULE_NAME).ShareViewController): bare
+      # "ShareViewController" fails Swift class lookup → blank share sheet.
+      properties:
+        CFBundleDisplayName: Keep Cooking Share
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsWebPageWithMaxCount: 1
+              NSExtensionActivationSupportsText: true
     entitlements:
       path: Config/AppGroups.entitlements
     settings:

@@ -10,6 +10,7 @@ import SwiftData
 
 public struct ClipView: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var urlText: String = ""
     @State private var report: ClipReport?
@@ -206,9 +207,28 @@ public struct ClipView: View {
                 }
             }
         }
+        .onAppear { drainShareExtension() }
+        .onChange(of: scenePhase, initial: false) { _, newPhase in
+            if newPhase == .active { drainShareExtension() }
+        }
     }
 
     // MARK: - Actions
+
+    /// Host drain for the Share extension bridge (ShareStore.enqueue → App Group).
+    /// Prefills the URL field when the user arrives via Share sheet.
+    private func drainShareExtension() {
+        // Never steal the queue while the user is typing: draining clears it.
+        guard urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let pending = ShareStore.drain()
+        guard let first = pending.first?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !first.isEmpty else { return }
+        urlText = first
+        // Preserve the rest for subsequent visits instead of dropping them.
+        for rest in pending.dropFirst() {
+            ShareStore.enqueue(url: rest)
+        }
+    }
 
     private func runClip() async {
         isLoading = true; error = nil; saveError = nil; savedMessage = nil; reportStale = false
