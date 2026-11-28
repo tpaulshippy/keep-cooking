@@ -116,8 +116,15 @@ fun sha256HexBytes(bytes: ByteArray): String =
 
 // MARK: - Canonical timestamps + header AD binding
 
-/** Canonical E2E timestamp: whole milliseconds (floor). */
-fun canonicalE2EMillis(epochMillis: Long): Long = (epochMillis / 1000L) * 1000L
+/** Canonical E2E timestamp: whole milliseconds. Epoch millis are already
+ * whole millis, so this is the identity — kept as a named step (parity with
+ * iOS `canonicalE2ETimestamp`) so seal and wire agree on the instant the
+ * header AD binds. Previously this floored to whole *seconds*, which broke
+ * interop: iOS binds full millis in the AD, so Android could not open
+ * iOS-sealed envelopes carrying subsecond timestamps. All Android-sealed
+ * boxes already carry whole-second (.000) stamps, for which both bindings
+ * agree, so previously stored boxes still open. */
+fun canonicalE2EMillis(epochMillis: Long): Long = epochMillis
 
 /**
  * Canonical associated data binding the sealed payload to its plaintext

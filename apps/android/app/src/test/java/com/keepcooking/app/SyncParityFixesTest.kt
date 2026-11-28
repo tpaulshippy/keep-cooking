@@ -341,7 +341,7 @@ class SyncParityFixesTest {
         val parts = Json.parseToJsonElement(ad.toString(Charsets.UTF_8)).jsonArray
         assertEquals(10, parts.size)
         assertEquals(tricky, parts[7].jsonPrimitive.content)
-        // Canonical millis are floored to whole seconds*1000 (whole millis here).
+        // Canonical millis preserve the full millisecond instant (iOS parity).
         assertEquals(canonicalE2EMillis(1_700_000_000_123L).toString(), parts[6].jsonPrimitive.content)
     }
 

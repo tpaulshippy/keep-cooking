@@ -258,6 +258,52 @@ async function req<T>(method: string, path: string, body?: unknown, signed = fal
   return (await res.json()) as T;
 }
 
+export interface E2EStoredResponse { stored: string[]; }
+
+/** GET /v2/sync/:hash — unsigned read of one household bucket. */
+export async function e2ePull(hash: string, since: string | null, base = resolveApiBase()): Promise<unknown[]> {
+  const url = buildUrl(base, `/v2/sync/${hash}`);
+  if (since) url.searchParams.set('since', since);
+  const res = await fetch(url.toString());
+  if (!res.ok) throw new Error(`GET /v2/sync failed: ${res.status}`);
+  return (await res.json()) as unknown[];
+}
+
+/** PUT /v2/sync/:hash — Ed25519-signed upsert batch. Returns accepted ids. */
+export async function e2ePush(hash: string, envelopes: unknown[], base = resolveApiBase()): Promise<E2EStoredResponse> {
+  const bodyStr = JSON.stringify(envelopes);
+  const url = buildUrl(base, `/v2/sync/${hash}`);
+  const headers = await signHeaders('PUT', url.pathname + url.search, new TextEncoder().encode(bodyStr));
+  headers['content-type'] = 'application/json';
+  const res = await fetch(url.toString(), { method: 'PUT', headers, body: bodyStr });
+  if (!res.ok) throw new Error(`PUT /v2/sync failed: ${res.status}`);
+  return (await res.json()) as E2EStoredResponse;
+}
+
+/**
+ * Acceptable custom-server values: blank (built-in) or an http(s) URL;
+ * http:// only for local dev hosts. Returns an error message, else null.
+ * Parity with the iOS/Android Settings validators.
+ */
+export function validateCustomServer(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  let url: URL | null = null;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    url = null;
+  }
+  const host = url?.hostname.toLowerCase() ?? '';
+  if (!url || !host) return 'That server URL does not look valid — keeping current server.';
+  const scheme = url.protocol.toLowerCase().replace(/:$/, '');
+  const isLocalDev = host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local');
+  if (scheme !== 'https' && !(scheme === 'http' && isLocalDev)) {
+    return 'Server must use HTTPS (http:// is only allowed for localhost / 127.0.0.1 / *.local dev servers).';
+  }
+  return null;
+}
+
 /** Per-recipe export URL: GET /export/{id}.{json|md|html|paprikarecipes|yaml} (open, unsigned). */
 export function recipeExportUrl(id: string, ext: ExportExt, base = resolveApiBase()): string {
   return buildUrl(base, `/export/${encodeURIComponent(id)}.${ext}`).toString();
