@@ -6,6 +6,7 @@ import { parsePath, href, navigate, initRouter } from './router';
 import { scaleQuantity, formatQuantity } from './scale';
 import { aggregateWeekToList, collectPlanIngredients, scaleIngredientsForServings } from './aggregate';
 import { sortedRows, toggleItemChecked, shopRowHtml } from './lists';
+import { safeHttpUrl, ingredientLabel } from './display';
 import { pushOutbox, type PushTransport } from './sync';
 
 const store = new Store();
@@ -202,8 +203,8 @@ function viewLibrary(q: string): void {
 
 interface RecipeFormPayload {
   title?: string; description?: string; servings?: number;
-  prepMinutes?: number; cookMinutes?: number; rating?: number;
-  isFavorite?: boolean; source?: string; sourceUrl?: string; categories?: string[];
+  prepMinutes?: number | null; cookMinutes?: number | null; rating?: number | null;
+  source?: string; sourceUrl?: string; categories?: string[];
 }
 
 // ---- Recipe new/edit (shared form) ----
@@ -223,7 +224,6 @@ function viewRecipeForm(editId: string | null): void {
   <label>Prep minutes <input name="prepMinutes" type="number" min="0" step="1" value="${esc(p.prepMinutes ?? '')}" /></label>
   <label>Cook minutes <input name="cookMinutes" type="number" min="0" step="1" value="${esc(p.cookMinutes ?? '')}" /></label>
   <label>Rating (0–5) <input name="rating" type="number" min="0" max="5" step="0.5" value="${esc(p.rating ?? '')}" /></label>
-  <label><input name="isFavorite" type="checkbox"${p.isFavorite ? ' checked' : ''} /> Favorite</label>
   <label>Source <input name="source" value="${esc(p.source ?? '')}" /></label>
   <label>Source URL <input name="sourceUrl" type="url" value="${esc(p.sourceUrl ?? '')}" /></label>
   <label>Categories (comma-separated) <input name="categories" value="${esc(cats)}" /></label>
@@ -239,16 +239,15 @@ function viewRecipeForm(editId: string | null): void {
       title,
       description: String(fd.get('description') || ''),
       servings,
-      isFavorite: (e.target as HTMLFormElement).querySelector<HTMLInputElement>('input[name="isFavorite"]')!.checked,
       source: String(fd.get('source') || ''),
       sourceUrl: String(fd.get('sourceUrl') || ''),
       categories: String(fd.get('categories') || '').split(',').map((s) => s.trim()).filter(Boolean),
+      // Blank clears the server value (null serializes as omitted/null, never
+      // a key-drop that would keep the stale value).
+      prepMinutes: numVal(fd.get('prepMinutes')) ?? null,
+      cookMinutes: numVal(fd.get('cookMinutes')) ?? null,
+      rating: rating == null ? null : Math.min(5, Math.max(0, rating)),
     };
-    const prep = numVal(fd.get('prepMinutes'));
-    const cook = numVal(fd.get('cookMinutes'));
-    if (prep !== undefined) fields.prepMinutes = prep;
-    if (cook !== undefined) fields.cookMinutes = cook;
-    if (rating !== undefined) fields.rating = Math.min(5, Math.max(0, rating));
     if (existing) {
       patchPayload('recipe', existing.id, fields);
       navigate('/recipes/' + existing.id);
@@ -259,8 +258,8 @@ function viewRecipeForm(editId: string | null): void {
   });
 }
 
-interface RecipeIngredient { name: string; quantity?: number; unit?: string; display?: string; position?: number; }
-interface RecipeStep { text: string; position?: number; timers?: { seconds: number; label: string }[]; }
+interface RecipeIngredient { id?: string; name: string; quantity?: number; unit?: string; display?: string; position?: number; }
+interface RecipeStep { id?: string; text: string; position?: number; timers?: { seconds: number; label: string }[]; }
 
 function viewRecipeDetail(id: string): void {
   const env = store.state.recipes.find((e) => e.id === id);
@@ -270,7 +269,7 @@ function viewRecipeDetail(id: string): void {
   }
   const p = env.payload as {
     title?: string; description?: string; servings?: number;
-    prepMinutes?: number; cookMinutes?: number; rating?: number; isFavorite?: boolean;
+    prepMinutes?: number; cookMinutes?: number; rating?: number;
     source?: string; sourceUrl?: string; categories?: string[];
     ingredients?: RecipeIngredient[]; steps?: RecipeStep[];
   };
@@ -278,16 +277,22 @@ function viewRecipeDetail(id: string): void {
   if (p.prepMinutes != null) meta.push(`prep ${esc(p.prepMinutes)} min`);
   if (p.cookMinutes != null) meta.push(`cook ${esc(p.cookMinutes)} min`);
   if (p.rating != null) meta.push(`rating ${esc(p.rating)}/5`);
-  if (p.isFavorite) meta.push('★ favorite');
+  // Non-http(s) source URLs render as plain text, never href (XSS allowlist).
+  const srcLink = safeHttpUrl(p.sourceUrl);
+  const srcHtml = srcLink
+    ? `<p>Source: <a href="${esc(srcLink)}">${esc(p.source || srcLink)}</a></p>`
+    : (p.source || p.sourceUrl)
+      ? `<p>Source: ${esc([p.source, p.sourceUrl].filter(Boolean).join(' — '))}</p>`
+      : '';
   const ings = [...(p.ingredients ?? [])].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
   const steps = [...(p.steps ?? [])].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
   shell(`<h1>${esc(p.title ?? id)}</h1>
   <p class="muted">Serves ${esc(p.servings ?? 4)} · updated ${esc(env.updatedAt)}${meta.length ? ' · ' + meta.join(' · ') : ''}</p>
-  ${p.sourceUrl ? `<p>Source: <a href="${esc(p.sourceUrl)}">${esc(p.source || p.sourceUrl)}</a></p>` : p.source ? `<p>Source: ${esc(p.source)}</p>` : ''}
+  ${srcHtml}
   ${(p.categories ?? []).length ? `<p class="muted">Categories: ${esc((p.categories ?? []).join(', '))}</p>` : ''}
   <p>${esc(p.description ?? '')}</p>
   <h2>Ingredients</h2>
-  <ul>${ings.map((ing, i) => `<li>${esc(ing.display ?? [ing.quantity, ing.unit, ing.name].filter((x) => x !== undefined && x !== '').join(' '))}
+  <ul>${ings.map((ing, i) => `<li>${esc(ingredientLabel(ing))}
     <button type="button" data-ing-up="${i}"${i === 0 ? ' disabled' : ''}>↑</button>
     <button type="button" data-ing-down="${i}"${i === ings.length - 1 ? ' disabled' : ''}>↓</button>
     <button type="button" data-ing-del="${i}">Remove</button></li>`).join('') || '<li>No ingredients yet.</li>'}</ul>
@@ -313,12 +318,14 @@ function viewRecipeDetail(id: string): void {
   <button type="submit">Add step (offline OK)</button></form>
   <p><a href="${href('/cook/' + id)}">Start cook mode</a> · <a href="${href('/recipes/' + id + '/edit')}">Edit details</a> · <a href="${href('/recipes')}">Back</a></p>
   <button id="del" type="button">Delete recipe</button>`);
+  // Stable child ids: existing rows keep their id so server updates match
+  // them (no id regeneration); only brand-new rows mint an id.
   const saveIngredients = (next: RecipeIngredient[]) => {
-    patchPayload('recipe', id, { ingredients: next.map((ing, i) => ({ ...ing, position: i })) });
+    patchPayload('recipe', id, { ingredients: next.map((ing, i) => ({ ...ing, id: ing.id || crypto.randomUUID(), position: i })) });
     render();
   };
   const saveSteps = (next: RecipeStep[]) => {
-    patchPayload('recipe', id, { steps: next.map((s, i) => ({ ...s, position: i })) });
+    patchPayload('recipe', id, { steps: next.map((s, i) => ({ ...s, id: s.id || crypto.randomUUID(), position: i })) });
     render();
   };
   document.getElementById('del')!.addEventListener('click', () => {
@@ -371,7 +378,7 @@ function viewRecipeDetail(id: string): void {
       const i = Number(form.dataset.stepform);
       const parsed = readStepForm(form);
       if (!parsed) return;
-      const next = steps.map((s, j) => (j === i ? parsed : s));
+      const next = steps.map((s, j) => (j === i ? { ...parsed, id: s.id } : s));
       saveSteps(next);
     });
   });
@@ -550,7 +557,8 @@ function viewPlan(): void {
 }
 
 // ---- Shop / Pantry ----
-interface PantryForm { name?: string; quantity?: string; location?: string; expiresAt?: string; lowThreshold?: string; barcode?: string; }
+interface PantryForm { name?: string; quantity?: string; location?: string; expiresAt?: string | null; lowThreshold?: string; barcode?: string; }
+interface ShopRow { id?: string; name: string; quantity?: string; aisle?: string; checked?: boolean; recipeId?: string | null; }
 
 function viewLists(): void {
   const lists = visible(store.state.lists);
@@ -558,7 +566,7 @@ function viewLists(): void {
   const current = lists.find((l) => l.id === selectedListId) ?? lists[lists.length - 1];
   if (current) selectedListId = current.id;
   if (editingItemIdx != null && !(current?.payload as { items?: unknown[] } | undefined)?.items?.[editingItemIdx]) editingItemIdx = null;
-  const cp = current?.payload as { name?: string; items?: { name: string; quantity?: string; aisle?: string; checked?: boolean; recipeId?: string | null }[] } | undefined;
+  const cp = current?.payload as { name?: string; items?: ShopRow[] } | undefined;
   const rows = sortedRows(cp?.items ?? []);
   const recipes = visible(store.state.recipes);
   const pantryItems = visible(store.state.pantry);
@@ -594,8 +602,10 @@ function viewLists(): void {
   <ul>${rows.map(({ it, i }) => {
     if (editingItemIdx === i) {
       return `<li><form data-itemsave="${i}"><label><input type="checkbox" data-item="${i}"${it.checked ? ' checked' : ''} /> <span class="item-name">${esc(it.name)}</span></label>
+      <label>Name <input id="item-n-${i}" value="${esc(it.name)}" required /></label>
       <label>Qty <input id="item-q-${i}" value="${esc(it.quantity ?? '')}" /></label>
       <label>Aisle <input id="item-a-${i}" value="${esc(it.aisle ?? '')}" /></label>
+      <label>Recipe link <select id="item-r-${i}"><option value="">— none —</option>${recipes.map((r) => `<option value="${r.id}"${it.recipeId === r.id ? ' selected' : ''}>${esc((r.payload as { title?: string }).title ?? r.id)}</option>`).join('')}</select></label>
       <button type="submit">Save</button> <button type="button" data-itemcancel>Cancel</button></form></li>`;
     }
     // Checkbox row keeps the shared shopRowHtml markup (whole-label
@@ -639,7 +649,8 @@ function viewLists(): void {
       name,
       quantity: String(fd.get('quantity') || ''),
       location: String(fd.get('location') || ''),
-      expiresAt: String(fd.get('expiresAt') || ''),
+      // Blank date sends null (never ""): the contract rejects "".
+      expiresAt: String(fd.get('expiresAt') || '') || null,
       lowThreshold: String(fd.get('lowThreshold') || ''),
       barcode: String(fd.get('barcode') || ''),
     };
@@ -673,8 +684,9 @@ function viewLists(): void {
     if (!name) return;
     const recipeId = String(fd.get('recipeId') || '') || null;
     const latest = store.state.lists.find((l) => l.id === current.id);
-    const payload = (latest?.payload ?? cp) as { name?: string; items?: { name: string; quantity?: string; aisle?: string; checked?: boolean; recipeId?: string | null }[] };
+    const payload = (latest?.payload ?? cp) as { name?: string; items?: ShopRow[] };
     const nextItems = [...(payload.items ?? []), {
+      id: crypto.randomUUID(),
       name,
       quantity: String(fd.get('quantity') || ''),
       aisle: String(fd.get('aisle') || ''),
@@ -706,11 +718,15 @@ function viewLists(): void {
     ev.preventDefault();
     if (!current) return;
     const idx = Number(form.dataset.itemsave);
+    const n = (document.getElementById(`item-n-${idx}`) as HTMLInputElement).value.trim();
+    if (!n) return;
     const q = (document.getElementById(`item-q-${idx}`) as HTMLInputElement).value;
     const a = (document.getElementById(`item-a-${idx}`) as HTMLInputElement).value;
+    const r = (document.getElementById(`item-r-${idx}`) as HTMLSelectElement).value || null;
     const latest = store.state.lists.find((l) => l.id === current.id);
-    const payload = (latest?.payload ?? cp) as { name?: string; items?: { quantity?: string; aisle?: string }[] };
-    const nextItems = (payload.items ?? []).map((it, j) => (j === idx ? { ...it, quantity: q, aisle: a } : it));
+    const payload = (latest?.payload ?? cp) as { name?: string; items?: ShopRow[] };
+    const nextItems = (payload.items ?? []).map((it, j) =>
+      (j === idx ? { ...it, id: it.id || crypto.randomUUID(), name: n, quantity: q, aisle: a, recipeId: r } : it));
     store.upsert('list', current.id, { ...(payload as object), items: nextItems });
     editingItemIdx = null;
     render();
@@ -747,14 +763,13 @@ function viewMenus(): void {
     <h2>${esc(mp.name ?? m.id)} (${entries.length} entries)</h2>
     <form data-renamemenu="${m.id}"><label>Rename <input name="name" required value="${esc(mp.name ?? '')}" /></label>
     <button type="submit">Rename</button> <button type="button" data-delmenu="${m.id}">Delete menu</button></form>
-    <ul>${entries.map((en, i) => `<li>Day ${esc(en.dayOffset ?? 0)} · ${esc(en.meal ?? 'dinner')} · ${esc(en.recipeId ? recipeTitle(en.recipeId) : '—')}${en.servings != null ? ` · serves ${esc(en.servings)}` : ''}${en.note ? ` · ${esc(en.note)}` : ''}
+    <ul>${entries.map((en, i) => `<li>Day ${esc(en.dayOffset ?? 0)} · ${esc(en.meal ?? 'dinner')} · ${esc(en.recipeId ? recipeTitle(en.recipeId) : en.note ? `(Note) ${en.note}` : '—')}${en.servings != null ? ` · serves ${esc(en.servings)}` : ''}
       <button type="button" data-delentry="${m.id}:${i}">Remove</button></li>`).join('') || '<li>No entries yet.</li>'}</ul>
     <form data-addentry="${m.id}"><h3>Add entry</h3>
     <label>Day offset (0–6) <input name="dayOffset" type="number" min="0" max="6" step="1" value="0" /></label>
     <label>Meal <select name="meal">${meals.map((meal) => `<option${meal === 'dinner' ? ' selected' : ''}>${meal}</option>`).join('')}</select></label>
     <label>Recipe <select name="recipeId">${recipes.map((r) => `<option value="${r.id}">${esc((r.payload as { title?: string }).title ?? r.id)}</option>`).join('')}</select></label>
     <label>Servings <input name="servings" type="number" min="0.25" max="100" step="0.25" value="4" /></label>
-    <label>Note <input name="note" placeholder="Optional note" /></label>
     <button type="submit">Add entry (offline OK)</button></form>
     <p><button type="button" data-apply="${m.id}">Apply to week</button>
     <button type="button" data-tolist="${m.id}">Add week to list</button></p></section>`;
@@ -793,7 +808,6 @@ function viewMenus(): void {
     const menuId = form.dataset.addentry!;
     const fd = new FormData(form);
     const off = numVal(fd.get('dayOffset')) ?? 0;
-    const note = String(fd.get('note') || '').trim();
     const m = store.state.menus.find((x) => x.id === menuId);
     if (!m) return;
     const entries = [...((m.payload as { entries?: MenuEntry[] }).entries ?? [])];
@@ -802,7 +816,6 @@ function viewMenus(): void {
       meal: String(fd.get('meal') || 'dinner'),
       recipeId: String(fd.get('recipeId') || ''),
       servings: numVal(fd.get('servings')) ?? 4,
-      ...(note ? { note } : {}),
     });
     patchPayload('menu', menuId, { entries });
     render();

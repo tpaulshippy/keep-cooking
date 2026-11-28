@@ -369,7 +369,7 @@ export class MemoryStore implements Store {
     const id = meta.id ?? newId();
     const updatedAt = meta.updatedAt ?? nowIso();
     const ings: Ingredient[] = (input.ingredients ?? []).map((g: any, i: number) => ({
-      id: newId(),
+      id: typeof g.id === 'string' && g.id ? g.id : newId(),
       name: g.name,
       quantity: g.quantity ?? null,
       unit: g.unit ?? '',
@@ -378,10 +378,15 @@ export class MemoryStore implements Store {
       recipeId: id,
     }));
     const steps: Step[] = (input.steps ?? []).map((s: any, i: number) => ({
-      id: newId(),
+      id: typeof s.id === 'string' && s.id ? s.id : newId(),
       position: s.position ?? i,
       text: s.text,
-      timers: [],
+      timers: Array.isArray(s.timers)
+        ? s.timers
+          .filter((t: any) => t && Number.isInteger(t.seconds) && (t.seconds as number) >= 1)
+          .map((t: any) => ({ seconds: t.seconds as number, label: typeof t.label === 'string' && t.label ? t.label : 'Timer' }))
+          .slice(0, 20)
+        : [],
       recipeId: id,
     }));
     const row = {
@@ -443,7 +448,7 @@ export class MemoryStore implements Store {
       householdId: input.householdId ?? 'hh-demo',
       name: input.name,
       items: (input.items ?? []).map((it: any) => ({
-        id: newId(),
+        id: typeof it.id === 'string' && it.id ? it.id : newId(),
         name: it.name,
         quantity: it.quantity ?? '',
         aisle: it.aisle ?? '',
