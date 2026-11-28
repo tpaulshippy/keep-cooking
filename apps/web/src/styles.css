@@ -4,7 +4,8 @@
   --accent: #9a3412;
   --accent-fg: #ffffff;
   --muted: #57534e;
-  --border: #e7e5e4;
+  /* stone-500 family: 4.8:1 vs white (≥3:1 for control boundaries). */
+  --border: #78716c;
   --focus: #1d4ed8;
 }
 * { box-sizing: border-box; }

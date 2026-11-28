@@ -53,6 +53,17 @@ export function getApiBaseOverride(): string | null {
   }
 }
 
+/** Build the exact request URL once: base may carry a path prefix (/api). */
+export function buildUrl(base: string, path: string): URL {
+  return new URL(base.replace(/\/+$/, '') + path);
+}
+
+/** The path+query the server signs over: exact pathname of the sent URL. */
+export function signingPathFor(base: string, path: string): string {
+  const url = buildUrl(base, path);
+  return url.pathname + url.search;
+}
+
 async function sha256Hex(data: Uint8Array): Promise<string> {
   const bytes: Uint8Array<ArrayBuffer> = Uint8Array.from(data as Uint8Array);
   const digest = await crypto.subtle.digest('SHA-256', bytes);
@@ -74,12 +85,22 @@ function b64decode(s: string): Uint8Array<ArrayBuffer> {
 const PRIV_KEY = 'kc.devicePriv';
 const PUB_KEY = 'kc.devicePub';
 const DEVICE_ID_KEY = 'kc.deviceId';
+const ENROLLED_KEY = 'kc.deviceEnrolled';
 
 export function getDeviceId(): string | null {
   try {
     return localStorage.getItem(DEVICE_ID_KEY);
   } catch {
     return null;
+  }
+}
+
+/** True only after a successful POST /v2/devices (persisted flag). */
+export function isEnrolled(): boolean {
+  try {
+    return localStorage.getItem(ENROLLED_KEY) === '1' && !!localStorage.getItem(DEVICE_ID_KEY);
+  } catch {
+    return false;
   }
 }
 
@@ -110,30 +131,41 @@ async function ensureKeypair(): Promise<{ deviceId: string; privateKey: CryptoKe
   return { deviceId, privateKey: kp.privateKey };
 }
 
-/** Enroll this device (POST /v2/devices stays open per contract). */
+/** Enroll this device (POST /v2/devices stays open per contract). Tracks
+ * enrollment with a persisted flag: a locally-known device id alone does NOT
+ * count as enrolled, so a fresh browser always POSTs its public key. */
 export async function enrollDevice(displayName?: string, base = resolveApiBase()): Promise<string> {
-  const existing = getDeviceId();
-  if (existing) {
-    // Already enrolled locally; verify server knows us is caller's job.
-    return existing;
+  if (isEnrolled()) {
+    return getDeviceId() as string;
   }
-  const { deviceId, privateKey } = await ensureKeypair();
+  let { deviceId, privateKey } = await ensureKeypair();
   void privateKey;
-  const pubB64 = (() => {
+  let pubB64: string | null = null;
+  try {
+    pubB64 = localStorage.getItem(PUB_KEY);
+  } catch { /* ignore */ }
+  if (!pubB64) {
+    // Key material is incomplete (pre-flag install): rotate to a fresh
+    // keypair so the enrolled public key matches the signing key.
     try {
-      const raw = localStorage.getItem(PUB_KEY) ?? '';
-      // Server expects base64 of exactly 32 bytes (raw Ed25519 public key).
-      return raw;
-    } catch {
-      return '';
-    }
-  })();
+      localStorage.removeItem(DEVICE_ID_KEY);
+      localStorage.removeItem(PRIV_KEY);
+    } catch { /* ignore */ }
+    const fresh = await ensureKeypair();
+    deviceId = fresh.deviceId;
+    try {
+      pubB64 = localStorage.getItem(PUB_KEY);
+    } catch { /* ignore */ }
+  }
   const res = await fetch(`${base}/v2/devices`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ deviceId, publicKey: pubB64, displayName: displayName ?? 'web' }),
+    body: JSON.stringify({ deviceId, publicKey: pubB64 ?? '', displayName: displayName ?? 'web' }),
   });
   if (!res.ok) throw new Error(`enroll failed: ${res.status}`);
+  try {
+    localStorage.setItem(ENROLLED_KEY, '1');
+  } catch { /* ignore */ }
   return deviceId;
 }
 
@@ -155,10 +187,14 @@ async function req<T>(method: string, path: string, body?: unknown, signed = fal
   const bodyStr = body === undefined ? '' : JSON.stringify(body);
   const headers: Record<string, string> = {};
   if (body !== undefined) headers['content-type'] = 'application/json';
+  // One URL object feeds both the signature and the send, so the canonical
+  // path+query always equals what the server receives (bases with an /api
+  // prefix sign /api/... too).
+  const url = buildUrl(base, path);
   if (signed) {
-    Object.assign(headers, await signHeaders(method, path, new TextEncoder().encode(bodyStr)));
+    Object.assign(headers, await signHeaders(method, url.pathname + url.search, new TextEncoder().encode(bodyStr)));
   }
-  const res = await fetch(`${base}${path}`, {
+  const res = await fetch(url.toString(), {
     method,
     headers,
     body: body === undefined ? undefined : bodyStr,
@@ -183,8 +219,24 @@ export const api = {
   listLists: (base?: string) => req<ShoppingList[]>('GET', '/lists', undefined, false, base ?? resolveApiBase()),
   createList: (input: { name: string; items?: ListItem[] }, base?: string) =>
     req<ShoppingList>('POST', '/lists', input, true, base ?? resolveApiBase()),
+  updateList: (id: string, input: { name: string; items?: ListItem[] }, base?: string) =>
+    req<ShoppingList>('PUT', `/lists/${id}`, input, true, base ?? resolveApiBase()),
+  deleteList: (id: string, base?: string) => req<void>('DELETE', `/lists/${id}`, undefined, true, base ?? resolveApiBase()),
   listPantry: (base?: string) => req<PantryItem[]>('GET', '/pantry', undefined, false, base ?? resolveApiBase()),
+  createPantryItem: (input: { name: string; quantity?: string; location?: string; [k: string]: unknown }, base?: string) =>
+    req<PantryItem>('POST', '/pantry', input, true, base ?? resolveApiBase()),
+  updatePantryItem: (id: string, input: { name: string; quantity?: string; location?: string; [k: string]: unknown }, base?: string) =>
+    req<PantryItem>('PUT', `/pantry/${id}`, input, true, base ?? resolveApiBase()),
+  deletePantryItem: (id: string, base?: string) => req<void>('DELETE', `/pantry/${id}`, undefined, true, base ?? resolveApiBase()),
   listPlans: (base?: string) => req<Plan[]>('GET', '/plans', undefined, false, base ?? resolveApiBase()),
   createPlan: (input: { date: string; meal: string; recipeId?: string | null; note?: string; servings?: number }, base?: string) =>
     req<Plan>('POST', '/plans', input, true, base ?? resolveApiBase()),
+  updatePlan: (id: string, input: { date: string; meal: string; recipeId?: string | null; note?: string; servings?: number }, base?: string) =>
+    req<Plan>('PUT', `/plans/${id}`, input, true, base ?? resolveApiBase()),
+  deletePlan: (id: string, base?: string) => req<void>('DELETE', `/plans/${id}`, undefined, true, base ?? resolveApiBase()),
+  createMenu: (input: { name: string; entries?: { dayOffset?: number; meal?: string; recipeId?: string; servings?: number }[] }, base?: string) =>
+    req<Menu>('POST', '/menus', input, true, base ?? resolveApiBase()),
+  updateMenu: (id: string, input: { name: string; entries?: { dayOffset?: number; meal?: string; recipeId?: string; servings?: number }[] }, base?: string) =>
+    req<Menu>('PUT', `/menus/${id}`, input, true, base ?? resolveApiBase()),
+  deleteMenu: (id: string, base?: string) => req<void>('DELETE', `/menus/${id}`, undefined, true, base ?? resolveApiBase()),
 };

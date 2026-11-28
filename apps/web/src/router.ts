@@ -17,14 +17,28 @@ function stripBase(pathname: string): string {
   return pathname; // dev at root or unknown: treat whole pathname as route
 }
 
+function safeDecode(s: string): string | null {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return null; // malformed % encodings must not kill first render
+  }
+}
+
 export function parsePath(pathname: string): Route {
   const path = stripBase(pathname);
   const seg = path.split('/').filter(Boolean);
   if (seg.length === 0) return { name: 'home', params: {} };
   const [a, b, c] = seg;
-  if (a === 'recipes' && b && c === undefined) return { name: 'recipeDetail', params: { id: decodeURIComponent(b) } };
+  if (a === 'recipes' && b && c === undefined) {
+    const id = safeDecode(b);
+    return id === null ? { name: 'home', params: {} } : { name: 'recipeDetail', params: { id } };
+  }
   if (a === 'recipes') return { name: 'recipes', params: {} };
-  if (a === 'cook' && b) return { name: 'cook', params: { id: decodeURIComponent(b) } };
+  if (a === 'cook' && b) {
+    const id = safeDecode(b);
+    return id === null ? { name: 'home', params: {} } : { name: 'cook', params: { id } };
+  }
   if (a === 'plan') return { name: 'plan', params: {} };
   if (a === 'lists') return { name: 'lists', params: {} };
   if (a === 'menus') return { name: 'menus', params: {} };

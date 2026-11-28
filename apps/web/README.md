@@ -19,10 +19,23 @@ Framework choice: no framework — plain TypeScript + Vite. The app is form-and-
 | `/app/settings` | API base, enroll, push/pull, share link, export JSON + Markdown |
 
 Legacy hash URLs (`/app/#/recipes/:id`) are upgraded once on load via
-`history.replaceState` to the history equivalent. The Worker assets handler
-falls back unknown `/app/*` paths to `/app/index.html` so deep links
-cold-load correctly (no server rewrite rules needed); the router then
-parses `location.pathname` after the `/app` base.
+`history.replaceState` to the history equivalent. The router parses
+`location.pathname` after the `/app` base.
+
+## Deploy prerequisite: `/app/*` fallback (manual step, not yet wired)
+
+Deep links (`/app/recipes/:id`) cold-load correctly **only if** the serving
+Worker returns `/app/index.html` for unknown `/app/*` paths. That fallback
+is **not currently wired in this repo's Worker** (`api/wrangler.toml` has no
+`[assets]` SPA handling), so until someone wires it:
+
+- Prerequisite: serve the built `apps/web/dist` through a Worker/static host
+  with single-page-application fallback (Cloudflare: `[assets]` with
+  `not_found_handling = "single-page-application"`, plus a route sending
+  `/app/*` to that host), or an equivalent rewrite of `/app/*` → `/app/index.html`.
+- Without it: `/app/` loads and all in-app navigation works, but a cold load,
+  refresh, or shared link to any deeper path (e.g. `/app/recipes/:id`)
+  returns 404 instead of the app.
 
 ## `API_BASE_URL` config
 
@@ -36,9 +49,9 @@ Resolution order:
 
 Same Worker family: `/` serves the marketing/landing surface, `/api/*`
 serves the Hono API, and `/app/*` serves this static SPA bundle. All route
-paths are real history URLs (`/app/recipes/:id`), so every deep link
-resolves to the same `index.html` via the Worker `/app/*` fallback, and the
-router parses `location.pathname` client-side.
+paths are real history URLs (`/app/recipes/:id`); they resolve to the same
+`index.html` **once the deploy prerequisite above is wired**, and the router
+parses `location.pathname` client-side.
 
 ## Offline model
 
@@ -46,11 +59,16 @@ All collections (recipes, plans, menus, lists, pantry) persist in
 `localStorage` (`kc.*` keys). Mutations write a `SyncEnvelope`
 `{id, updatedAt, deviceId, deleted?, entity, payload}` to the collection and
 append it to the `kc.outbox` queue. Merge is last-writer-wins on
-`updatedAt`, ties keep the stored record (replay-safe), tombstones
+`updatedAt`; ties take the incoming (remote) envelope for deterministic
+convergence, identical same-device replays are no-ops, and tombstones
 (`deleted: true`) filter from views but still merge — the same semantics as
-the native `SyncEngine`. First paint is useful offline: the store ships with
-3 seeded demo recipes. Push drains the outbox against the API; pull applies
-remote envelopes via LWW without re-queueing.
+the native `SyncEngine` (`mergeOutcome` in `apps/ios/Sync/SyncEngine.swift`).
+First paint is useful offline: the store ships with 3 seeded demo recipes.
+Push (`src/sync.ts`) attempts each queued envelope and acks only envelopes
+whose mutation actually succeeded, by `(id, updatedAt)` identity — failures
+stop the run and stay queued; update-404 falls back to create + reconcile
+with the server record so offline drafts never duplicate on pull; pull
+applies remote envelopes via LWW without re-queueing.
 
 ## Budget note
 

@@ -1,9 +1,12 @@
-// Offline-capable smoke test: validates the seeded local store shape and
-// pure helpers WITHOUT network. Exit 0 with no API present; if an API base
-// responds to /health, its version is reported but never required.
+// Smoke test: scaffold checks (source-text) PLUS one real behavioral
+// assertion — the pure aggregation helpers are bundled with esbuild and
+// executed, no network involved. Exit 0 with no API present; if an API base
+// responds to /health, its parsed version is logged but never required.
 import { readFileSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { tmpdir } from 'node:os';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const webRoot = join(here, '..');
@@ -18,7 +21,7 @@ function check(name, cond) {
 for (const f of [
   'package.json', 'vite.config.ts', 'tsconfig.json', 'index.html', 'README.md',
   'src/api.ts', 'src/store.ts', 'src/router.ts', 'src/main.ts', 'src/styles.css',
-  'src/scale.ts', 'src/aggregate.ts',
+  'src/scale.ts', 'src/aggregate.ts', 'src/sync.ts',
 ]) {
   check(`file ${f}`, existsSync(join(webRoot, f)));
 }
@@ -34,22 +37,55 @@ const vite = readFileSync(join(webRoot, 'vite.config.ts'), 'utf8');
 check("vite base '/app/'", vite.includes("'/app/'"));
 check('vite port 5174', vite.includes('5174'));
 
-// 4. Seeded store: 3 demo recipes mentioned in store.ts.
-const storeSrc = readFileSync(join(webRoot, 'src/store.ts'), 'utf8');
-check('seed demo-pasta', storeSrc.includes('demo-pasta'));
-check('seed demo-tacos', storeSrc.includes('demo-tacos'));
-check('seed demo-soup', storeSrc.includes('demo-soup'));
-check('LWW merge present', storeSrc.includes('lwwMerge'));
-check('outbox present', storeSrc.includes('outbox'));
+// 4. Router is history-based (no hash routes shipped).
+const routerSrc = readFileSync(join(webRoot, 'src/router.ts'), 'utf8');
+check('router uses history API', routerSrc.includes('pushState') && routerSrc.includes("BASE = '/app'"));
 
-// 5. Optional API probe (informational only, never fails offline).
+// 5. BEHAVIORAL: bundle the pure helpers and run a real aggregation.
+//    Doubling one recipe's servings must double its measured quantity,
+//    unmeasured 'to taste' must survive, and 'ice cream' must sort Frozen.
+try {
+  const esbuild = join(webRoot, 'node_modules', '.bin', 'esbuild');
+  if (!existsSync(esbuild)) throw new Error('esbuild not installed; run npm install');
+  const out = join(tmpdir(), `kc-smoke-${process.pid}.mjs`);
+  execFileSync(esbuild, ['src/aggregate.ts', '--bundle', '--platform=node', '--format=esm', `--outfile=${out}`], {
+    cwd: webRoot, stdio: 'pipe',
+  });
+  const agg = await import(pathToFileURL(out).href);
+  const got = agg.aggregateWeekToList(
+    agg.collectPlanIngredients(
+      [
+        { date: '2026-01-05', servings: 8, recipeId: 'pasta' },
+        { date: '2026-02-01', servings: 4, recipeId: 'pasta' }, // outside week: excluded
+      ],
+      ['2026-01-05', '2026-01-06', '2026-01-07', '2026-01-08', '2026-01-09', '2026-01-10', '2026-01-11'],
+      (id) => id === 'pasta'
+        ? { servings: 4, ingredients: [{ name: 'Spaghetti', quantity: 12, unit: 'oz' }, { name: 'Salt', display: 'to taste' }] }
+        : undefined,
+    ).concat([{ name: 'Ice cream', quantity: 1, unit: 'tub' }]),
+  );
+  const names = got.map((i) => `${i.name}=${i.quantity}[${i.aisle}]`).join(' | ');
+  check(`behavioral aggregate (${names})`,
+    got.find((i) => i.name === 'Spaghetti')?.quantity === '24 oz' &&
+    got.some((i) => i.name === 'Salt' && i.quantity === 'to taste') &&
+    got.find((i) => i.name === 'Ice cream')?.aisle === 'Frozen');
+} catch (err) {
+  check(`behavioral aggregate threw: ${err.message}`, false);
+}
+
+// 6. Optional API probe (informational only, never fails offline).
 const base = process.env.API_BASE_URL ?? 'http://localhost:8787';
 try {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), 3000);
   const res = await fetch(`${base}/health`, { signal: ctl.signal });
   clearTimeout(t);
-  console.log(`info - API ${base} responded ${res.status} (optional)`);
+  let version = 'n/a';
+  try {
+    const data = await res.json();
+    version = data?.version ?? 'n/a';
+  } catch { /* non-JSON body */ }
+  console.log(`info - API ${base} responded ${res.status} version=${version} (optional)`);
 } catch {
   console.log(`info - no API at ${base}; offline store smoke only (this is fine)`);
 }

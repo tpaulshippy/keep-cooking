@@ -21,6 +21,12 @@ describe('parsePath', () => {
   it('falls back to home on unknown paths', () => {
     expect(parsePath('/app/nope').name).toBe('home');
   });
+
+  it('routes malformed encodings to home instead of throwing', () => {
+    expect(() => parsePath('/app/recipes/%E0%A4%A')).not.toThrow();
+    expect(parsePath('/app/recipes/%E0%A4%A').name).toBe('home');
+    expect(parsePath('/app/cook/%ZZ').name).toBe('home');
+  });
 });
 
 describe('href', () => {

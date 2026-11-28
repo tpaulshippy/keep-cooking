@@ -1,12 +1,45 @@
 import './styles.css';
 import { api, resolveApiBase, setApiBaseOverride, getApiBaseOverride, enrollDevice } from './api';
+import type { RecipeInput } from './api';
 import { Store, visible, type SyncEnvelope } from './store';
 import { parsePath, href, navigate, initRouter } from './router';
 import { scaleQuantity, formatQuantity } from './scale';
-import { aggregateWeekToList } from './aggregate';
+import { aggregateWeekToList, collectPlanIngredients, scaleIngredientsForServings } from './aggregate';
+import { pushOutbox, type PushTransport } from './sync';
 
 const store = new Store();
 const root = document.getElementById('app')!;
+
+/** Live transport: every entity maps to its real contract CRUD endpoint. */
+const webTransport: PushTransport = {
+  update: (entity, id, input) => {
+    switch (entity) {
+      case 'recipe': return api.updateRecipe(id, input as unknown as RecipeInput);
+      case 'list': return api.updateList(id, input as { name: string });
+      case 'pantryItem': return api.updatePantryItem(id, input as { name: string });
+      case 'plan': return api.updatePlan(id, input as { date: string; meal: string });
+      case 'menu': return api.updateMenu(id, input as { name: string });
+    }
+  },
+  create: (entity, input) => {
+    switch (entity) {
+      case 'recipe': return api.createRecipe(input as unknown as RecipeInput);
+      case 'list': return api.createList(input as { name: string });
+      case 'pantryItem': return api.createPantryItem(input as { name: string });
+      case 'plan': return api.createPlan(input as { date: string; meal: string });
+      case 'menu': return api.createMenu(input as { name: string });
+    }
+  },
+  remove: (entity, id) => {
+    switch (entity) {
+      case 'recipe': return api.deleteRecipe(id);
+      case 'list': return api.deleteList(id);
+      case 'pantryItem': return api.deletePantryItem(id);
+      case 'plan': return api.deletePlan(id);
+      case 'menu': return api.deleteMenu(id);
+    }
+  },
+};
 
 const NAV: [string, string][] = [
   ['/', 'Home'],
@@ -64,23 +97,30 @@ function viewHome(): void {
 }
 
 // ---- Library ----
-function viewLibrary(q: string): void {
+function libraryResultsHtml(query: string): string {
   const all = visible(store.state.recipes);
-  const query = q.toLowerCase();
+  const q = query.toLowerCase();
   const list = all.filter((r) => {
     const p = r.payload as { title?: string; description?: string };
-    return !query || (p.title ?? '').toLowerCase().includes(query) || (p.description ?? '').toLowerCase().includes(query);
+    return !q || (p.title ?? '').toLowerCase().includes(q) || (p.description ?? '').toLowerCase().includes(q);
   });
+  return list.map((r) => {
+    const p = r.payload as { title?: string; servings?: number };
+    return `<li><a href="${href('/recipes/' + r.id)}">${esc(p.title ?? r.id)}</a> <span class="muted">serves ${esc(p.servings ?? 4)}</span> <a href="${href('/cook/' + r.id)}">Cook</a></li>`;
+  }).join('') || '<li>No matches.</li>';
+}
+
+function viewLibrary(q: string): void {
   shell(`<h1>Library</h1>
   <form id="search" role="search"><label for="q">Search recipes</label>
   <input id="q" name="q" type="search" value="${esc(q)}" placeholder="Search title or description" /></form>
-  <ul class="cards">${list.map((r) => {
-    const p = r.payload as { title?: string; servings?: number };
-    return `<li><a href="${href('/recipes/' + r.id)}">${esc(p.title ?? r.id)}</a> <span class="muted">serves ${esc(p.servings ?? 4)}</span> <a href="${href('/cook/' + r.id)}">Cook</a></li>`;
-  }).join('') || '<li>No matches.</li>'}</ul>`);
+  <ul class="cards" id="results" aria-live="polite">${libraryResultsHtml(q)}</ul>`);
   const form = document.getElementById('search') as HTMLFormElement;
   const input = document.getElementById('q') as HTMLInputElement;
-  input.addEventListener('input', () => viewLibrary(input.value));
+  // Update only the results list so the input keeps focus, value and caret.
+  input.addEventListener('input', () => {
+    document.getElementById('results')!.innerHTML = libraryResultsHtml(input.value);
+  });
   form.addEventListener('submit', (e) => e.preventDefault());
 }
 
@@ -151,17 +191,24 @@ function viewCook(id: string): void {
 }
 
 // ---- Plan ----
+// Monday-first week, built from local y/m/d components (no UTC shift).
 function weekDates(): string[] {
   const out: string[] = [];
   const d = new Date();
   const day = (d.getDay() + 6) % 7; // Monday-first
   d.setDate(d.getDate() - day);
+  const pad = (n: number) => String(n).padStart(2, '0');
   for (let i = 0; i < 7; i++) {
-    const t = new Date(d);
-    t.setDate(d.getDate() + i);
-    out.push(t.toISOString().slice(0, 10));
+    const t = new Date(d.getFullYear(), d.getMonth(), d.getDate() + i);
+    out.push(`${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`);
   }
   return out;
+}
+
+function planLabel(fp: { recipeId?: string | null; note?: string }): string {
+  const title = fp.recipeId ? recipeTitle(fp.recipeId) : null;
+  if (title && fp.note) return `${title} — ${fp.note}`;
+  return title ?? fp.note ?? '—';
 }
 
 function viewPlan(): void {
@@ -172,23 +219,23 @@ function viewPlan(): void {
   shell(`<h1>Plan — this week</h1>
   ${days.map((date) => `<section aria-label="Plan for ${date}"><h2>${date}</h2><ul>${meals.map((meal) => {
     const found = plans.filter((pl) => (pl.payload as { date?: string; meal?: string }).date === date && (pl.payload as { meal?: string }).meal === meal);
-    return `<li><strong>${meal}</strong>: ${found.map((f) => {
-      const fp = f.payload as { recipeId?: string | null; note?: string };
-      return esc(fp.recipeId ? recipeTitle(fp.recipeId) : fp.note ?? '—');
-    }).join(', ') || '—'} <button type="button" data-date="${date}" data-meal="${meal}">+ Add</button></li>`;
+    return `<li><strong>${meal}</strong>: ${found.map((f) => esc(planLabel(f.payload as { recipeId?: string | null; note?: string }))).join(', ') || '—'} <button type="button" data-date="${date}" data-meal="${meal}">+ Add</button></li>`;
   }).join('')}</ul></section>`).join('')}
   <form id="addplan"><h2>Add plan entry</h2>
   <label>Date <input name="date" type="date" required value="${days[0]}" /></label>
   <label>Meal <select name="meal">${meals.map((m) => `<option>${m}</option>`).join('')}</select></label>
   <label>Recipe <select name="recipeId"><option value="">— none —</option>${recipes.map((r) => `<option value="${r.id}">${esc((r.payload as { title?: string }).title ?? r.id)}</option>`).join('')}</select></label>
+  <label>Note <input name="note" placeholder="Optional note" /></label>
   <button type="submit">Save (offline OK)</button></form>
   <form id="weeklist"><h2>Week to shopping list</h2><button type="submit">Aggregate week into list</button></form>`);
   (document.getElementById('addplan') as HTMLFormElement).addEventListener('submit', (e) => {
     e.preventDefault();
     const fd = new FormData(e.target as HTMLFormElement);
+    const note = String(fd.get('note') || '').trim();
     store.upsert('plan', '', {
       date: String(fd.get('date')), meal: String(fd.get('meal')),
       recipeId: String(fd.get('recipeId') || '') || null, servings: 4,
+      ...(note ? { note } : {}),
     });
     render();
   });
@@ -202,13 +249,14 @@ function viewPlan(): void {
   });
   (document.getElementById('weeklist') as HTMLFormElement).addEventListener('submit', (e) => {
     e.preventDefault();
-    const ings = plans.flatMap((pl) => {
-      const rp = pl.payload as { recipeId?: string | null };
-      const r = store.state.recipes.find((x) => x.id === rp.recipeId);
-      const payload = r?.payload as { ingredients?: { name: string; quantity?: number; unit?: string; display?: string }[] } | undefined;
-      return (payload?.ingredients ?? []).map((i) => ({ ...i, recipeId: r?.id }));
-    });
-    const items = aggregateWeekToList(ings);
+    // Only this week's plans, each recipe scaled by its plan servings first.
+    const lookup = (recipeId: string) => {
+      const r = recipes.find((x) => x.id === recipeId);
+      const payload = r?.payload as { servings?: number; ingredients?: { name: string; quantity?: number; unit?: string; display?: string }[] } | undefined;
+      return payload ? { servings: payload.servings, ingredients: payload.ingredients } : undefined;
+    };
+    const weekPlans = plans.map((pl) => ({ ...(pl.payload as { date: string; servings?: number; recipeId?: string | null }) }));
+    const items = aggregateWeekToList(collectPlanIngredients(weekPlans, days, lookup));
     store.upsert('list', '', { name: `Week of ${days[0]}`, items });
     navigate('/lists');
   });
@@ -219,14 +267,18 @@ function viewLists(): void {
   const lists = visible(store.state.lists);
   const current = lists[lists.length - 1];
   const cp = current?.payload as { name?: string; items?: { name: string; quantity?: string; aisle?: string; checked?: boolean }[] } | undefined;
-  const items = [...(cp?.items ?? [])].sort((a, b) => (a.aisle ?? '').localeCompare(b.aisle ?? '') || a.name.localeCompare(b.name));
+  // Sort a copy but keep each row's ORIGINAL index: toggling maps the sorted
+  // row back to the unsorted array instead of the wrong item.
+  const rows = (cp?.items ?? [])
+    .map((it, i) => ({ it, i }))
+    .sort((a, b) => (a.it.aisle ?? '').localeCompare(b.it.aisle ?? '') || a.it.name.localeCompare(b.it.name));
   shell(`<h1>Shopping lists</h1>
   <form id="newlist"><label>Name <input name="name" required value="Weekly shop" /></label><button type="submit">New list</button></form>
   <h2>Aisle-sorted pantry</h2>
   <form id="addpantry"><label>Item <input name="name" required /></label><label>Qty <input name="quantity" /></label><button type="submit">Add to pantry</button></form>
   <ul>${visible(store.state.pantry).map((pi) => `<li>${esc((pi.payload as { name?: string }).name)} <span class="muted">${esc((pi.payload as { quantity?: string }).quantity ?? '')}</span></li>`).join('') || '<li>Pantry empty.</li>'}</ul>
   <h2>${esc(cp?.name ?? 'No list yet')}</h2>
-  <ul>${items.map((it, i) => `<li><label><input type="checkbox" data-item="${i}"${it.checked ? ' checked' : ''} /> ${esc(it.name)} <span class="muted">${esc(it.quantity ?? '')} · ${esc(it.aisle ?? 'Other')}</span></label></li>`).join('') || '<li>No items.</li>'}</ul>`);
+  <ul>${rows.map(({ it, i }) => `<li><label><input type="checkbox" data-item="${i}"${it.checked ? ' checked' : ''} /> ${esc(it.name)} <span class="muted">${esc(it.quantity ?? '')} · ${esc(it.aisle ?? 'Other')}</span></label></li>`).join('') || '<li>No items.</li>'}</ul>`);
   (document.getElementById('newlist') as HTMLFormElement).addEventListener('submit', (e) => {
     e.preventDefault();
     const name = String(new FormData(e.target as HTMLFormElement).get('name'));
@@ -250,13 +302,16 @@ function viewLists(): void {
   }
 }
 
+interface MenuEntry { dayOffset?: number; meal?: string; recipeId?: string; servings?: number; note?: string; }
+
 // ---- Menus ----
 function viewMenus(): void {
   const menus = visible(store.state.menus);
   const recipes = visible(store.state.recipes);
   shell(`<h1>Menus</h1>
+  <p id="menustatus" role="status" aria-live="polite"></p>
   <ul>${menus.map((m) => {
-    const mp = m.payload as { name?: string; entries?: { dayOffset?: number; meal?: string; recipeId?: string }[] };
+    const mp = m.payload as { name?: string; entries?: MenuEntry[] };
     return `<li><strong>${esc(mp.name ?? m.id)}</strong> (${(mp.entries ?? []).length} entries)
     <button type="button" data-apply="${m.id}">Apply to week</button>
     <button type="button" data-tolist="${m.id}">Add week to list</button></li>`;
@@ -274,21 +329,39 @@ function viewMenus(): void {
   });
   const applyMenu = (menuId: string, toList: boolean) => {
     const m = store.state.menus.find((x) => x.id === menuId);
-    const mp = m?.payload as { name?: string; entries?: { dayOffset?: number; meal?: string; recipeId?: string; servings?: number }[] };
+    const mp = m?.payload as { name?: string; entries?: MenuEntry[] };
+    const entries = mp?.entries ?? [];
     const days = weekDates();
     if (toList) {
-      const ings = (mp?.entries ?? []).flatMap((en) => {
-        const r = store.state.recipes.find((x) => x.id === en.recipeId);
-        const payload = r?.payload as { ingredients?: { name: string; quantity?: number; unit?: string; display?: string }[] } | undefined;
-        return (payload?.ingredients ?? []).map((i) => ({ ...i, recipeId: r?.id }));
+      const ings = entries.flatMap((en) => {
+        const r = recipes.find((x) => x.id === en.recipeId);
+        const payload = r?.payload as { servings?: number; ingredients?: { name: string; quantity?: number; unit?: string; display?: string }[] } | undefined;
+        if (!payload) return [];
+        const recipeServings = payload.servings ?? 4;
+        return scaleIngredientsForServings(payload.ingredients ?? [], recipeServings, en.servings ?? recipeServings)
+          .map((i) => ({ ...i, recipeId: r?.id }));
       });
       store.upsert('list', '', { name: `${mp?.name ?? 'Menu'} — shopping`, items: aggregateWeekToList(ings) });
       navigate('/lists');
       return;
     }
-    for (const en of mp?.entries ?? []) {
-      const date = days[Math.min(Math.max(en.dayOffset ?? 0, 0), 6)];
-      store.upsert('plan', '', { date, meal: en.meal ?? 'dinner', recipeId: en.recipeId ?? null, servings: en.servings ?? 4 });
+    let skipped = 0;
+    for (const en of entries) {
+      const off = en.dayOffset ?? 0;
+      // Never collapse out-of-week entries onto Sunday: skip visibly.
+      if (!Number.isInteger(off) || off < 0 || off > 6) {
+        skipped++;
+        continue;
+      }
+      store.upsert('plan', '', {
+        date: days[off], meal: en.meal ?? 'dinner', recipeId: en.recipeId ?? null,
+        servings: en.servings ?? 4, ...(en.note ? { note: en.note } : {}),
+      });
+    }
+    if (skipped > 0) {
+      document.getElementById('menustatus')!.textContent =
+        `Applied ${entries.length - skipped} of ${entries.length} entries — ${skipped} outside this week skipped.`;
+      return; // stay: the skip count must remain visible
     }
     navigate('/plan');
   };
@@ -406,26 +479,13 @@ function viewSettings(): void {
     }
   });
   document.getElementById('push')!.addEventListener('click', async () => {
-    const pending = [...store.state.outbox];
-    const pushed: string[] = [];
-    for (const env of pending) {
-      try {
-        if (env.entity === 'recipe' && !env.deleted) {
-          const payload = env.payload as Record<string, unknown>;
-          if (store.state.recipes.some((r) => r.id === env.id)) {
-            await api.updateRecipe(env.id, { title: String(payload.title ?? 'Untitled'), ...(payload as object) }).catch(() =>
-              api.createRecipe({ title: String(payload.title ?? 'Untitled'), ...(payload as object) }));
-          } else {
-            await api.createRecipe({ title: String(payload.title ?? 'Untitled'), ...(payload as object) });
-          }
-        }
-        pushed.push(env.id);
-      } catch {
-        break; // stop on first failure (still offline); rest stay queued
-      }
-    }
-    store.drainOutbox(pushed);
-    status().textContent = pushed.length ? `Pushed ${pushed.length} envelope(s).` : 'Push failed — still offline; outbox kept.';
+    const result = await pushOutbox(store, webTransport);
+    const remaining = store.state.outbox.length;
+    status().textContent = result.failed
+      ? `Pushed ${result.pushed} envelope(s); ${remaining} retained offline — will retry.`
+      : result.pushed
+        ? `Pushed ${result.pushed} envelope(s).`
+        : 'Outbox empty — nothing to push.';
     render();
   });
   document.getElementById('pull')!.addEventListener('click', async () => {

@@ -16,13 +16,15 @@ export function scaleQuantity(
 /** Fraction-rounded display string, e.g. 1.5 -> "1 1/2". Quarters only. */
 export function formatQuantity(q: number | null | undefined, unit = ''): string {
   if (q == null || !isFinite(q)) return unit ? `— ${unit}`.trim() : '—';
-  const rounded = Math.round(q * 4) / 4;
+  const sign = q < 0 ? '-' : '';
+  const abs = Math.abs(q);
+  const rounded = Math.round(abs * 4) / 4;
   const whole = Math.floor(rounded + 1e-9);
   const frac = rounded - whole;
   const fracStr =
     frac < 1e-9 ? '' : frac >= 0.74 ? '3/4' : frac >= 0.49 ? '1/2' : '1/4';
   const num = fracStr ? (whole > 0 ? `${whole} ${fracStr}` : fracStr) : `${whole}`;
   // Non-quarter-exact values keep 2-decimal fallback.
-  const body = Math.abs(rounded - q) < 1e-9 ? num : `${Math.round(q * 100) / 100}`;
+  const body = Math.abs(rounded - abs) < 1e-9 ? `${sign}${num}` : `${sign}${Math.round(abs * 100) / 100}`;
   return unit ? `${body} ${unit}`.trim() : body;
 }

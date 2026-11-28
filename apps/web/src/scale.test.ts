@@ -29,4 +29,10 @@ describe('formatQuantity', () => {
   it('handles missing values', () => {
     expect(formatQuantity(null)).toBe('—');
   });
+
+  it('preserves sign for negative quarters', () => {
+    expect(formatQuantity(-1.5, 'cups')).toBe('-1 1/2 cups');
+    expect(formatQuantity(-0.25, 'cup')).toBe('-1/4 cup');
+    expect(formatQuantity(-2, '')).toBe('-2');
+  });
 });

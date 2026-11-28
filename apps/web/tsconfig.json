@@ -9,5 +9,5 @@
     "noEmit": true,
     "types": ["vitest/globals"]
   },
-  "include": ["src", "vite.config.ts", "scripts/smoke.mjs"]
+  "include": ["src", "vite.config.ts"]
 }

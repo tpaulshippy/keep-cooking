@@ -1,7 +1,9 @@
 // localStorage persistence: recipes, plans, menus, lists, pantry.
 // Outbox queue of SyncEnvelopes; LWW merge + tombstones.
-// Matches the native SyncEngine semantics: last-writer-wins on updatedAt,
-// ties broken by stored-wins (lexicographic id), deleted tombstones win.
+// Matches the native SyncEngine semantics (see apps/ios/Sync/SyncEngine.swift
+// mergeOutcome): last-writer-wins on updatedAt, ties take the incoming
+// (remote) envelope, identical same-device replays are no-ops, tombstones
+// win. Local upserts bypass merge (the local write is authoritative).
 
 export type EntityKind = 'recipe' | 'list' | 'pantryItem' | 'plan' | 'menu';
 
@@ -58,13 +60,21 @@ export function deviceId(): string {
   return id;
 }
 
-/** LWW: incoming wins if newer; equal timestamps keep the stored record. */
+/**
+ * LWW: incoming wins if newer, or on tie (remote-wins, matching the native
+ * SyncEngine tie-break for deterministic convergence). The one exception is
+ * an identical same-device replay (same deviceId + deleted flag at the same
+ * timestamp): keep stored so a same-millisecond local re-apply can't clobber.
+ * Either branch is a content no-op for a true identical replay.
+ */
 export function lwwMerge<T>(stored: SyncEnvelope<T> | undefined, incoming: SyncEnvelope<T>): SyncEnvelope<T> {
   if (!stored) return incoming;
   const s = Date.parse(stored.updatedAt);
   const n = Date.parse(incoming.updatedAt);
   if (n > s) return incoming;
-  return stored; // stale or tie: stored wins (idempotent replay safe)
+  if (n < s) return stored;
+  if (incoming.deviceId === stored.deviceId && incoming.deleted === stored.deleted) return stored;
+  return incoming; // tie: remote wins
 }
 
 export function mergeInto<T>(collection: SyncEnvelope<T>[], incoming: SyncEnvelope<T>): SyncEnvelope<T>[] {
@@ -153,7 +163,7 @@ export class Store {
     }
   }
 
-  /** Local upsert: stamps updatedAt/deviceId, merges LWW, enqueues outbox. */
+  /** Local upsert: stamps updatedAt/deviceId, replaces the local record, enqueues outbox. */
   upsert(entity: EntityKind, id: string, payload: unknown): SyncEnvelope {
     const env: SyncEnvelope = {
       id: id || crypto.randomUUID(),
@@ -162,8 +172,7 @@ export class Store {
       entity,
       payload,
     };
-    const key = this.collectionKey(entity);
-    this.state[key] = mergeInto(this.state[key] as SyncEnvelope[], env) as never;
+    this.replaceLocal(env);
     this.state.outbox = [...this.state.outbox, env];
     this.persist();
     return env;
@@ -174,11 +183,18 @@ export class Store {
     const env: SyncEnvelope = {
       id, updatedAt: new Date().toISOString(), deviceId: deviceId(), deleted: true, entity, payload: {},
     };
-    const key = this.collectionKey(entity);
-    this.state[key] = mergeInto(this.state[key] as SyncEnvelope[], env) as never;
+    this.replaceLocal(env);
     this.state.outbox = [...this.state.outbox, env];
     this.persist();
     return env;
+  }
+
+  /** Authoritative local write: replaces the matching record (or appends). */
+  private replaceLocal(env: SyncEnvelope): void {
+    const key = this.collectionKey(env.entity);
+    const col = this.state[key] as SyncEnvelope[];
+    const idx = col.findIndex((e) => e.id === env.id);
+    this.state[key] = (idx === -1 ? [...col, env] : col.map((e, i) => (i === idx ? env : e))) as never;
   }
 
   /** Apply a remote envelope (pull): LWW merge, no outbox enqueue. */
@@ -188,13 +204,33 @@ export class Store {
     this.persist();
   }
 
-  /** Drain outbox (called after successful push). Returns drained envelopes. */
-  drainOutbox(ids: string[]): SyncEnvelope[] {
-    const drained = this.state.outbox.filter((e) => ids.includes(e.id));
-    const idSet = new Set(ids);
-    this.state.outbox = this.state.outbox.filter((e) => !idSet.has(e.id));
+  /**
+   * Drain outbox by envelope identity (id + updatedAt). A newer unsent edit
+   * to the same record is a different identity and is retained.
+   */
+  drainOutbox(acked: Pick<SyncEnvelope, 'id' | 'updatedAt'>[]): SyncEnvelope[] {
+    const keys = new Set(acked.map((e) => `${e.id}|${e.updatedAt}`));
+    const drained = this.state.outbox.filter((e) => keys.has(`${e.id}|${e.updatedAt}`));
+    this.state.outbox = this.state.outbox.filter((e) => !keys.has(`${e.id}|${e.updatedAt}`));
     this.persist();
     return drained;
+  }
+
+  /**
+   * Reconcile a local record with the server's create response (the server
+   * assigns its own id): drop the local duplicate, apply the server record,
+   * and rewrite pending outbox revisions to the server id so follow-up edits
+   * update instead of re-creating.
+   */
+  reconcileLocalId(localId: string, server: SyncEnvelope): void {
+    if (server.id !== localId) {
+      const key = this.collectionKey(server.entity);
+      this.state[key] = (this.state[key] as SyncEnvelope[]).filter((e) => e.id !== localId) as never;
+      this.state.outbox = this.state.outbox.map((e) =>
+        e.id === localId ? { ...e, id: server.id } : e,
+      );
+    }
+    this.applyRemote(server);
   }
 
   clearAll(): void {
