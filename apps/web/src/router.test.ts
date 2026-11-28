@@ -10,6 +10,8 @@ describe('parsePath', () => {
   it('parses deep links', () => {
     expect(parsePath('/app/recipes')).toEqual({ name: 'recipes', params: {} });
     expect(parsePath('/app/recipes/abc')).toEqual({ name: 'recipeDetail', params: { id: 'abc' } });
+    expect(parsePath('/app/recipes/new')).toEqual({ name: 'recipeNew', params: {} });
+    expect(parsePath('/app/recipes/abc/edit')).toEqual({ name: 'recipeEdit', params: { id: 'abc' } });
     expect(parsePath('/app/cook/abc')).toEqual({ name: 'cook', params: { id: 'abc' } });
     expect(parsePath('/app/plan').name).toBe('plan');
     expect(parsePath('/app/lists').name).toBe('lists');

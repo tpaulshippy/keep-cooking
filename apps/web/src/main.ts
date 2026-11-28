@@ -18,6 +18,44 @@ let activeTimer: number | undefined;
 /** Selected shopping list; defaults to the most recent list. */
 let selectedListId: string | null = null;
 
+/** Plan entry being edited (null = the plan form creates a new entry). */
+let editingPlanId: string | null = null;
+
+/** Pantry item being edited (null = the pantry form creates a new item). */
+let editingPantryId: string | null = null;
+
+/** Shopping-list item (original index) with its quantity/aisle editor open. */
+let editingItemIdx: number | null = null;
+
+// ---- Theme (light/dark/auto, persisted as kc.theme) ----
+type ThemePref = 'light' | 'dark' | 'auto';
+const THEME_KEY = 'kc.theme';
+
+function getThemePref(): ThemePref {
+  try {
+    const v = localStorage.getItem(THEME_KEY);
+    if (v === 'light' || v === 'dark' || v === 'auto') return v;
+  } catch { /* no localStorage (SSR/test): fall through to auto */ }
+  return 'auto';
+}
+
+/** Apply the preference: explicit light/dark sets data-theme, auto removes
+ *  it so the prefers-color-scheme media query in styles.css decides. */
+function applyTheme(): void {
+  const pref = getThemePref();
+  if (pref === 'auto') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', pref);
+}
+
+function cycleTheme(): void {
+  const next: ThemePref = getThemePref() === 'auto' ? 'light' : getThemePref() === 'light' ? 'dark' : 'auto';
+  try {
+    localStorage.setItem(THEME_KEY, next);
+  } catch { /* ignore */ }
+  applyTheme();
+  render();
+}
+
 /** Live transport: every entity maps to its real contract CRUD endpoint. */
 const webTransport: PushTransport = {
   update: (entity, id, input) => {
@@ -75,7 +113,9 @@ function shell(view: string): void {
     const active = (p === '/' && route.name === 'home') || href(p) === here;
     return `<a href="${href(p)}"${active ? ' aria-current="page"' : ''}>${label}</a>`;
   }).join('');
-  root.innerHTML = `<header class="topbar"><a class="brand" href="${href('/')}">Keep Cooking</a><nav aria-label="Primary">${nav}</nav></header><div class="view">${view}</div>`;
+  const pref = getThemePref();
+  root.innerHTML = `<header class="topbar"><a class="brand" href="${href('/')}">Keep Cooking</a><nav aria-label="Primary">${nav}</nav><button id="themebtn" type="button" aria-label="Color theme (current: ${pref})">Theme: ${pref}</button></header><div class="view">${view}</div>`;
+  document.getElementById('themebtn')!.addEventListener('click', cycleTheme);
 }
 
 function esc(s: unknown): string {
@@ -88,11 +128,29 @@ function recipeTitle(id: string): string {
   return p?.title ?? id.slice(0, 8);
 }
 
+/** Number field helper: blank/invalid -> undefined (field left unset). */
+function numVal(v: FormDataEntryValue | null): number | undefined {
+  const s = String(v ?? '').trim();
+  if (!s) return undefined;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/** Re-read a record's latest payload and upsert a patch (keeps the same id). */
+function patchPayload(entity: 'recipe' | 'list' | 'pantryItem' | 'plan' | 'menu', id: string, patch: Record<string, unknown>): void {
+  const key = store.collectionKey(entity);
+  const env = (store.state[key] as SyncEnvelope[]).find((e) => e.id === id);
+  const base = (env?.payload ?? {}) as Record<string, unknown>;
+  store.upsert(entity, id, { ...base, ...patch });
+}
+
 function render(): void {
   const route = parsePath(location.pathname);
   switch (route.name) {
     case 'recipes': return viewLibrary('');
+    case 'recipeNew': return viewRecipeForm(null);
     case 'recipeDetail': return viewRecipeDetail(route.params.id);
+    case 'recipeEdit': return viewRecipeForm(route.params.id);
     case 'cook': return viewCook(route.params.id);
     case 'plan': return viewPlan();
     case 'lists': return viewLists();
@@ -129,6 +187,7 @@ function libraryResultsHtml(query: string): string {
 
 function viewLibrary(q: string): void {
   shell(`<h1>Library</h1>
+  <p><a href="${href('/recipes/new')}">New recipe</a></p>
   <form id="search" role="search"><label for="q">Search recipes</label>
   <input id="q" name="q" type="search" value="${esc(q)}" placeholder="Search title or description" /></form>
   <ul class="cards" id="results" aria-live="polite">${libraryResultsHtml(q)}</ul>`);
@@ -141,23 +200,203 @@ function viewLibrary(q: string): void {
   form.addEventListener('submit', (e) => e.preventDefault());
 }
 
+interface RecipeFormPayload {
+  title?: string; description?: string; servings?: number;
+  prepMinutes?: number; cookMinutes?: number; rating?: number;
+  isFavorite?: boolean; source?: string; sourceUrl?: string; categories?: string[];
+}
+
+// ---- Recipe new/edit (shared form) ----
+function viewRecipeForm(editId: string | null): void {
+  const existing = editId ? store.state.recipes.find((e) => e.id === editId && !e.deleted) : undefined;
+  if (editId && !existing) {
+    shell(`<h1>Not found</h1><p>This recipe is gone. <a href="${href('/recipes')}">Back to Library</a></p>`);
+    return;
+  }
+  const p = (existing?.payload ?? {}) as RecipeFormPayload & Record<string, unknown>;
+  const cats = Array.isArray(p.categories) ? (p.categories as string[]).join(', ') : '';
+  shell(`<h1>${existing ? 'Edit recipe' : 'New recipe'}</h1>
+  <form id="recipeform">
+  <label>Title <input name="title" required value="${esc(p.title ?? '')}" /></label>
+  <label>Description <textarea name="description" rows="3">${esc(p.description ?? '')}</textarea></label>
+  <label>Servings <input name="servings" type="number" min="0.25" max="100" step="0.25" value="${esc(p.servings ?? 4)}" /></label>
+  <label>Prep minutes <input name="prepMinutes" type="number" min="0" step="1" value="${esc(p.prepMinutes ?? '')}" /></label>
+  <label>Cook minutes <input name="cookMinutes" type="number" min="0" step="1" value="${esc(p.cookMinutes ?? '')}" /></label>
+  <label>Rating (0–5) <input name="rating" type="number" min="0" max="5" step="0.5" value="${esc(p.rating ?? '')}" /></label>
+  <label><input name="isFavorite" type="checkbox"${p.isFavorite ? ' checked' : ''} /> Favorite</label>
+  <label>Source <input name="source" value="${esc(p.source ?? '')}" /></label>
+  <label>Source URL <input name="sourceUrl" type="url" value="${esc(p.sourceUrl ?? '')}" /></label>
+  <label>Categories (comma-separated) <input name="categories" value="${esc(cats)}" /></label>
+  <button type="submit">Save (offline OK)</button> <a href="${existing ? href('/recipes/' + existing.id) : href('/recipes')}">Cancel</a></form>`);
+  (document.getElementById('recipeform') as HTMLFormElement).addEventListener('submit', (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target as HTMLFormElement);
+    const title = String(fd.get('title') || '').trim();
+    if (!title) return;
+    const servings = numVal(fd.get('servings')) ?? 4;
+    const rating = numVal(fd.get('rating'));
+    const fields: Record<string, unknown> = {
+      title,
+      description: String(fd.get('description') || ''),
+      servings,
+      isFavorite: (e.target as HTMLFormElement).querySelector<HTMLInputElement>('input[name="isFavorite"]')!.checked,
+      source: String(fd.get('source') || ''),
+      sourceUrl: String(fd.get('sourceUrl') || ''),
+      categories: String(fd.get('categories') || '').split(',').map((s) => s.trim()).filter(Boolean),
+    };
+    const prep = numVal(fd.get('prepMinutes'));
+    const cook = numVal(fd.get('cookMinutes'));
+    if (prep !== undefined) fields.prepMinutes = prep;
+    if (cook !== undefined) fields.cookMinutes = cook;
+    if (rating !== undefined) fields.rating = Math.min(5, Math.max(0, rating));
+    if (existing) {
+      patchPayload('recipe', existing.id, fields);
+      navigate('/recipes/' + existing.id);
+    } else {
+      const env = store.upsert('recipe', '', { ...fields, ingredients: [], steps: [] });
+      navigate('/recipes/' + env.id);
+    }
+  });
+}
+
+interface RecipeIngredient { name: string; quantity?: number; unit?: string; display?: string; position?: number; }
+interface RecipeStep { text: string; position?: number; timers?: { seconds: number; label: string }[]; }
+
 function viewRecipeDetail(id: string): void {
   const env = store.state.recipes.find((e) => e.id === id);
   if (!env || env.deleted) {
     shell(`<h1>Not found</h1><p>This recipe is gone. <a href="${href('/recipes')}">Back to Library</a></p>`);
     return;
   }
-  const p = env.payload as { title?: string; description?: string; servings?: number; ingredients?: { name: string; quantity?: number; unit?: string; display?: string }[]; steps?: { text: string }[] };
+  const p = env.payload as {
+    title?: string; description?: string; servings?: number;
+    prepMinutes?: number; cookMinutes?: number; rating?: number; isFavorite?: boolean;
+    source?: string; sourceUrl?: string; categories?: string[];
+    ingredients?: RecipeIngredient[]; steps?: RecipeStep[];
+  };
+  const meta: string[] = [];
+  if (p.prepMinutes != null) meta.push(`prep ${esc(p.prepMinutes)} min`);
+  if (p.cookMinutes != null) meta.push(`cook ${esc(p.cookMinutes)} min`);
+  if (p.rating != null) meta.push(`rating ${esc(p.rating)}/5`);
+  if (p.isFavorite) meta.push('★ favorite');
+  const ings = [...(p.ingredients ?? [])].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  const steps = [...(p.steps ?? [])].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
   shell(`<h1>${esc(p.title ?? id)}</h1>
-  <p class="muted">Serves ${esc(p.servings ?? 4)} · updated ${esc(env.updatedAt)}</p>
+  <p class="muted">Serves ${esc(p.servings ?? 4)} · updated ${esc(env.updatedAt)}${meta.length ? ' · ' + meta.join(' · ') : ''}</p>
+  ${p.sourceUrl ? `<p>Source: <a href="${esc(p.sourceUrl)}">${esc(p.source || p.sourceUrl)}</a></p>` : p.source ? `<p>Source: ${esc(p.source)}</p>` : ''}
+  ${(p.categories ?? []).length ? `<p class="muted">Categories: ${esc((p.categories ?? []).join(', '))}</p>` : ''}
   <p>${esc(p.description ?? '')}</p>
-  <h2>Ingredients</h2><ul>${(p.ingredients ?? []).map((i) => `<li>${esc(i.display ?? [i.quantity, i.unit, i.name].filter(Boolean).join(' '))}</li>`).join('')}</ul>
-  <h2>Steps</h2><ol>${(p.steps ?? []).map((s) => `<li>${esc(s.text)}</li>`).join('')}</ol>
-  <p><a href="${href('/cook/' + id)}">Start cook mode</a> · <a href="${href('/recipes')}">Back</a></p>
+  <h2>Ingredients</h2>
+  <ul>${ings.map((ing, i) => `<li>${esc(ing.display ?? [ing.quantity, ing.unit, ing.name].filter((x) => x !== undefined && x !== '').join(' '))}
+    <button type="button" data-ing-up="${i}"${i === 0 ? ' disabled' : ''}>↑</button>
+    <button type="button" data-ing-down="${i}"${i === ings.length - 1 ? ' disabled' : ''}>↓</button>
+    <button type="button" data-ing-del="${i}">Remove</button></li>`).join('') || '<li>No ingredients yet.</li>'}</ul>
+  <form id="adding"><h3>Add ingredient</h3>
+  <label>Name <input name="name" required /></label>
+  <label>Quantity <input name="quantity" type="number" step="any" /></label>
+  <label>Unit <input name="unit" /></label>
+  <label>Display (optional override) <input name="display" /></label>
+  <button type="submit">Add (offline OK)</button></form>
+  <h2>Steps</h2>
+  <ol>${steps.map((s, i) => `<li><form data-stepform="${i}">
+    <label>Text <textarea name="text" rows="2" required>${esc(s.text)}</textarea></label>
+    <label>Timer seconds (optional) <input name="seconds" type="number" min="1" step="1" value="${esc(s.timers?.[0]?.seconds ?? '')}" /></label>
+    <label>Timer label <input name="label" value="${esc(s.timers?.[0]?.label ?? '')}" placeholder="Timer" /></label>
+    <button type="submit">Save step</button>
+    <button type="button" data-step-up="${i}"${i === 0 ? ' disabled' : ''}>↑</button>
+    <button type="button" data-step-down="${i}"${i === steps.length - 1 ? ' disabled' : ''}>↓</button>
+    <button type="button" data-step-del="${i}">Remove</button></form></li>`).join('') || '<li>No steps yet.</li>'}</ol>
+  <form id="addstep"><h3>Add step</h3>
+  <label>Text <textarea name="text" rows="2" required></textarea></label>
+  <label>Timer seconds (optional) <input name="seconds" type="number" min="1" step="1" /></label>
+  <label>Timer label <input name="label" placeholder="Timer" /></label>
+  <button type="submit">Add step (offline OK)</button></form>
+  <p><a href="${href('/cook/' + id)}">Start cook mode</a> · <a href="${href('/recipes/' + id + '/edit')}">Edit details</a> · <a href="${href('/recipes')}">Back</a></p>
   <button id="del" type="button">Delete recipe</button>`);
+  const saveIngredients = (next: RecipeIngredient[]) => {
+    patchPayload('recipe', id, { ingredients: next.map((ing, i) => ({ ...ing, position: i })) });
+    render();
+  };
+  const saveSteps = (next: RecipeStep[]) => {
+    patchPayload('recipe', id, { steps: next.map((s, i) => ({ ...s, position: i })) });
+    render();
+  };
   document.getElementById('del')!.addEventListener('click', () => {
     store.remove('recipe', id);
     navigate('/recipes');
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-ing-del]').forEach((b) => b.addEventListener('click', () => {
+    saveIngredients(ings.filter((_, i) => i !== Number(b.dataset.ingDel)));
+  }));
+  document.querySelectorAll<HTMLButtonElement>('[data-ing-up]').forEach((b) => b.addEventListener('click', () => {
+    const i = Number(b.dataset.ingUp);
+    if (i <= 0) return;
+    const next = [...ings];
+    [next[i - 1], next[i]] = [next[i], next[i - 1]];
+    saveIngredients(next);
+  }));
+  document.querySelectorAll<HTMLButtonElement>('[data-ing-down]').forEach((b) => b.addEventListener('click', () => {
+    const i = Number(b.dataset.ingDown);
+    if (i >= ings.length - 1) return;
+    const next = [...ings];
+    [next[i + 1], next[i]] = [next[i], next[i + 1]];
+    saveIngredients(next);
+  }));
+  (document.getElementById('adding') as HTMLFormElement).addEventListener('submit', (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target as HTMLFormElement);
+    const name = String(fd.get('name') || '').trim();
+    if (!name) return;
+    const q = numVal(fd.get('quantity'));
+    saveIngredients([...ings, {
+      name,
+      ...(q !== undefined ? { quantity: q } : {}),
+      unit: String(fd.get('unit') || ''),
+      display: String(fd.get('display') || ''),
+    }]);
+  });
+  const readStepForm = (form: HTMLFormElement): RecipeStep | null => {
+    const fd = new FormData(form);
+    const text = String(fd.get('text') || '').trim();
+    if (!text) return null;
+    const seconds = numVal(fd.get('seconds'));
+    const label = String(fd.get('label') || '').trim() || 'Timer';
+    // Optional timer as seconds+label, matching the iOS StepTimer shape
+    // ({seconds, label}) produced by StepTimerParser.
+    return { text, ...(seconds && seconds > 0 ? { timers: [{ seconds: Math.round(seconds), label }] } : { timers: [] }) };
+  };
+  document.querySelectorAll<HTMLFormElement>('[data-stepform]').forEach((form) => {
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const i = Number(form.dataset.stepform);
+      const parsed = readStepForm(form);
+      if (!parsed) return;
+      const next = steps.map((s, j) => (j === i ? parsed : s));
+      saveSteps(next);
+    });
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-step-del]').forEach((b) => b.addEventListener('click', () => {
+    saveSteps(steps.filter((_, i) => i !== Number(b.dataset.stepDel)));
+  }));
+  document.querySelectorAll<HTMLButtonElement>('[data-step-up]').forEach((b) => b.addEventListener('click', () => {
+    const i = Number(b.dataset.stepUp);
+    if (i <= 0) return;
+    const next = [...steps];
+    [next[i - 1], next[i]] = [next[i], next[i - 1]];
+    saveSteps(next);
+  }));
+  document.querySelectorAll<HTMLButtonElement>('[data-step-down]').forEach((b) => b.addEventListener('click', () => {
+    const i = Number(b.dataset.stepDown);
+    if (i >= steps.length - 1) return;
+    const next = [...steps];
+    [next[i + 1], next[i]] = [next[i], next[i + 1]];
+    saveSteps(next);
+  }));
+  (document.getElementById('addstep') as HTMLFormElement).addEventListener('submit', (e) => {
+    e.preventDefault();
+    const parsed = readStepForm(e.target as HTMLFormElement);
+    if (!parsed) return;
+    saveSteps([...steps, parsed]);
   });
 }
 
@@ -238,29 +477,55 @@ function viewPlan(): void {
   const days = weekDates();
   const meals = ['breakfast', 'lunch', 'dinner', 'snack'];
   const recipes = visible(store.state.recipes);
+  const editing = editingPlanId ? plans.find((pl) => pl.id === editingPlanId) : undefined;
+  if (editingPlanId && !editing) editingPlanId = null;
+  const ep = editing?.payload as { date?: string; meal?: string; recipeId?: string | null; note?: string; servings?: number } | undefined;
   shell(`<h1>Plan — this week</h1>
   ${days.map((date) => `<section aria-label="Plan for ${date}"><h2>${date}</h2><ul>${meals.map((meal) => {
     const found = plans.filter((pl) => (pl.payload as { date?: string; meal?: string }).date === date && (pl.payload as { meal?: string }).meal === meal);
-    return `<li><strong>${meal}</strong>: ${found.map((f) => esc(planLabel(f.payload as { recipeId?: string | null; note?: string }))).join(', ') || '—'} <button type="button" data-date="${date}" data-meal="${meal}">+ Add</button></li>`;
+    return `<li><strong>${meal}</strong>: ${found.map((f) =>
+      `${esc(planLabel(f.payload as { recipeId?: string | null; note?: string }))} <button type="button" data-plan-edit="${f.id}">Edit</button> <button type="button" data-plan-del="${f.id}">Delete</button>`).join(', ') || '—'} <button type="button" data-date="${date}" data-meal="${meal}">+ Add</button></li>`;
   }).join('')}</ul></section>`).join('')}
-  <form id="addplan"><h2>Add plan entry</h2>
-  <label>Date <input name="date" type="date" required value="${days[0]}" /></label>
-  <label>Meal <select name="meal">${meals.map((m) => `<option>${m}</option>`).join('')}</select></label>
-  <label>Recipe <select name="recipeId"><option value="">— none —</option>${recipes.map((r) => `<option value="${r.id}">${esc((r.payload as { title?: string }).title ?? r.id)}</option>`).join('')}</select></label>
-  <label>Note <input name="note" placeholder="Optional note" /></label>
-  <button type="submit">Save (offline OK)</button></form>
+  <form id="addplan"><h2>${editing ? 'Edit plan entry' : 'Add plan entry'}</h2>
+  <label>Date <input name="date" type="date" required value="${esc(ep?.date ?? days[0])}" /></label>
+  <label>Meal <select name="meal">${meals.map((m) => `<option${(ep?.meal ?? 'dinner') === m ? ' selected' : ''}>${m}</option>`).join('')}</select></label>
+  <label>Recipe <select name="recipeId"><option value="">— none —</option>${recipes.map((r) => `<option value="${r.id}"${ep?.recipeId === r.id ? ' selected' : ''}>${esc((r.payload as { title?: string }).title ?? r.id)}</option>`).join('')}</select></label>
+  <label>Servings <input name="servings" type="number" min="0.25" max="100" step="0.25" value="${esc(ep?.servings ?? 4)}" /></label>
+  <label>Note <input name="note" placeholder="Optional note" value="${esc(ep?.note ?? '')}" /></label>
+  <button type="submit">Save (offline OK)</button>${editing ? ' <button type="button" id="cancelplan">Cancel</button>' : ''}</form>
   <form id="weeklist"><h2>Week to shopping list</h2><button type="submit">Aggregate week into list</button></form>`);
   (document.getElementById('addplan') as HTMLFormElement).addEventListener('submit', (e) => {
     e.preventDefault();
     const fd = new FormData(e.target as HTMLFormElement);
     const note = String(fd.get('note') || '').trim();
-    store.upsert('plan', '', {
+    const fields = {
       date: String(fd.get('date')), meal: String(fd.get('meal')),
-      recipeId: String(fd.get('recipeId') || '') || null, servings: 4,
-      ...(note ? { note } : {}),
-    });
+      recipeId: String(fd.get('recipeId') || '') || null,
+      servings: numVal(fd.get('servings')) ?? 4,
+      ...(note ? { note } : { note: '' }),
+    };
+    if (editing) {
+      patchPayload('plan', editing.id, fields);
+      editingPlanId = null;
+    } else {
+      store.upsert('plan', '', fields);
+    }
     render();
   });
+  document.getElementById('cancelplan')?.addEventListener('click', () => {
+    editingPlanId = null;
+    render();
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-plan-edit]').forEach((b) => b.addEventListener('click', () => {
+    editingPlanId = b.dataset.planEdit!;
+    render();
+    document.getElementById('addplan')!.scrollIntoView();
+  }));
+  document.querySelectorAll<HTMLButtonElement>('[data-plan-del]').forEach((b) => b.addEventListener('click', () => {
+    if (editingPlanId === b.dataset.planDel) editingPlanId = null;
+    store.remove('plan', b.dataset.planDel!);
+    render();
+  }));
   document.querySelectorAll<HTMLButtonElement>('[data-date]').forEach((b) => {
     b.addEventListener('click', () => {
       const form = document.getElementById('addplan') as HTMLFormElement;
@@ -285,40 +550,171 @@ function viewPlan(): void {
 }
 
 // ---- Shop / Pantry ----
+interface PantryForm { name?: string; quantity?: string; location?: string; expiresAt?: string; lowThreshold?: string; barcode?: string; }
+
 function viewLists(): void {
   const lists = visible(store.state.lists);
   if (selectedListId && !lists.some((l) => l.id === selectedListId)) selectedListId = null;
   const current = lists.find((l) => l.id === selectedListId) ?? lists[lists.length - 1];
   if (current) selectedListId = current.id;
-  const cp = current?.payload as { name?: string; items?: { name: string; quantity?: string; aisle?: string; checked?: boolean }[] } | undefined;
+  if (editingItemIdx != null && !(current?.payload as { items?: unknown[] } | undefined)?.items?.[editingItemIdx]) editingItemIdx = null;
+  const cp = current?.payload as { name?: string; items?: { name: string; quantity?: string; aisle?: string; checked?: boolean; recipeId?: string | null }[] } | undefined;
   const rows = sortedRows(cp?.items ?? []);
+  const recipes = visible(store.state.recipes);
+  const pantryItems = visible(store.state.pantry);
+  const editingPantry = editingPantryId ? pantryItems.find((pi) => pi.id === editingPantryId) : undefined;
+  if (editingPantryId && !editingPantry) editingPantryId = null;
+  const pp = (editingPantry?.payload ?? {}) as PantryForm;
   shell(`<h1>Shopping lists</h1>
   <form id="newlist"><label>Name <input name="name" required value="Weekly shop" /></label><button type="submit">New list</button></form>
   <ul>${lists.map((l) => `<li><button type="button" data-list="${l.id}"${l.id === current?.id ? ' aria-current="true"' : ''}>${esc((l.payload as { name?: string }).name ?? l.id)}</button></li>`).join('') || '<li>No lists yet.</li>'}</ul>
+  ${current ? `<form id="renamelist"><label>Rename list <input name="name" required value="${esc(cp?.name ?? '')}" /></label>
+  <button type="submit">Rename</button> <button type="button" id="dellist">Delete list</button></form>` : ''}
   <h2>Aisle-sorted pantry</h2>
-  <form id="addpantry"><label>Item <input name="name" required /></label><label>Qty <input name="quantity" /></label><button type="submit">Add to pantry</button></form>
-  <ul>${visible(store.state.pantry).map((pi) => `<li>${esc((pi.payload as { name?: string }).name)} <span class="muted">${esc((pi.payload as { quantity?: string }).quantity ?? '')}</span></li>`).join('') || '<li>Pantry empty.</li>'}</ul>
+  <form id="addpantry"><h3>${editingPantry ? 'Edit pantry item' : 'Add pantry item'}</h3>
+  <label>Item <input name="name" required value="${esc(pp.name ?? '')}" /></label>
+  <label>Qty <input name="quantity" value="${esc(pp.quantity ?? '')}" /></label>
+  <label>Location <input name="location" value="${esc(pp.location ?? '')}" /></label>
+  <label>Expires <input name="expiresAt" type="date" value="${esc(pp.expiresAt ?? '')}" /></label>
+  <label>Low threshold <input name="lowThreshold" value="${esc(pp.lowThreshold ?? '')}" /></label>
+  <label>Barcode <input name="barcode" value="${esc(pp.barcode ?? '')}" /></label>
+  <button type="submit">${editingPantry ? 'Save (offline OK)' : 'Add to pantry'}</button>${editingPantry ? ' <button type="button" id="cancelpantry">Cancel</button>' : ''}</form>
+  <ul>${pantryItems.map((pi) => {
+    const q = pi.payload as PantryForm;
+    return `<li>${esc(q.name)} <span class="muted">${esc(q.quantity ?? '')}${q.location ? ' · ' + esc(q.location) : ''}${q.expiresAt ? ' · exp ' + esc(q.expiresAt) : ''}</span>
+    <button type="button" data-pantry-edit="${pi.id}">Edit</button> <button type="button" data-pantry-del="${pi.id}">Delete</button></li>`;
+  }).join('') || '<li>Pantry empty.</li>'}</ul>
   <h2>${esc(cp?.name ?? 'No list yet')}</h2>
-  <ul>${rows.map(({ it, i }) => shopRowHtml(it, i, esc)).join('') || '<li>No items.</li>'}</ul>`);
+  ${current ? `<form id="additem"><h3>Add item</h3>
+  <label>Name <input name="name" required /></label>
+  <label>Quantity <input name="quantity" /></label>
+  <label>Aisle <input name="aisle" /></label>
+  <label>Recipe link <select name="recipeId"><option value="">— none —</option>${recipes.map((r) => `<option value="${r.id}">${esc((r.payload as { title?: string }).title ?? r.id)}</option>`).join('')}</select></label>
+  <button type="submit">Add item (offline OK)</button></form>` : ''}
+  <ul>${rows.map(({ it, i }) => {
+    if (editingItemIdx === i) {
+      return `<li><form data-itemsave="${i}"><label><input type="checkbox" data-item="${i}"${it.checked ? ' checked' : ''} /> <span class="item-name">${esc(it.name)}</span></label>
+      <label>Qty <input id="item-q-${i}" value="${esc(it.quantity ?? '')}" /></label>
+      <label>Aisle <input id="item-a-${i}" value="${esc(it.aisle ?? '')}" /></label>
+      <button type="submit">Save</button> <button type="button" data-itemcancel>Cancel</button></form></li>`;
+    }
+    // Checkbox row keeps the shared shopRowHtml markup (whole-label
+    // line-through styling); per-row Edit/Delete ride alongside it.
+    return `${shopRowHtml(it, i, esc).replace(/<\/li>$/, '')} <button type="button" data-itemedit="${i}">Edit</button> <button type="button" data-itemdel="${i}">Delete</button></li>`;
+  }).join('') || '<li>No items.</li>'}</ul>`);
   (document.getElementById('newlist') as HTMLFormElement).addEventListener('submit', (e) => {
     e.preventDefault();
     const name = String(new FormData(e.target as HTMLFormElement).get('name'));
     const env = store.upsert('list', '', { name, items: [] });
     selectedListId = env.id;
+    editingItemIdx = null;
     render();
   });
   document.querySelectorAll<HTMLButtonElement>('[data-list]').forEach((b) => {
     b.addEventListener('click', () => {
       selectedListId = b.dataset.list!;
+      editingItemIdx = null;
       render();
     });
+  });
+  (document.getElementById('renamelist') as HTMLFormElement | null)?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!current) return;
+    patchPayload('list', current.id, { name: String(new FormData(e.target as HTMLFormElement).get('name')) });
+    render();
+  });
+  document.getElementById('dellist')?.addEventListener('click', () => {
+    if (!current) return;
+    store.remove('list', current.id);
+    selectedListId = null;
+    editingItemIdx = null;
+    render();
   });
   (document.getElementById('addpantry') as HTMLFormElement).addEventListener('submit', (e) => {
     e.preventDefault();
     const fd = new FormData(e.target as HTMLFormElement);
-    store.upsert('pantryItem', '', { name: String(fd.get('name')), quantity: String(fd.get('quantity') || '') });
+    const name = String(fd.get('name') || '').trim();
+    if (!name) return;
+    const fields = {
+      name,
+      quantity: String(fd.get('quantity') || ''),
+      location: String(fd.get('location') || ''),
+      expiresAt: String(fd.get('expiresAt') || ''),
+      lowThreshold: String(fd.get('lowThreshold') || ''),
+      barcode: String(fd.get('barcode') || ''),
+    };
+    if (editingPantry) {
+      patchPayload('pantryItem', editingPantry.id, fields);
+      editingPantryId = null;
+    } else {
+      store.upsert('pantryItem', '', fields);
+    }
     render();
   });
+  document.getElementById('cancelpantry')?.addEventListener('click', () => {
+    editingPantryId = null;
+    render();
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-pantry-edit]').forEach((b) => b.addEventListener('click', () => {
+    editingPantryId = b.dataset.pantryEdit!;
+    render();
+    document.getElementById('addpantry')!.scrollIntoView();
+  }));
+  document.querySelectorAll<HTMLButtonElement>('[data-pantry-del]').forEach((b) => b.addEventListener('click', () => {
+    if (editingPantryId === b.dataset.pantryDel) editingPantryId = null;
+    store.remove('pantryItem', b.dataset.pantryDel!);
+    render();
+  }));
+  (document.getElementById('additem') as HTMLFormElement | null)?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!current) return;
+    const fd = new FormData(e.target as HTMLFormElement);
+    const name = String(fd.get('name') || '').trim();
+    if (!name) return;
+    const recipeId = String(fd.get('recipeId') || '') || null;
+    const latest = store.state.lists.find((l) => l.id === current.id);
+    const payload = (latest?.payload ?? cp) as { name?: string; items?: { name: string; quantity?: string; aisle?: string; checked?: boolean; recipeId?: string | null }[] };
+    const nextItems = [...(payload.items ?? []), {
+      name,
+      quantity: String(fd.get('quantity') || ''),
+      aisle: String(fd.get('aisle') || ''),
+      checked: false,
+      ...(recipeId ? { recipeId } : {}),
+    }];
+    store.upsert('list', current.id, { ...(payload as object), items: nextItems });
+    render();
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-itemedit]').forEach((b) => b.addEventListener('click', () => {
+    editingItemIdx = Number(b.dataset.itemedit);
+    render();
+  }));
+  document.querySelectorAll<HTMLButtonElement>('[data-itemcancel]').forEach((b) => b.addEventListener('click', () => {
+    editingItemIdx = null;
+    render();
+  }));
+  document.querySelectorAll<HTMLButtonElement>('[data-itemdel]').forEach((b) => b.addEventListener('click', () => {
+    if (!current) return;
+    const idx = Number(b.dataset.itemdel);
+    if (editingItemIdx === idx) editingItemIdx = null;
+    const latest = store.state.lists.find((l) => l.id === current.id);
+    const payload = (latest?.payload ?? cp) as { name?: string; items?: { name: string }[] };
+    const nextItems = (payload.items ?? []).filter((_, j) => j !== idx);
+    store.upsert('list', current.id, { ...(payload as object), items: nextItems });
+    render();
+  }));
+  document.querySelectorAll<HTMLFormElement>('[data-itemsave]').forEach((form) => form.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    if (!current) return;
+    const idx = Number(form.dataset.itemsave);
+    const q = (document.getElementById(`item-q-${idx}`) as HTMLInputElement).value;
+    const a = (document.getElementById(`item-a-${idx}`) as HTMLInputElement).value;
+    const latest = store.state.lists.find((l) => l.id === current.id);
+    const payload = (latest?.payload ?? cp) as { name?: string; items?: { quantity?: string; aisle?: string }[] };
+    const nextItems = (payload.items ?? []).map((it, j) => (j === idx ? { ...it, quantity: q, aisle: a } : it));
+    store.upsert('list', current.id, { ...(payload as object), items: nextItems });
+    editingItemIdx = null;
+    render();
+  }));
   if (current) {
     document.querySelectorAll<HTMLInputElement>('[data-item]').forEach((box) => {
       box.addEventListener('change', () => {
@@ -341,14 +737,28 @@ interface MenuEntry { dayOffset?: number; meal?: string; recipeId?: string; serv
 function viewMenus(): void {
   const menus = visible(store.state.menus);
   const recipes = visible(store.state.recipes);
+  const meals = ['breakfast', 'lunch', 'dinner', 'snack'];
   shell(`<h1>Menus</h1>
   <p id="menustatus" role="status" aria-live="polite"></p>
-  <ul>${menus.map((m) => {
+  ${menus.map((m) => {
     const mp = m.payload as { name?: string; entries?: MenuEntry[] };
-    return `<li><strong>${esc(mp.name ?? m.id)}</strong> (${(mp.entries ?? []).length} entries)
-    <button type="button" data-apply="${m.id}">Apply to week</button>
-    <button type="button" data-tolist="${m.id}">Add week to list</button></li>`;
-  }).join('') || '<li>No menus yet.</li>'}</ul>
+    const entries = mp.entries ?? [];
+    return `<section aria-label="Menu ${esc(mp.name ?? m.id)}">
+    <h2>${esc(mp.name ?? m.id)} (${entries.length} entries)</h2>
+    <form data-renamemenu="${m.id}"><label>Rename <input name="name" required value="${esc(mp.name ?? '')}" /></label>
+    <button type="submit">Rename</button> <button type="button" data-delmenu="${m.id}">Delete menu</button></form>
+    <ul>${entries.map((en, i) => `<li>Day ${esc(en.dayOffset ?? 0)} · ${esc(en.meal ?? 'dinner')} · ${esc(en.recipeId ? recipeTitle(en.recipeId) : '—')}${en.servings != null ? ` · serves ${esc(en.servings)}` : ''}${en.note ? ` · ${esc(en.note)}` : ''}
+      <button type="button" data-delentry="${m.id}:${i}">Remove</button></li>`).join('') || '<li>No entries yet.</li>'}</ul>
+    <form data-addentry="${m.id}"><h3>Add entry</h3>
+    <label>Day offset (0–6) <input name="dayOffset" type="number" min="0" max="6" step="1" value="0" /></label>
+    <label>Meal <select name="meal">${meals.map((meal) => `<option${meal === 'dinner' ? ' selected' : ''}>${meal}</option>`).join('')}</select></label>
+    <label>Recipe <select name="recipeId">${recipes.map((r) => `<option value="${r.id}">${esc((r.payload as { title?: string }).title ?? r.id)}</option>`).join('')}</select></label>
+    <label>Servings <input name="servings" type="number" min="0.25" max="100" step="0.25" value="4" /></label>
+    <label>Note <input name="note" placeholder="Optional note" /></label>
+    <button type="submit">Add entry (offline OK)</button></form>
+    <p><button type="button" data-apply="${m.id}">Apply to week</button>
+    <button type="button" data-tolist="${m.id}">Add week to list</button></p></section>`;
+  }).join('') || '<p>No menus yet.</p>'}
   <form id="newmenu"><h2>New menu</h2><label>Name <input name="name" required /></label>
   <button type="submit">Save</button></form>`);
   (document.getElementById('newmenu') as HTMLFormElement).addEventListener('submit', (e) => {
@@ -360,6 +770,43 @@ function viewMenus(): void {
     });
     render();
   });
+  document.querySelectorAll<HTMLFormElement>('[data-renamemenu]').forEach((form) => form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    patchPayload('menu', form.dataset.renamemenu!, { name: String(new FormData(form).get('name')) });
+    render();
+  }));
+  document.querySelectorAll<HTMLButtonElement>('[data-delmenu]').forEach((b) => b.addEventListener('click', () => {
+    store.remove('menu', b.dataset.delmenu!);
+    render();
+  }));
+  document.querySelectorAll<HTMLButtonElement>('[data-delentry]').forEach((b) => b.addEventListener('click', () => {
+    const [menuId, idxStr] = (b.dataset.delentry ?? '').split(':');
+    const m = store.state.menus.find((x) => x.id === menuId);
+    if (!m) return;
+    const entries = [...((m.payload as { entries?: MenuEntry[] }).entries ?? [])];
+    entries.splice(Number(idxStr), 1);
+    patchPayload('menu', menuId, { entries });
+    render();
+  }));
+  document.querySelectorAll<HTMLFormElement>('[data-addentry]').forEach((form) => form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const menuId = form.dataset.addentry!;
+    const fd = new FormData(form);
+    const off = numVal(fd.get('dayOffset')) ?? 0;
+    const note = String(fd.get('note') || '').trim();
+    const m = store.state.menus.find((x) => x.id === menuId);
+    if (!m) return;
+    const entries = [...((m.payload as { entries?: MenuEntry[] }).entries ?? [])];
+    entries.push({
+      dayOffset: Math.min(6, Math.max(0, Math.round(off))),
+      meal: String(fd.get('meal') || 'dinner'),
+      recipeId: String(fd.get('recipeId') || ''),
+      servings: numVal(fd.get('servings')) ?? 4,
+      ...(note ? { note } : {}),
+    });
+    patchPayload('menu', menuId, { entries });
+    render();
+  }));
   const applyMenu = (menuId: string, toList: boolean) => {
     const m = store.state.menus.find((x) => x.id === menuId);
     const mp = m?.payload as { name?: string; entries?: MenuEntry[] };
@@ -572,5 +1019,6 @@ function viewSettings(): void {
   document.getElementById('expmd')!.addEventListener('click', () => download('keep-cooking.md', exportMarkdown(), 'text/markdown'));
 }
 
+applyTheme();
 initRouter(render);
 render();
