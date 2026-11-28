@@ -163,6 +163,23 @@ export class Store {
       serverKnown: load<Record<string, true>>('serverKnown', {}),
     };
     if (!stored.length || migrated) save('recipes', this.state.recipes);
+    // The legacy demos are gone from records above; their queued edits
+    // must go too. E2E batches reject non-UUID ids outright, so one stale
+    // `demo-*` envelope would 400 the whole push (and its base record no
+    // longer exists to reconcile against). Provenance keys go with them.
+    const keptOutbox = this.state.outbox.filter((e) => !e.id.startsWith('demo-'));
+    if (keptOutbox.length !== this.state.outbox.length) {
+      this.state.outbox = keptOutbox;
+      save('outbox', this.state.outbox);
+    }
+    let pruned = false;
+    for (const k of Object.keys(this.state.serverKnown)) {
+      if (/:demo-/.test(k)) {
+        delete this.state.serverKnown[k];
+        pruned = true;
+      }
+    }
+    if (pruned) save('serverKnown', this.state.serverKnown);
   }
 
   private persist(): void {

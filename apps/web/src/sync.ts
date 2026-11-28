@@ -16,7 +16,17 @@
 // (e.g. two intentional same-content drafts), fall back to create — the
 // status-quo duplicate risk, never a wrong merge.
 
-import { Store, type EntityKind, type SyncEnvelope } from './store';
+import { Store, lwwMerge, type EntityKind, type SyncEnvelope } from './store';
+import {
+  advancePullCursor,
+  e2eDecrypt,
+  e2eEncrypt,
+  pullSince,
+  E2E_MAX_PUSH_BATCH,
+  type E2EIdentity,
+  type EncryptedEnvelope,
+} from './e2e';
+import { e2ePull, e2ePush } from './api';
 
 export interface ServerRecord {
   id: string;
@@ -243,6 +253,119 @@ async function pushOne(
 }
 
 export interface PushResult { pushed: number; failed: boolean; }
+
+export interface E2ESyncResult { pulled: number; pushed: number; conflicts: number; }
+
+export interface E2ETransport {
+  pull: (hash: string, since: string | null) => Promise<EncryptedEnvelope[]>;
+  push: (hash: string, envelopes: EncryptedEnvelope[]) => Promise<string[]>;
+}
+
+const liveE2ETransport: E2ETransport = {
+  pull: async (hash, since) => (await e2ePull(hash, since)) as EncryptedEnvelope[],
+  push: async (hash, envelopes) => (await e2ePush(hash, envelopes)).stored ?? [],
+};
+
+/** Header-LWW applied count: the remote wins a merge (identical replays don't count). */
+function countsAsPulled(store: Store, remote: SyncEnvelope): boolean {
+  const col = store.state[store.collectionKey(remote.entity)] as SyncEnvelope[];
+  const local = col.find((e) => e.id === remote.id);
+  if (!local) return true;
+  return lwwMerge(local, remote) === remote;
+}
+
+/**
+ * E2E sync against PUT/GET /v2/sync/:hash — parity with the native
+ * `syncE2E` (iOS SyncEngine.swift / Android SyncEngine.kt):
+ * pull + decrypt + header-LWW apply, then seal the plaintext outbox and
+ * push (chunked to the server's 500-envelope cap). Unstored envelopes lose
+ * a server-side LWW race: a full pull reconciles the winner and the
+ * conflict is counted, never silently dropped. Decrypt failures throw
+ * (fail closed) rather than syncing past a tampered header.
+ */
+export async function syncE2E(
+  store: Store,
+  identity: E2EIdentity,
+  syncCode: string,
+  transport: E2ETransport = liveE2ETransport,
+): Promise<E2ESyncResult> {
+  const remoteEncrypted = await transport.pull(identity.hash, pullSince());
+  let pulled = 0;
+  const remote: SyncEnvelope[] = [];
+  for (const enc of remoteEncrypted) {
+    remote.push(await e2eDecrypt(enc, identity, syncCode));
+  }
+  for (const env of remote) {
+    if (countsAsPulled(store, env)) pulled++;
+    store.applyRemote(env);
+  }
+  advancePullCursor(remote);
+
+  const pending = [...store.state.outbox];
+  let pushed = 0;
+  let conflicts = 0;
+  if (pending.length > 0) {
+    // Coalesce to the latest revision per record (native outbox parity:
+    // keyed by id, last write wins). The blind server LWW-merges each id
+    // independently, so pushing every queued revision would over-drain: a
+    // single stored id would ack older revisions the server never saw,
+    // skipping reconciliation for a revision it actually rejected.
+    const latest = new Map<string, SyncEnvelope>();
+    for (const env of pending) {
+      const key = `${env.entity}:${env.id}`;
+      const cur = latest.get(key);
+      if (!cur || env.updatedAt >= cur.updatedAt) latest.set(key, env);
+    }
+    const coalesced = [...latest.values()];
+    const encrypted: EncryptedEnvelope[] = [];
+    for (const env of coalesced) {
+      encrypted.push(await e2eEncrypt(env, identity, syncCode));
+    }
+    const stored = new Set<string>();
+    for (let i = 0; i < encrypted.length; i += E2E_MAX_PUSH_BATCH) {
+      const chunk = encrypted.slice(i, i + E2E_MAX_PUSH_BATCH);
+      for (const id of await transport.push(identity.hash, chunk)) stored.add(id);
+    }
+    const unstored: SyncEnvelope[] = [];
+    for (const env of coalesced) {
+      if (stored.has(env.id)) {
+        pushed++;
+      } else {
+        unstored.push(env);
+      }
+    }
+    // Draining is by revision identity: superseded revisions of a stored id
+    // go too (their content is subsumed by the pushed latest revision).
+    for (const env of pending) {
+      if (stored.has(env.id)) {
+        store.drainOutbox([{ id: env.id, updatedAt: env.updatedAt }]);
+      }
+    }
+    if (unstored.length > 0) {
+      // The blind server never returns the winner: force a full pull and
+      // reconcile through the same header-LWW merge.
+      const allEncrypted = await transport.pull(identity.hash, null);
+      const winners: SyncEnvelope[] = [];
+      for (const enc of allEncrypted) {
+        winners.push(await e2eDecrypt(enc, identity, syncCode));
+      }
+      advancePullCursor(winners);
+      for (const env of winners) {
+        if (countsAsPulled(store, env)) pulled++;
+        store.applyRemote(env);
+        // A lost PUT response can leave our exact revision queued while the
+        // server already holds it (the retry's id is absent from `stored`).
+        // The winner matches our pending identity, so drain it instead of
+        // retrying — and re-pushing — forever.
+        if (unstored.some((u) => u.entity === env.entity && u.id === env.id && u.updatedAt === env.updatedAt)) {
+          store.drainOutbox([{ id: env.id, updatedAt: env.updatedAt }]);
+        }
+      }
+      conflicts += new Set(unstored.map((e) => `${e.entity}:${e.id}`)).size;
+    }
+  }
+  return { pulled, pushed, conflicts };
+}
 
 // In-flight push per store: a second concurrent pushOutbox (e.g.
 // double-clicking Push) joins the running one instead of draining the queue

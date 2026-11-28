@@ -1,13 +1,24 @@
 import './styles.css';
-import { api, resolveApiBase, setApiBaseOverride, getApiBaseOverride, enrollDevice } from './api';
+import { api, resolveApiBase, setApiBaseOverride, getApiBaseOverride, enrollDevice, validateCustomServer } from './api';
 import type { RecipeInput, ImportFormat } from './api';
 import { Store, visible, type SyncEnvelope } from './store';
+import {
+  acceptInvite,
+  ensureE2EIdentity,
+  inviteBundleJson,
+  loadActive,
+  loadMetadata,
+  parseInviteBundle,
+  resetPullCursor,
+  type E2EMetadata,
+  type InviteBundle,
+} from './e2e';
+import { pushOutbox, syncE2E, type PushTransport } from './sync';
 import { parsePath, href, navigate, initRouter } from './router';
 import { scaleQuantity, formatQuantity } from './scale';
 import { aggregateWeekToList, collectPlanIngredients, scaleIngredientsForServings } from './aggregate';
 import { sortedRows, toggleItemChecked, shopRowHtml } from './lists';
 import { safeHttpUrl, ingredientLabel } from './display';
-import { pushOutbox, type PushTransport } from './sync';
 import { firstNonEmptyLine, parsePastedText, previewToRecipeInput, recipeToPreviewFields } from './ingest';
 
 const store = new Store();
@@ -68,6 +79,32 @@ const webTransport: PushTransport = {
     }
   },
 };
+
+// ---- Settings → Sync UI state (survives render() rebuilds) ----
+
+let syncStatus = '';
+let syncingNow = false;
+let inviteCode: string | null = null;
+let joinResult = '';
+let pendingJoin: InviteBundle | null = null;
+let joiningCode = false;
+let advancedOpen = false;
+let healthResult = '';
+let hintHealth = '';
+let pendingHint: string | null = null;
+
+type ActiveCredential = { metadata: E2EMetadata; syncCode: string };
+
+// Identity creation is shared: concurrent callers (warm-up, Sync now,
+// Connect) join the same in-flight creation instead of minting competing
+// identities, only one of which would survive.
+let identityInflight: Promise<ActiveCredential | null> | null = null;
+function getIdentity(household: string): Promise<ActiveCredential | null> {
+  identityInflight ??= ensureE2EIdentity(household).finally(() => {
+    identityInflight = null;
+  });
+  return identityInflight;
+}
 
 const NAV: [string, string][] = [
   ['/', 'Home'],
@@ -1577,20 +1614,333 @@ async function parseOfflineImport(
   throw new Error('Unrecognized file: expected Paprika/JSON/YAML/HTML text or a server connection for binary bundles.');
 }
 
+/** One-tap sync — parity with the native Sync now buttons. E2E when this
+ * browser holds a household key, legacy plaintext REST otherwise. */
+async function doSyncNow(): Promise<void> {
+  if (syncingNow) return;
+  syncingNow = true;
+  render();
+  try {
+    // No WebCrypto (plain-http contexts) means no E2E: fall back before
+    // touching identity creation, which needs crypto.subtle.
+    const hasWebCrypto = typeof crypto !== 'undefined' && !!crypto.subtle;
+    const cred = hasWebCrypto ? await getIdentity(loadMetadata()?.householdId ?? 'hh-demo') : null;
+    if (cred) {
+      // Best-effort device enrollment for signed writes (parity with native:
+      // enrollment runs first on every sync and never blocks reads).
+      try {
+        await enrollDevice('web');
+      } catch { /* offline: reads may still work */ }
+      const res = await syncE2E(store, cred.metadata, cred.syncCode);
+      syncStatus = res.conflicts > 0
+        ? `Synced ${res.pulled} down · ${res.pushed} up · ${res.conflicts} server-won`
+        : `Synced ${res.pulled} down · ${res.pushed} up`;
+    } else {
+      syncStatus = await doLegacySync();
+    }
+  } catch (err) {
+    syncStatus = `Sync failed (${err instanceof Error ? err.message : 'unknown error'})`;
+  } finally {
+    syncingNow = false;
+    render();
+  }
+}
+
+/** Legacy plaintext REST sync (pre-E2E fallback: no WebCrypto / no key). */
+async function doLegacySync(): Promise<string> {
+  try {
+    await enrollDevice('web');
+  } catch { /* offline: reads may still work */ }
+  const pushResult = await pushOutbox(store, webTransport);
+  if (pushResult.failed && store.state.outbox.length > 0) {
+    return `Pushed ${pushResult.pushed} envelope(s); ${store.state.outbox.length} retained offline — will retry.`;
+  }
+  try {
+    const [recipes, lists, pantry, plans, menus] = await Promise.all([
+      api.listRecipes(), api.listLists(), api.listPantry(), api.listPlans(), api.listMenus(),
+    ]);
+    const now = new Date().toISOString();
+    for (const r of recipes) {
+      store.applyRemote({ id: r.id, updatedAt: r.updatedAt ?? now, deviceId: r.deviceId ?? 'server', entity: 'recipe', payload: r } as SyncEnvelope);
+    }
+    for (const l of lists) {
+      store.applyRemote({ id: l.id, updatedAt: l.updatedAt ?? now, deviceId: (l.deviceId as string | undefined) ?? 'server', entity: 'list', payload: l } as SyncEnvelope);
+    }
+    for (const pi of pantry) {
+      store.applyRemote({ id: pi.id, updatedAt: pi.updatedAt ?? now, deviceId: (pi.deviceId as string | undefined) ?? 'server', entity: 'pantryItem', payload: pi } as SyncEnvelope);
+    }
+    for (const pl of plans) {
+      store.applyRemote({ id: pl.id, updatedAt: pl.updatedAt ?? now, deviceId: (pl.deviceId as string | undefined) ?? 'server', entity: 'plan', payload: pl } as SyncEnvelope);
+    }
+    for (const m of menus) {
+      store.applyRemote({ id: m.id, updatedAt: m.updatedAt ?? now, deviceId: (m.deviceId as string | undefined) ?? 'server', entity: 'menu', payload: m } as SyncEnvelope);
+    }
+    return `Synced ${recipes.length + lists.length + pantry.length + plans.length + menus.length} down · ${pushResult.pushed} up`;
+  } catch (err) {
+    return `Sync failed (offline?): ${err instanceof Error ? err.message : err}`;
+  }
+}
+
+/** Builds the invite code for the active household (creating a fresh
+ * household identity on first run). */
+async function doConnectDevice(): Promise<void> {
+  try {
+    const household = loadMetadata()?.householdId ?? 'hh-demo';
+    const cred = await getIdentity(household);
+    if (!cred) {
+      joinResult = 'Could not access secure storage — code unavailable.';
+      render();
+      return;
+    }
+    // Custom-server invites carry the server URL so the joining device lands
+    // on the same backend; built-in installs omit it (nothing to review).
+    const hint = (getApiBaseOverride() ?? '').trim() || undefined;
+    inviteCode = inviteBundleJson({
+      householdId: cred.metadata.householdId,
+      syncCode: cred.syncCode,
+      kid: cred.metadata.kid,
+      hash: cred.metadata.hash,
+      endpointHint: hint,
+    });
+    joinResult = '';
+  } catch {
+    joinResult = 'Could not access secure storage — code unavailable.';
+  }
+  render();
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      ta.remove();
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+}
+
+async function doCopyInvite(): Promise<void> {
+  if (!inviteCode) return;
+  joinResult = (await copyText(inviteCode)) ? 'Code copied.' : 'Clipboard unavailable.';
+  render();
+}
+
+async function doShareInvite(): Promise<void> {
+  if (!inviteCode) return;
+  try {
+    const nav = navigator as Navigator & { share?: (data: { text: string }) => Promise<void> };
+    if (nav.share) {
+      await nav.share({ text: inviteCode });
+      return;
+    }
+  } catch { /* user dismissed: fall through to copy */ }
+  await doCopyInvite();
+}
+
+async function doJoin(): Promise<void> {
+  if (joiningCode) return;
+  joiningCode = true;
+  try {
+    const pasted = (document.getElementById('pastecode') as HTMLTextAreaElement).value;
+    const bundle = await parseInviteBundle(pasted);
+    const active = await loadActive();
+    if (active && active.metadata.hash !== bundle.hash) {
+      // This browser already has a key that may hold synced data — require
+      // explicit confirmation before switching households.
+      pendingJoin = bundle;
+      joinResult = `This device already belongs to household ${active.metadata.householdId}. Joining switches to ${bundle.householdId} and replaces this device's key.`;
+    } else {
+      await finishJoin(bundle);
+    }
+  } catch (e) {
+    joinResult = e instanceof Error ? e.message : 'That text is not a Keep Cooking invite code.';
+  } finally {
+    joiningCode = false;
+    render();
+  }
+}
+
+async function doJoinAnyway(): Promise<void> {
+  const staged = pendingJoin;
+  pendingJoin = null;
+  if (!staged) {
+    render();
+    return;
+  }
+  await finishJoin(staged);
+}
+
+/** Persists a verified bundle; the endpoint hint is NEVER auto-applied. */
+async function finishJoin(bundle: InviteBundle): Promise<void> {
+  joiningCode = true;
+  try {
+    const prev = await loadActive();
+    const ok = await acceptInvite(bundle);
+    if (!ok) {
+      joinResult = 'Code does not match — it was mistyped or tampered with.';
+      return;
+    }
+    pendingJoin = null;
+    // Never display (or share) a stale credential: the visible code
+    // belonged to the previous household.
+    inviteCode = null;
+    if (!prev || prev.metadata.hash !== bundle.hash) {
+      // New household, new local state: old records and queued edits must
+      // neither show under nor upload into the joined household.
+      store.clearAll();
+      resetPullCursor();
+    }
+    pendingHint = null;
+    hintHealth = '';
+    const current = resolveApiBase();
+    const hint = bundle.endpointHint?.trim();
+    if (hint && hint !== current) {
+      pendingHint = hint;
+      advancedOpen = true;
+      joinResult = `Joined household ${bundle.householdId}. The code suggests a custom server — review it under Advanced before switching.`;
+    } else if ((getApiBaseOverride() ?? '').trim()) {
+      // A built-in invite names no server: staying on a stale custom
+      // override would sync the joined household against the wrong backend
+      // (appearing empty), so fall back to built-in explicitly.
+      setApiBaseOverride(null);
+      resetPullCursor();
+      joinResult = `Joined household ${bundle.householdId}. Switched to the built-in server (the code names no custom server).`;
+    } else {
+      joinResult = `Joined household ${bundle.householdId}.`;
+    }
+  } finally {
+    joiningCode = false;
+    render();
+  }
+}
+
+async function doTestServer(): Promise<void> {
+  const raw = (document.getElementById('customurl') as HTMLInputElement).value;
+  const err = validateCustomServer(raw);
+  if (err) {
+    healthResult = err;
+    render();
+    return;
+  }
+  healthResult = 'Testing…';
+  render();
+  const base = raw.trim() || resolveApiBase();
+  try {
+    await api.health(raw.trim() ? base : undefined);
+    healthResult = `Healthy — ${base}`;
+  } catch (err) {
+    healthResult = `Unreachable: ${err instanceof Error ? err.message : 'unknown error'}`;
+  }
+  render();
+}
+
+async function doSaveServer(): Promise<void> {
+  const raw = (document.getElementById('customurl') as HTMLInputElement).value;
+  const err = validateCustomServer(raw);
+  if (err) {
+    healthResult = err;
+    render();
+    return;
+  }
+  setApiBaseOverride(raw.trim() ? raw.trim() : null);
+  // New server, new history: a stale cursor would skip envelopes older than
+  // the old server's last sync. LWW handles replay.
+  resetPullCursor();
+  healthResult = 'Server saved — tap Sync now.';
+  render();
+}
+
+async function doUseHint(): Promise<void> {
+  const hint = pendingHint;
+  if (!hint) return;
+  const err = validateCustomServer(hint);
+  if (err) {
+    hintHealth = `${err} — keeping current server.`;
+    render();
+    return;
+  }
+  hintHealth = 'Checking…';
+  render();
+  try {
+    await api.health(hint);
+    setApiBaseOverride(hint);
+    resetPullCursor();
+    pendingHint = null;
+    hintHealth = '';
+    healthResult = 'Server saved — tap Sync now.';
+  } catch (err) {
+    hintHealth = `Unreachable: ${err instanceof Error ? err.message : 'unknown error'} — keeping current server.`;
+  }
+  render();
+}
+
 function viewSettings(): void {
   const override = getApiBaseOverride();
+  const hasCustomServer = !!override?.trim();
+  const household = loadMetadata()?.householdId ?? 'hh-demo';
+  // Warm the E2E identity in the background so there is always a key to
+  // share — the user never sees key setup, only Devices sharing. A join in
+  // progress owns identity creation; the warm-up must not mint (or commit)
+  // a competing identity underneath it.
+  if (!joiningCode && !pendingJoin) void getIdentity(household).catch(() => undefined);
+  const inviteBlock = inviteCode
+    ? `<p><code style="word-break:break-all">${esc(inviteCode)}</code></p>` +
+      `<p><button type="button" id="copycode">Copy code</button> ` +
+      `<button type="button" id="sharecode">Share</button></p>` +
+      `<p class="muted">Enter it on your second device under Devices → Join with code.</p>`
+    : '';
+  const pendingJoinBlock = pendingJoin
+    ? `<p><button type="button" id="joinanyway">Join anyway</button> ` +
+      `<button type="button" id="joincancel">Cancel</button></p>`
+    : '';
+  const joinResultBlock = joinResult
+    ? `<p role="status" aria-live="polite">${esc(joinResult)}</p>`
+    : '';
+  const hintBlock = pendingHint
+    ? `<p><strong>Suggested server (from code)</strong></p>` +
+      `<p><code style="word-break:break-all">${esc(pendingHint)}</code></p>` +
+      `<p class="muted">This came from the invite code — it is not your server until you confirm it. Confirming checks GET /health first.</p>` +
+      `<p><button type="button" id="usethint">Test &amp; use this server</button> ` +
+      `<button type="button" id="keephint">Keep current server</button></p>` +
+      (hintHealth ? `<p>${esc(hintHealth)}</p>` : '')
+    : '';
+  const advancedBlock = advancedOpen
+    ? `<p class="muted">Only set this if you run your own backend. Most users should leave it blank.</p>` +
+      `<p><label>Server URL (blank = built-in)<br /><input id="customurl" type="url" style="width:100%" value="${esc(override ?? '')}" placeholder="${esc(resolveApiBase())}" /></label></p>` +
+      `<p><button type="button" id="testserver">Test</button> ` +
+      `<button type="button" id="saveserver">Save</button>` +
+      (hasCustomServer ? ` <button type="button" id="usebuiltin">Use built-in</button>` : '') +
+      `</p>` +
+      (healthResult ? `<p role="status" aria-live="polite">${esc(healthResult)}</p>` : '') +
+      hintBlock
+    : '';
   const exportRecipes = visible(store.state.recipes);
   shell(`<h1>Settings</h1>
-  <p>API base: <code>${esc(resolveApiBase())}</code> ${override ? '(override)' : '(default)'}</p>
-  <form id="apibase"><label>API_BASE_URL override <input name="api" type="url" value="${esc(override ?? '')}" placeholder="${esc(resolveApiBase())}" /></label>
-  <button type="submit">Save</button> <button type="button" id="clearapi">Clear</button></form>
   <h2>Sync</h2>
+  <p id="syncstatus" role="status" aria-live="polite">${esc(syncStatus || 'Offline-ready')}</p>
   <p>Outbox: ${store.state.outbox.length} pending envelope(s).</p>
-  <p><button type="button" id="enroll">Enroll device</button>
-  <button type="button" id="push">Push outbox</button>
-  <button type="button" id="pull">Pull recipes</button>
-  <button type="button" id="share">Copy share link</button></p>
-  <p id="syncstatus" role="status" aria-live="polite"></p>
+  <p><button type="button" id="syncnow"${syncingNow ? ' disabled' : ''}>${syncingNow ? 'Syncing…' : 'Sync now'}</button></p>
+  <p class="muted">${hasCustomServer ? 'Using a custom server (see Advanced).' : 'Using the built-in server.'}</p>
+  <h2>Devices</h2>
+  <p><button type="button" id="connect">Connect a new device</button></p>
+  ${inviteBlock}
+  <p><label>Paste code to join<br /><textarea id="pastecode" rows="3" style="width:100%"></textarea></label></p>
+  <p><button type="button" id="join"${joiningCode ? ' disabled' : ''}>Join with code</button></p>
+  ${pendingJoinBlock}
+  ${joinResultBlock}
+  <p class="muted">Keep Cooking can't see or recover your data. Lose all devices = permanent loss. Add a new phone while you still have this one — open Settings here on both devices.</p>
+  <h2>Advanced</h2>
+  <p><button type="button" id="advancedtoggle" aria-expanded="${advancedOpen ? 'true' : 'false'}">${advancedOpen ? 'Custom server ▾' : 'Custom server ▸'}</button></p>
+  ${advancedBlock}
   <h2>Export</h2>
   <p id="exportcount" role="status" aria-live="polite"></p>
   <p><label class="checkrow"><input type="checkbox" id="exportselectall" checked /> Select all</label></p>
@@ -1626,71 +1976,34 @@ function viewSettings(): void {
   <button type="submit">Import</button></form>
   <p id="importstatus" role="status" aria-live="polite"></p>
   <p class="muted">Accepts .paprikarecipes, .paprikarecipe, .yml/.yaml, .html, .zip, .xml and P1 formats (.mx2, .mxp, .mz2, .mmf, .fdx/.fdxz, Pepperplate, Copy Me That, Yum). Offline: text imports (JSON/YAML/HTML) are parsed locally; binary bundles need a server connection.</p>`);
-  (document.getElementById('apibase') as HTMLFormElement).addEventListener('submit', (e) => {
-    e.preventDefault();
-    const v = String(new FormData(e.target as HTMLFormElement).get('api') || '').trim();
-    setApiBaseOverride(v || null);
+  document.getElementById('syncnow')!.addEventListener('click', () => void doSyncNow());
+  document.getElementById('connect')!.addEventListener('click', () => void doConnectDevice());
+  document.getElementById('copycode')?.addEventListener('click', () => void doCopyInvite());
+  document.getElementById('sharecode')?.addEventListener('click', () => void doShareInvite());
+  document.getElementById('join')!.addEventListener('click', () => void doJoin());
+  document.getElementById('joinanyway')?.addEventListener('click', () => void doJoinAnyway());
+  document.getElementById('joincancel')?.addEventListener('click', () => {
+    pendingJoin = null;
+    joinResult = 'Kept current household.';
     render();
   });
-  document.getElementById('clearapi')!.addEventListener('click', () => {
+  document.getElementById('advancedtoggle')!.addEventListener('click', () => {
+    advancedOpen = !advancedOpen;
+    render();
+  });
+  document.getElementById('testserver')?.addEventListener('click', () => void doTestServer());
+  document.getElementById('saveserver')?.addEventListener('click', () => void doSaveServer());
+  document.getElementById('usebuiltin')?.addEventListener('click', () => {
     setApiBaseOverride(null);
+    resetPullCursor();
+    healthResult = 'Using the built-in server.';
     render();
   });
-  const status = () => document.getElementById('syncstatus')!;
-  document.getElementById('enroll')!.addEventListener('click', async () => {
-    try {
-      const id = await enrollDevice('web');
-      status().textContent = `Enrolled device ${id}.`;
-    } catch (err) {
-      status().textContent = `Enroll failed (offline?): ${err instanceof Error ? err.message : err}`;
-    }
-  });
-  document.getElementById('push')!.addEventListener('click', async () => {
-    const result = await pushOutbox(store, webTransport);
-    const remaining = store.state.outbox.length;
-    // render() rebuilds the view (and its empty status), so set status after.
+  document.getElementById('usethint')?.addEventListener('click', () => void doUseHint());
+  document.getElementById('keephint')?.addEventListener('click', () => {
+    pendingHint = null;
+    hintHealth = '';
     render();
-    status().textContent = result.failed
-      ? `Pushed ${result.pushed} envelope(s); ${remaining} retained offline — will retry.`
-      : result.pushed
-        ? `Pushed ${result.pushed} envelope(s).`
-        : 'Outbox empty — nothing to push.';
-  });
-  document.getElementById('pull')!.addEventListener('click', async () => {
-    try {
-      const [recipes, lists, pantry, plans, menus] = await Promise.all([
-        api.listRecipes(), api.listLists(), api.listPantry(), api.listPlans(), api.listMenus(),
-      ]);
-      const now = new Date().toISOString();
-      for (const r of recipes) {
-        store.applyRemote({ id: r.id, updatedAt: r.updatedAt ?? now, deviceId: r.deviceId ?? 'server', entity: 'recipe', payload: r } as SyncEnvelope);
-      }
-      for (const l of lists) {
-        store.applyRemote({ id: l.id, updatedAt: l.updatedAt ?? now, deviceId: (l.deviceId as string | undefined) ?? 'server', entity: 'list', payload: l } as SyncEnvelope);
-      }
-      for (const pi of pantry) {
-        store.applyRemote({ id: pi.id, updatedAt: pi.updatedAt ?? now, deviceId: (pi.deviceId as string | undefined) ?? 'server', entity: 'pantryItem', payload: pi } as SyncEnvelope);
-      }
-      for (const pl of plans) {
-        store.applyRemote({ id: pl.id, updatedAt: pl.updatedAt ?? now, deviceId: (pl.deviceId as string | undefined) ?? 'server', entity: 'plan', payload: pl } as SyncEnvelope);
-      }
-      for (const m of menus) {
-        store.applyRemote({ id: m.id, updatedAt: m.updatedAt ?? now, deviceId: (m.deviceId as string | undefined) ?? 'server', entity: 'menu', payload: m } as SyncEnvelope);
-      }
-      // render() rebuilds the view (and its empty status), so set status after.
-      render();
-      status().textContent = `Pulled ${recipes.length} recipe(s), ${lists.length} list(s), ${pantry.length} pantry item(s), ${plans.length} plan(s), ${menus.length} menu(s).`;
-    } catch (err) {
-      status().textContent = `Pull failed (offline?): ${err instanceof Error ? err.message : err}`;
-    }
-  });
-  document.getElementById('share')!.addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(location.href.split('#')[0]);
-      status().textContent = 'Share link copied.';
-    } catch {
-      status().textContent = 'Clipboard unavailable.';
-    }
   });
   const exportBoxes = (): HTMLInputElement[] => Array.from(document.querySelectorAll<HTMLInputElement>('[data-export-id]'));
   const selectedExportIds = (): string[] => exportBoxes().filter((b) => b.checked).map((b) => b.dataset.exportId!).filter(Boolean);
