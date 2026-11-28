@@ -1,0 +1,14 @@
+apps/ios/Smidgen.xcodeproj/project.pbxproj
+  h_6bbd00fe0a456a 89,192,413,754
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b01add4bfe915c66451cae042861b7906a83a32e",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
