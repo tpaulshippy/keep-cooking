@@ -898,7 +898,8 @@ function exportJSON(selected?: LocalRecipe[]): string {
 
 function exportMarkdownFrom(recipes: LocalRecipe[]): string {
   const lines = ['# Keep Cooking export', ''];
-  for (const r of recipes) {
+  for (const [n, r] of recipes.entries()) {
+    if (n > 0) lines.push('---', '');
     lines.push(`## ${r.title}`, '');
     for (const i of r.ingredients ?? []) lines.push(`- ${i.display ? `${i.display} ` : ''}${i.name}`);
     lines.push('');
@@ -1115,7 +1116,7 @@ function exportHtmlLocal(selected?: LocalRecipe[]): string {
 <h3>Directions</h3>
 <ol>${r.steps.map((s) => `<li itemprop="recipeInstructions">${esc(s.text)}</li>`).join('')}</ol>
 </article>`;
-  }).join('\n');
+  }).join('\n<hr/>\n');
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Keep Cooking export</title></head><body><h1>Keep Cooking export</h1>\n${bodies}\n</body></html>`;
 }
 
@@ -1491,6 +1492,7 @@ function viewSettings(): void {
     document.getElementById('exportcount')!.textContent = `${sel} of ${boxes.length} selected`;
     const all = document.getElementById('exportselectall') as HTMLInputElement | null;
     if (all) all.checked = boxes.length > 0 && sel === boxes.length;
+    (document.getElementById('doexport') as HTMLButtonElement).disabled = sel === 0;
   };
   exportBoxes().forEach((b) => b.addEventListener('change', updateExportCount));
   document.getElementById('exportselectall')?.addEventListener('change', (e) => {
@@ -1527,13 +1529,22 @@ function viewSettings(): void {
       st().textContent = `Exported ${ids.length} recipe(s) via the server (${format}).`;
     } catch {
       const selected = localRecipes(new Set(ids));
+      // Offline fallback mirrors the server's per-format bodies. Paprika has
+      // no ZIP writer in the browser, so it falls back to a JSON-named file
+      // (valid Paprika JSON the app can re-import) instead of claiming the
+      // .paprikarecipes ZIP extension.
+      let name = fileName;
+      let type = exportMime[format];
       let text = '';
       if (format === 'json') text = exportJSON(selected);
       else if (format === 'md') text = exportMarkdown(selected);
       else if (format === 'html') text = exportHtmlLocal(selected);
-      else if (format === 'paprikarecipes') text = JSON.stringify(selected.map(toPaprikaJson), null, 2);
-      else text = JSON.stringify(selected.map(toPaprikaYaml), null, 2);
-      download(fileName, text, exportMime[format]);
+      else if (format === 'paprikarecipes') {
+        text = JSON.stringify(selected.map(toPaprikaJson), null, 2);
+        name = `${fileName}.json`;
+        type = 'application/json';
+      } else text = JSON.stringify(selected.map(toPaprikaYaml), null, 2);
+      download(name, text, type);
       st().textContent = 'Server unreachable — saved an offline-generated fallback instead.';
     }
   })());

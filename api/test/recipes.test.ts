@@ -50,6 +50,54 @@ describe('recipes CRUD + scale + export + misc', () => {
     expect(text).toContain(list[0]!.title);
   });
 
+  it('bulk export selects by all/ids with per-format bodies', async () => {
+    const { app } = await makeApp({ seed: false });
+    const mk = (title: string) => req(app, 'POST', '/api/recipes', {
+      body: {
+        title, servings: 2, householdId: 'hh-demo',
+        ingredients: [{ name: 'flour', display: 'flour' }],
+        steps: [{ text: 'Mix.' }],
+      },
+    });
+    const r1 = (await (await mk('Bulk One')).json()) as { id: string };
+    const r2 = (await (await mk('Bulk Two')).json()) as { id: string };
+
+    const allJson = await req(app, 'GET', '/api/export?format=json&all=true');
+    expect(allJson.status).toBe(200);
+    expect(((await allJson.json()) as unknown[])).toHaveLength(2);
+
+    const one = await req(app, 'GET', `/api/export?format=json&ids=${r1.id}`);
+    expect(one.status).toBe(200);
+    const oneBody = (await one.json()) as { id: string }[];
+    expect(oneBody).toHaveLength(1);
+    expect(oneBody[0]!.id).toBe(r1.id);
+
+    const md = await req(app, 'GET', `/api/export?format=md&ids=${r1.id},${r2.id}`);
+    expect(md.status).toBe(200);
+    expect(md.headers.get('content-type')).toContain('text/markdown');
+    expect(await md.text()).toContain('---');
+
+    const html = await req(app, 'GET', `/api/export?format=html&ids=${r1.id},${r2.id}`);
+    expect(html.status).toBe(200);
+    const htmlText = await html.text();
+    expect(htmlText).toContain('<hr/>');
+    expect(htmlText.match(/<html/g)).toHaveLength(1);
+
+    const zip = await req(app, 'GET', `/api/export?format=paprikarecipes&ids=${r1.id},${r2.id}`);
+    expect(zip.status).toBe(200);
+    expect(zip.headers.get('content-type')).toContain('application/zip');
+    const magic = new Uint8Array(await zip.arrayBuffer()).slice(0, 2);
+    expect(Array.from(magic)).toEqual([0x50, 0x4b]);
+
+    const yaml = await req(app, 'GET', `/api/export?format=yaml&ids=${r1.id}`);
+    expect(yaml.status).toBe(200);
+    expect(yaml.headers.get('content-type')).toContain('text/yaml');
+
+    expect((await req(app, 'GET', '/api/export?format=json')).status).toBe(400);
+    expect((await req(app, 'GET', '/api/export?format=csv&all=true')).status).toBe(404);
+    expect((await req(app, 'GET', '/api/export?format=json&ids=missing-id')).status).toBe(404);
+  });
+
   it('plans feed.ics is valid calendar', async () => {
     const { app } = await makeApp({ seed: false });
     await req(app, 'POST', '/api/plans', { body: { date: '2026-12-24', meal: 'dinner', note: 'Feast', householdId: 'hh-demo' } });

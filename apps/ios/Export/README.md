@@ -6,7 +6,7 @@ Markdown line style, `PT<n>M` durations, JSON-LD `Recipe` block with inline
 `<style>` and no external resources.
 
 `ExportView.swift` (`RecipeExportView`): multi-select recipe toggles + format
-+ ShareLink temp-file export. Works offline; the share row shows
+/ ShareLink temp-file export. Works offline; the share row shows
 "Select at least one recipe." when empty, otherwise
 "Share <Format> file (N recipes)". No in-app preview.
 

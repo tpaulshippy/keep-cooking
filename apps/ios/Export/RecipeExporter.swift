@@ -225,12 +225,22 @@ public func paprikaGzipMember(jsonData: Data) -> Data {
 
 /// Builds a `.paprikarecipes` ZIP (stored entries, one gzip member per
 /// recipe named `<sanitized title>.paprikarecipe`). Manual writer — no
-/// third-party ZIP dependency in the project.
+/// third-party ZIP dependency in the project. Names are made unique with an
+/// index suffix so two recipes with the same (or same-after-sanitizing)
+/// title never collide in one archive — a duplicate entry would overwrite
+/// or collapse recipes on import.
 public func exportPaprikaArchive(_ recipes: [any ExportableRecipe]) -> Data {
     var zip = Data()
     var central = Data()
-    for r in recipes {
-        let memberName = paprikaSanitizedFilename(r.title) + ".paprikarecipe"
+    var used = Set<String>()
+    for (idx, r) in recipes.enumerated() {
+        let base = paprikaSanitizedFilename(r.title).isEmpty ? "recipe-\(idx + 1)" : paprikaSanitizedFilename(r.title)
+        var memberName = base + ".paprikarecipe"
+        var n = 2
+        while !used.insert(memberName).inserted {
+            memberName = "\(base)-\(n).paprikarecipe"
+            n += 1
+        }
         let nameBytes = Array(memberName.utf8)
         let jsonData = Data(exportPaprikaJSON(r).utf8)
         let member = paprikaGzipMember(jsonData: jsonData)
@@ -376,11 +386,24 @@ private func escJSON(_ s: String) -> String {
     s.replacingOccurrences(of: "<", with: "\\u003c")
 }
 
-/// Self-contained Schema.org HTML export (matches Lane 1 `recipeToHtml`).
-/// Offline-safe: no external CSS/JS — only an inline <style> block plus the
-/// JSON-LD script. Validates by containing exactly one
-/// `application/ld+json` block whose `@type` is `Recipe`.
-public func exportHTML<R: ExportableRecipe>(_ r: R) -> String {
+/// Inner body content for one recipe (no <html> shell): heading,
+/// description, servings, ingredients and steps. Shared by the single- and
+/// multi-recipe HTML documents so both stay byte-identical per recipe.
+public func exportHTMLBody<R: ExportableRecipe>(_ r: R) -> String {
+    let steps = r.exportSteps.sorted { $0.position < $1.position }
+    let ings = r.exportIngredients.map { "<li>\(escHtml($0.text))</li>" }.joined()
+    let stepsHtml = steps.map { "<li>\(escHtml($0.text))</li>" }.joined()
+    let desc = r.recipeDescription.isEmpty ? "" : "<p>\(escHtml(r.recipeDescription))</p>"
+    return """
+    <h1>\(escHtml(r.title))</h1>\(desc)\
+    <p>Servings: \(escHtml(formatServings(r.servings)))</p>\
+    <h2>Ingredients</h2><ul>\(ings)</ul><h2>Steps</h2><ol>\(stepsHtml)</ol>
+    """
+}
+
+/// JSON-LD <script> snippet for one recipe (Schema.org Recipe).
+/// Shared by the single- and multi-recipe HTML documents.
+public func exportJSONLD<R: ExportableRecipe>(_ r: R) -> String {
     let steps = r.exportSteps.sorted { $0.position < $1.position }
     var jsonLd: [String: Any] = [
         "@context": "https://schema.org",
@@ -395,17 +418,33 @@ public func exportHTML<R: ExportableRecipe>(_ r: R) -> String {
     if let c = r.cookMinutes { jsonLd["cookTime"] = "PT\(c)M" }
     let rawJson = (try? JSONSerialization.data(withJSONObject: jsonLd, options: [.sortedKeys])) ?? Data()
     let jsonString = escJSON(String(data: rawJson, encoding: .utf8) ?? "{}")
-    let ings = r.exportIngredients.map { "<li>\(escHtml($0.text))</li>" }.joined()
-    let stepsHtml = steps.map { "<li>\(escHtml($0.text))</li>" }.joined()
-    let desc = r.recipeDescription.isEmpty ? "" : "<p>\(escHtml(r.recipeDescription))</p>"
+    return "<script type=\"application/ld+json\">\(jsonString)</script>"
+}
+/// Self-contained Schema.org HTML export (matches Lane 1 `recipeToHtml`).
+/// Offline-safe: no external CSS/JS — only an inline <style> block plus the
+/// JSON-LD script. Validates by containing exactly one
+/// `application/ld+json` block whose `@type` is `Recipe`.
+public func exportHTML<R: ExportableRecipe>(_ r: R) -> String {
     return """
     <!doctype html><html lang="en"><head><meta charset="utf-8">\
     <meta name="viewport" content="width=device-width,initial-scale=1">\
     <title>\(escHtml(r.title))</title>\
-    <script type="application/ld+json">\(jsonString)</script>\
+    \(exportJSONLD(r))\
     <style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem}</style>\
-    </head><body><h1>\(escHtml(r.title))</h1>\(desc)\
-    <p>Servings: \(escHtml(formatServings(r.servings)))</p>\
-    <h2>Ingredients</h2><ul>\(ings)</ul><h2>Steps</h2><ol>\(stepsHtml)</ol></body></html>
+    </head><body>\(exportHTMLBody(r))</body></html>
+    """
+}
+
+/// Multi-recipe HTML export: one document, one <article> per recipe joined
+/// by <hr/> (never concatenated full documents).
+public func exportHTMLPage(_ recipes: [any ExportableRecipe]) -> String {
+    let bodies = recipes.map { "<article>\(exportJSONLD($0))\(exportHTMLBody($0))</article>" }
+        .joined(separator: "\n<hr/>\n")
+    return """
+    <!doctype html><html lang="en"><head><meta charset="utf-8">\
+    <meta name="viewport" content="width=device-width,initial-scale=1">\
+    <title>Keep Cooking export</title>\
+    <style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem}</style>\
+    </head><body><h1>Keep Cooking export</h1>\(bodies)</body></html>
     """
 }

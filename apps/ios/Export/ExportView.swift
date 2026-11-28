@@ -64,11 +64,14 @@ public struct RecipeExportView: View {
     public init() {}
 
     private var selected: [Recipe] {
-        recipes.filter { selectedIds.contains($0.id) }
+        // Preserve the library order (stable file/ZIP member order no matter
+        // the toggle sequence) and drop IDs the live query no longer has.
+        let valid = Set(recipes.map(\.id))
+        return recipes.filter { selectedIds.contains($0.id) && valid.contains($0.id) }
     }
 
     private var allSelected: Bool {
-        !recipes.isEmpty && selectedIds.count == recipes.count
+        !recipes.isEmpty && selected.count == recipes.count
     }
 
     private var exportedText: String {
@@ -82,7 +85,7 @@ public struct RecipeExportView: View {
             return sel.map { exportMarkdown($0) }.joined(separator: "\n\n---\n\n")
         case .html:
             if sel.count == 1 { return exportHTML(sel[0]) }
-            return sel.map { exportHTML($0) }.joined(separator: "\n<hr/>\n")
+            return exportHTMLPage(sel)
         case .paprikarecipes:
             return exportPaprikaJSON(sel[0])
         case .yaml:
@@ -126,7 +129,7 @@ public struct RecipeExportView: View {
                 Text("Recipes")
             } footer: {
                 if !recipes.isEmpty {
-                    Text("\(selectedIds.count) of \(recipes.count) selected")
+                    Text("\(selected.count) of \(recipes.count) selected")
                 }
             }
             Section("Format") {
@@ -150,6 +153,11 @@ public struct RecipeExportView: View {
                 didInitSelection = true
                 selectedIds = Set(recipes.map(\.id))
             }
+        }
+        // Prune IDs the live query dropped (deleted recipes) so Select All,
+        // the count, and the footer never disagree about what is visible.
+        .onChange(of: recipes.map(\.id)) { _, ids in
+            selectedIds = selectedIds.intersection(ids)
         }
     }
 

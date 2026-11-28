@@ -130,7 +130,9 @@ fun ExportScreen(container: AppContainer, initialRecipeId: String = "") {
             Button(
                 onClick = {
                     scope.launch {
-                        val ids = selectedIds.toList()
+                        // Preserve the displayed order (stable file/ZIP member
+                        // order no matter the toggle sequence).
+                        val ids = recipes.filter { it.first in selectedIds }.map { it.first }
                         if (ids.isEmpty()) return@launch
                         val loaded = ids.mapNotNull { container.recipeExporter.loadRecipe(container.db, it) }
                         if (loaded.isEmpty()) return@launch
@@ -148,8 +150,10 @@ fun ExportScreen(container: AppContainer, initialRecipeId: String = "") {
                                 } else {
                                     "[" + loaded.joinToString(",") { container.recipeExporter.toJson(it) } + "]"
                                 }
-                                ExportFormat.HTML -> loaded.joinToString("\n<hr/>\n") {
-                                    container.recipeExporter.toHtml(it)
+                                ExportFormat.HTML -> if (loaded.size == 1) {
+                                    container.recipeExporter.toHtml(loaded.first())
+                                } else {
+                                    container.recipeExporter.toHtmlPage(loaded)
                                 }
                                 ExportFormat.YAML -> if (loaded.size == 1) {
                                     container.recipeExporter.toYaml(loaded.first())
