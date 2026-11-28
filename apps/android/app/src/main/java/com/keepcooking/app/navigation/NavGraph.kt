@@ -50,14 +50,19 @@ import com.keepcooking.app.ui.screens.RecipesScreen
 import com.keepcooking.app.ui.screens.SettingsScreen
 import com.keepcooking.app.ui.screens.isIngredientHeaderLine
 import com.keepcooking.app.ui.screens.loadLibraryRows
+import com.keepcooking.app.ui.screens.recipeDomainOf
+import com.keepcooking.app.ui.screens.saveEditorExtras
+import com.keepcooking.app.ui.screens.EditorExtras
 import com.keepcooking.app.ui.screens.ShareScreen
 import com.keepcooking.app.ui.screens.ShopScreen
 import com.keepcooking.app.wear.NowCookingScreen
 import java.time.Instant
+import java.util.ArrayDeque
 import java.util.UUID
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
@@ -327,12 +332,93 @@ internal suspend fun deleteRecipe(container: AppContainer, recipeId: String) {
 }
 
 /**
+ * Canonical full-snapshot recipe envelope payload (protocol: a non-shell
+ * recipe envelope is the sender's full snapshot — sparse keys would wipe
+ * server scalars). Keys match the favorite-toggle/AppShortcuts writers and
+ * the sync read path: `description` (never recipeDescription), `photoKeys`
+ * object, ingredient quantity/unit, step timers array, plus the editor
+ * extension keys (difficulty/notes/nutritionText/totalMinutes). Pure for
+ * JVM unit tests.
+ */
+internal fun buildRecipeEditPayload(
+    recipe: RecipeEntity,
+    categories: List<String>,
+    difficulty: String?,
+    notes: String,
+    nutritionText: String,
+    ingredients: List<IngredientEntity>,
+    steps: List<StepEntity>,
+): JsonObject = buildJsonObject {
+    val totalMinutes = if (recipe.prepMinutes != null || recipe.cookMinutes != null) {
+        (recipe.prepMinutes ?: 0) + (recipe.cookMinutes ?: 0)
+    } else {
+        null
+    }
+    put("id", recipe.id)
+    put("householdId", recipe.householdId)
+    put("title", recipe.title)
+    put("description", recipe.recipeDescription)
+    put("servings", recipe.servings)
+    recipe.prepMinutes?.let { put("prepMinutes", it) }
+    recipe.cookMinutes?.let { put("cookMinutes", it) }
+    totalMinutes?.let { put("totalMinutes", it) }
+    recipe.rating?.let { put("rating", it) }
+    put("isFavorite", recipe.isFavorite)
+    put("source", recipe.source)
+    put("sourceUrl", recipe.sourceUrl)
+    put("categories", JsonArray(categories.map { JsonPrimitive(it) }))
+    difficulty?.let { put("difficulty", it) }
+    if (notes.isNotBlank()) put("notes", notes)
+    if (nutritionText.isNotBlank()) put("nutritionText", nutritionText)
+    put(
+        "photoKeys",
+        buildJsonObject {
+            put("original", recipe.photoOriginal ?: "")
+            put("large1024", recipe.photoLarge1024 ?: "")
+            put("thumb", recipe.photoThumb ?: "")
+        },
+    )
+    put(
+        "ingredients",
+        JsonArray(
+            ingredients.map { ing ->
+                buildJsonObject {
+                    put("id", ing.id)
+                    put("name", ing.name)
+                    ing.quantity?.let { put("quantity", it) }
+                    put("unit", ing.unit)
+                    put("display", ing.display)
+                    put("position", ing.position)
+                }
+            },
+        ),
+    )
+    put(
+        "steps",
+        JsonArray(
+            steps.map { step ->
+                buildJsonObject {
+                    put("id", step.id)
+                    put("position", step.position)
+                    put("text", step.text)
+                    put(
+                        "timers",
+                        runCatching { Json.parseToJsonElement(step.timersJson).jsonArray }
+                            .getOrDefault(JsonArray(emptyList())),
+                    )
+                }
+            },
+        ),
+    )
+}
+
+/**
  * Persists an editor draft: recipe columns via [RecipeDao.upsert], ingredient
- * lines + direction paragraphs rewritten as child rows (stable ids reused by
- * position, new ids minted for added lines — web parity), then a full recipe
- * envelope so payload copies match the Room rows exactly (merge-path
- * pattern). Envelope-only extras (difficulty/notes/nutritionText) have no
- * Room columns — see RecipeEditorScreen kdoc — and travel payload-only.
+ * lines + direction paragraphs rewritten as child rows (ingredient ids reused
+ * by position; step ids + timer metadata reused by matching paragraph text —
+ * web parity), envelope-only extras persisted per recipe in DataStore, then a
+ * full canonical snapshot envelope ([buildRecipeEditPayload]) so payload
+ * copies match the Room rows exactly.
  */
 internal suspend fun saveRecipeEdit(
     container: AppContainer,
@@ -344,6 +430,10 @@ internal suspend fun saveRecipeEdit(
     val deviceId = container.syncEngine.deviceId()
     val existing = db.recipes().byId(recipeId) ?: return
     val cats = draft.categories.map { it.lowercase() }.toSortedSet().toList()
+    // Derive the source name from the edited URL; keep the existing name when
+    // the URL is blank or has no host (the editor has no source-name field).
+    val resolvedSource = recipeDomainOf(draft.sourceUrl, draft.source)
+        .takeIf { draft.sourceUrl.isNotBlank() } ?: draft.source
     db.recipes().upsert(
         existing.copy(
             title = draft.title.ifBlank { existing.title },
@@ -352,7 +442,7 @@ internal suspend fun saveRecipeEdit(
             prepMinutes = draft.prepMinutes,
             cookMinutes = draft.cookMinutes,
             rating = draft.rating,
-            source = draft.source,
+            source = resolvedSource,
             sourceUrl = draft.sourceUrl,
             categoriesJson = JsonArray(cats.map { JsonPrimitive(it) }).toString(),
             updatedAt = now,
@@ -381,22 +471,37 @@ internal suspend fun saveRecipeEdit(
             )
         },
     )
-    // Directions: blank-line-separated paragraphs = steps.
+    // Directions: text-matched pool so unchanged paragraphs keep their stable
+    // ids AND timer metadata (timersJson); new/edited paragraphs mint rows.
     val prevSteps = db.steps().forRecipe(recipeId)
     val paragraphs = draft.directionsText.split(Regex("\\n\\s*\\n"))
         .map { it.trim() }.filter { it.isNotEmpty() }
+    val stepPool = prevSteps.groupBy { it.text }.mapValues { ArrayDeque(it.value) }
     db.steps().deleteForRecipe(recipeId)
     db.steps().upsertAll(
         paragraphs.mapIndexed { i, text ->
+            val match = stepPool[text]?.pollFirst()
             StepEntity(
-                id = prevSteps.getOrNull(i)?.id ?: UUID.randomUUID().toString(),
+                id = match?.id ?: UUID.randomUUID().toString(),
                 recipeId = recipeId,
                 position = i,
                 text = text,
+                timersJson = match?.timersJson ?: "[]",
                 updatedAt = now,
                 deviceId = deviceId,
             )
         },
+    )
+    // Persist envelope-only extras per recipe so reopening the editor
+    // hydrates difficulty/notes/nutrition instead of clearing them.
+    saveEditorExtras(
+        container,
+        recipeId,
+        EditorExtras(
+            difficulty = draft.difficulty,
+            notes = draft.notes,
+            nutritionText = draft.nutritionText,
+        ),
     )
     // Re-read children so payload copies match the rows exactly.
     val updated = db.recipes().byId(recipeId) ?: return
@@ -408,49 +513,15 @@ internal suspend fun saveRecipeEdit(
             updatedAt = Instant.ofEpochMilli(now).toString(),
             deviceId = deviceId,
             entity = "recipe",
-            payload = buildJsonObject {
-                put("id", recipeId)
-                put("householdId", updated.householdId)
-                put("title", updated.title)
-                put("recipeDescription", updated.recipeDescription)
-                put("servings", updated.servings)
-                updated.prepMinutes?.let { put("prepMinutes", it) }
-                updated.cookMinutes?.let { put("cookMinutes", it) }
-                updated.rating?.let { put("rating", it) }
-                put("source", updated.source)
-                put("sourceUrl", updated.sourceUrl)
-                put("categories", JsonArray(cats.map { JsonPrimitive(it) }))
-                draft.difficulty?.let { put("difficulty", it) }
-                if (draft.notes.isNotBlank()) put("notes", draft.notes)
-                if (draft.nutritionText.isNotBlank()) put("nutritionText", draft.nutritionText)
-                updated.photoOriginal?.let { put("photoOriginal", it) }
-                updated.photoThumb?.let { put("photoThumb", it) }
-                put(
-                    "ingredients",
-                    JsonArray(
-                        finalIngredients.map { ing ->
-                            buildJsonObject {
-                                put("id", ing.id)
-                                put("name", ing.name)
-                                put("display", ing.display)
-                                put("position", ing.position)
-                            }
-                        },
-                    ),
-                )
-                put(
-                    "steps",
-                    JsonArray(
-                        finalSteps.map { step ->
-                            buildJsonObject {
-                                put("id", step.id)
-                                put("position", step.position)
-                                put("text", step.text)
-                            }
-                        },
-                    ),
-                )
-            },
+            payload = buildRecipeEditPayload(
+                recipe = updated,
+                categories = cats,
+                difficulty = draft.difficulty,
+                notes = draft.notes,
+                nutritionText = draft.nutritionText,
+                ingredients = finalIngredients,
+                steps = finalSteps,
+            ),
         ),
     )
 }
@@ -615,10 +686,10 @@ fun KeepCookingNav() {
                     onCook = { id -> navController.navigate(Routes.cook(id)) },
                     onEdit = { id -> navController.navigate(Routes.recipeEdit(id)) },
                     onDelete = { id ->
-                        scope.launch {
-                            runCatching { deleteRecipe(container, id) }
-                            navController.popBackStack()
-                        }
+                        deleteRecipe(container, id)
+                    },
+                    onDeleted = {
+                        navController.popBackStack()
                     },
                 )
             }

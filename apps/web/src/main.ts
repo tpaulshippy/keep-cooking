@@ -18,7 +18,7 @@ import { parsePath, href, navigate, initRouter } from './router';
 import { scaleQuantity, formatQuantity } from './scale';
 import { aggregateWeekToList, collectPlanIngredients, scaleIngredientsForServings } from './aggregate';
 import { sortedRows, toggleItemChecked, shopRowHtml } from './lists';
-import { safeHttpUrl, ingredientLabel, recipePhotoKey } from './display';
+import { safeHttpUrl, ingredientLabel, recipePhotoKey, formatMinutes, clampMinutes, clampServings, ingredientsToText, textToIngredients, stepsToText, textToSteps, nutritionRows, editorPhotos } from './display';
 import { firstNonEmptyLine, parsePastedText, previewToRecipeInput, recipeToPreviewFields } from './ingest';
 
 const store = new Store();
@@ -294,27 +294,14 @@ interface RecipeFormPayload {
   prepMinutes?: number | null; cookMinutes?: number | null; rating?: number | null;
   isFavorite?: boolean; source?: string; sourceUrl?: string; categories?: string[];
   difficulty?: string; photos?: unknown; photo?: unknown; photoUrl?: unknown; imageUrl?: unknown;
+  photoKeys?: { original?: string; large1024?: string; thumb?: string };
   cookbooks?: string[]; totalMinutes?: number | null;
   notes?: string; nutritionText?: string;
 }
 
 // ---- Recipe editor (sheet) — all metadata editing lives here; the detail
 // view is read-only. Used for both "new" (editId null) and "edit" modes.
-function editorPhotos(p: RecipeFormPayload & Record<string, unknown>): { count: number; thumb: string | null } {
-  const raw = p.photos;
-  const list: unknown[] = Array.isArray(raw) ? raw : [];
-  const candidates: unknown[] = [
-    ...list,
-    (p as Record<string, unknown>).photo,
-    (p as Record<string, unknown>).photoUrl,
-    (p as Record<string, unknown>).imageUrl,
-  ].filter((v) => typeof v === 'string' && (v as string).trim() !== '');
-  const urls = candidates.map((v) => safeHttpUrl(v)).filter((v): v is string => v !== null);
-  // Array-form photos count even when the URLs aren't renderable (offline blobs);
-  // bare string fields count when they hold a safe http(s) URL.
-  const count = Array.isArray(raw) ? raw.length : urls.length;
-  return { count, thumb: urls[0] ?? null };
-}
+// (Photo/count/line helpers live in display.ts for unit testing.)
 
 function editorDomain(p: { source?: string; sourceUrl?: string }): string {
   const safe = safeHttpUrl(p.sourceUrl);
@@ -328,79 +315,6 @@ function editorDomain(p: { source?: string; sourceUrl?: string }): string {
   return p.source || '';
 }
 
-/** Compact duration label: 25 -> "25 min", 85 -> "1 hr 25 min", 120 -> "2 hr". */
-function formatMinutes(n: number): string {
-  if (!Number.isFinite(n) || n < 0) return '';
-  const m = Math.round(n);
-  const h = Math.floor(m / 60);
-  const rest = m % 60;
-  if (h === 0) return `${rest} min`;
-  if (rest === 0) return `${h} hr`;
-  return `${h} hr ${rest} min`;
-}
-
-/** One textarea line per ingredient. Display+name pairs join as
- *  "display name" unless the name already carries the display text
- *  (prevents "line line" duplication when display === name). */
-function ingredientLine(ing: RecipeIngredient): string {
-  const d = (ing.display ?? '').trim();
-  const n = (ing.name ?? '').trim();
-  if (d && d !== n) return n.startsWith(d) ? n : `${d} ${n}`;
-  return (d || n || 'ingredient').trim();
-}
-
-/** One textarea line per ingredient, preserving group headers ("X:") as lines. */
-function ingredientsToText(ings: RecipeIngredient[]): string {
-  return ings.map((ing) => ingredientLine(ing)).join('\n');
-}
-
-/** Round-trip textarea lines to ingredient rows, carrying over id/quantity /
- *  unit / display when a line matches an existing row's text (first match
- *  wins); brand-new lines (incl. "Header:" group headers) become plain rows.
- *  Never drops rows silently — every non-blank line yields a row. */
-function textToIngredients(text: string, prev: RecipeIngredient[]): RecipeIngredient[] {
-  const pool = new Map<string, RecipeIngredient[]>();
-  for (const ing of prev) {
-    const key = ingredientLine(ing);
-    const list = pool.get(key);
-    if (list) list.push(ing);
-    else pool.set(key, [ing]);
-  }
-  return text.split('\n').map((l) => l.trim()).filter(Boolean).map((line, i) => {
-    const match = pool.get(line)?.shift();
-    if (match) return { ...match, position: i };
-    return { name: line, position: i };
-  });
-}
-
-/** Steps round-trip on blank-line-separated paragraphs, preserving id/timers
- *  when a paragraph matches an existing step's text. */
-function stepsToText(steps: RecipeStep[]): string {
-  return steps.map((s) => s.text.trim()).filter(Boolean).join('\n\n');
-}
-
-function textToSteps(text: string, prev: RecipeStep[]): RecipeStep[] {
-  const pool = new Map<string, RecipeStep[]>();
-  for (const s of prev) {
-    const list = pool.get(s.text.trim());
-    if (list) list.push(s);
-    else pool.set(s.text.trim(), [s]);
-  }
-  return text.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean).map((para, i) => {
-    const match = pool.get(para)?.shift();
-    if (match) return { ...match, text: para, position: i };
-    return { text: para, position: i };
-  });
-}
-
-/** "Key: value" nutrition lines render as a two-column read-only table. */
-function nutritionRows(text: string): { k: string; v: string }[] {
-  return text.split('\n').map((l) => l.trim()).filter(Boolean).map((line) => {
-    const idx = line.indexOf(':');
-    if (idx === -1) return { k: line, v: '' };
-    return { k: line.slice(0, idx).trim(), v: line.slice(idx + 1).trim() };
-  });
-}
 
 function viewRecipeEditor(editId: string | null): void {
   const existing = editId ? store.state.recipes.find((e) => e.id === editId && !e.deleted) : undefined;
@@ -418,6 +332,7 @@ function viewRecipeEditor(editId: string | null): void {
   const srcLink = safeHttpUrl(p.sourceUrl);
   let rating = typeof p.rating === 'number' && Number.isFinite(p.rating) ? Math.min(5, Math.max(0, p.rating)) : 0;
   let servings = typeof p.servings === 'number' && Number.isFinite(p.servings) ? p.servings : 4;
+  let fav = p.isFavorite === true;
   const prevIngredients = [...((p.ingredients as RecipeIngredient[] | undefined) ?? [])]
     .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
   const prevSteps = [...((p.steps as RecipeStep[] | undefined) ?? [])]
@@ -426,8 +341,8 @@ function viewRecipeEditor(editId: string | null): void {
   const cookInit = typeof p.cookMinutes === 'number' && Number.isFinite(p.cookMinutes) ? p.cookMinutes : null;
   const storedTotal = typeof p.totalMinutes === 'number' && Number.isFinite(p.totalMinutes) ? p.totalMinutes : null;
   // Total defaults to the derived prep+cook when the model has no explicit
-  // totalMinutes (display + editable, matching the native sheet).
-  const totalInit = storedTotal ?? (prepInit != null && cookInit != null ? prepInit + cookInit : null);
+  // totalMinutes; a single known side counts (missing side is zero).
+  const totalInit = storedTotal ?? (prepInit != null || cookInit != null ? (prepInit ?? 0) + (cookInit ?? 0) : null);
   const nutritionInit = typeof p.nutritionText === 'string' ? p.nutritionText : '';
   let nutritionMode: 'text' | 'table' = 'text';
 
@@ -455,13 +370,19 @@ function viewRecipeEditor(editId: string | null): void {
     <div class="sheet-row" aria-label="Photos">
       <div class="sheet-row-text"><span class="sheet-label">Photos</span>
         <span class="muted">${esc(photos.count)} photo${photos.count === 1 ? '' : 's'}</span></div>
-      ${photos.thumb
-        ? `<img class="sheet-thumb" src="${esc(photos.thumb)}" alt="" loading="lazy" />`
-        : `<span class="sheet-thumb sheet-thumb-empty" aria-hidden="true">📷</span>`}
+      ${photos.key
+        ? `<img class="sheet-thumb" data-photo-key="${esc(photos.key)}" alt="" loading="lazy" hidden />`
+        : photos.legacyUrl
+          ? `<img class="sheet-thumb" src="${esc(photos.legacyUrl)}" alt="" loading="lazy" />`
+          : `<span class="sheet-thumb sheet-thumb-empty" aria-hidden="true">📷</span>`}
     </div>
     <div class="sheet-row" aria-label="Rating">
       <span class="sheet-label">Rating</span>
       <div class="stars" role="group" aria-label="Rating (0 to 5 stars)">${starsHtml(rating)}</div>
+    </div>
+    <div class="sheet-row" aria-label="Favorite">
+      <span class="sheet-label">★ Favorite</span>
+      <button type="button" id="ed-fav" class="sheet-fav" aria-pressed="${fav}" aria-label="Toggle favorite">${fav ? '★' : '☆'}</button>
     </div>
     <div class="sheet-row" aria-label="Servings">
       <label class="sheet-label" for="ed-servings">Servings</label>
@@ -559,6 +480,13 @@ function viewRecipeEditor(editId: string | null): void {
   };
   bindStars();
 
+  const favBtn = document.getElementById('ed-fav') as HTMLButtonElement;
+  favBtn.addEventListener('click', () => {
+    fav = !fav;
+    favBtn.textContent = fav ? '★' : '☆';
+    favBtn.setAttribute('aria-pressed', String(fav));
+  });
+
   const setServings = (v: number): void => {
     servings = v;
     servingsInput.value = String(v);
@@ -642,19 +570,24 @@ function viewRecipeEditor(editId: string | null): void {
       (document.getElementById('ed-title') as HTMLInputElement).focus();
       return;
     }
-    const servingsRaw = Number((document.getElementById('ed-servings') as HTMLInputElement).value);
-    const servingsOut = Number.isFinite(servingsRaw) && servingsRaw > 0 ? servingsRaw : 4;
+    const servingsOut = clampServings((document.getElementById('ed-servings') as HTMLInputElement).value);
     const difficulty = (document.getElementById('ed-difficulty') as HTMLSelectElement).value;
     const cats = (document.getElementById('ed-cats') as HTMLInputElement).value
       .split(',').map((s) => s.trim()).filter(Boolean);
     const cookbook = (document.getElementById('ed-cookbook') as HTMLInputElement).value.trim();
-    const prepOut = numVal((document.getElementById('ed-prep') as HTMLInputElement).value);
-    const cookOut = numVal((document.getElementById('ed-cook') as HTMLInputElement).value);
-    const totalOut = numVal((document.getElementById('ed-total') as HTMLInputElement).value);
+    const prepOut = clampMinutes((document.getElementById('ed-prep') as HTMLInputElement).value);
+    const cookOut = clampMinutes((document.getElementById('ed-cook') as HTMLInputElement).value);
+    const totalOut = clampMinutes((document.getElementById('ed-total') as HTMLInputElement).value);
+    // Servings init may come from unclamped stored data; normalize the field
+    // so a re-save without touching it still enqueues an API-valid value.
+    if (servingsOut !== servings) setServings(servingsOut);
+    // Minutes are clamped to nonnegative ints (API rejects -1 / 1.5); normalize
+    // the visible fields the same way before enqueueing.
     const fields: Record<string, unknown> = {
       title,
       description: (document.getElementById('ed-desc') as HTMLTextAreaElement).value,
       servings: servingsOut,
+      isFavorite: fav,
       source: (document.getElementById('ed-source') as HTMLInputElement).value,
       sourceUrl: (document.getElementById('ed-sourceurl') as HTMLInputElement).value,
       categories: cats,
@@ -683,6 +616,9 @@ function viewRecipeEditor(editId: string | null): void {
       navigate('/recipes/' + env.id);
     }
   });
+  // Resolve the photoKeys thumbnail (signed R2 URL); failures remove the
+  // img and the row falls back to the count + placeholder styling.
+  hydrateRecipePhotos();
 }
 
 interface RecipeIngredient { id?: string; name: string; quantity?: number; unit?: string; display?: string; position?: number; }

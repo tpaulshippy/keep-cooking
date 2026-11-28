@@ -78,9 +78,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import com.keepcooking.app.AppContainer
-import com.keepcooking.app.cook.fractionDisplayString
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
@@ -100,11 +104,9 @@ import kotlinx.serialization.json.jsonPrimitive
  * caller-supplied [onSave] (NavGraph's Room + sync-outbox write, the same
  * DAO/sync path detail uses). Photo capture is out of scope — the Photos
  * row is display-only. Difficulty / Notes / Nutrition text have no Room
- * columns (Paprika/server-contract extension fields), so they round-trip in
- * the sync envelope payload but are not stored locally — no DB migration.
- * TODO: add nullable Room columns (notes, nutritionText, difficulty) when
- * the sync read path learns them, and hydrate the draft from Room instead
- * of starting them unset/empty.
+ * columns (Paprika/server-contract extension fields), so they persist per
+ * recipe in DataStore ([loadEditorExtras]/[saveEditorExtras]) and round-trip
+ * in the sync envelope payload — no DB migration.
  */
 data class RecipeEditDraft(
     val title: String = "",
@@ -124,16 +126,69 @@ data class RecipeEditDraft(
     val ingredientsText: String = "",
     /** Steps as paragraphs separated by blank lines. */
     val directionsText: String = "",
-    /** TODO: envelope-only until a nullable Room column lands. */
+    /** Persisted per recipe in DataStore ([saveEditorExtras]); envelope-only. */
     val notes: String = "",
-    /** TODO: envelope-only until a nullable Room column lands. */
+    /** Persisted per recipe in DataStore ([saveEditorExtras]); envelope-only. */
     val nutritionText: String = "",
 )
+
+/**
+ * Per-recipe envelope-only extras (difficulty/notes/nutritionText). These
+ * have no Room columns, so they persist in DataStore keyed by recipe id and
+ * round-trip in the sync envelope payload — no DB migration. If nullable
+ * Room columns ever land, hydrate from Room instead and drop this store.
+ */
+@Serializable
+data class EditorExtras(
+    val difficulty: String? = null,
+    val notes: String = "",
+    val nutritionText: String = "",
+)
+
+private fun editorExtrasKey(recipeId: String) = stringPreferencesKey("editor_extras:$recipeId")
+
+/** Last-saved envelope-only extras for a recipe (empty defaults when never saved). */
+suspend fun loadEditorExtras(container: AppContainer, recipeId: String): EditorExtras =
+    runCatching {
+        container.appDataStore.data.map { prefs ->
+            prefs[editorExtrasKey(recipeId)]?.let { raw ->
+                Json.decodeFromString<EditorExtras>(raw)
+            }
+        }.first()
+    }.getOrNull() ?: EditorExtras()
+
+/** Persists envelope-only extras for a recipe (called on every editor save). */
+suspend fun saveEditorExtras(container: AppContainer, recipeId: String, extras: EditorExtras) {
+    runCatching {
+        container.appDataStore.edit { prefs ->
+            prefs[editorExtrasKey(recipeId)] = Json.encodeToString(EditorExtras.serializer(), extras)
+        }
+    }
+}
 
 val RecipeDifficultyOptions = listOf("Easy", "Medium", "Hard")
 
 /** A trimmed line ending in ":" is a group header, not an ingredient. */
 fun isIngredientHeaderLine(line: String): Boolean = line.trim().endsWith(":")
+
+/**
+ * Full editor/share line for an ingredient row: the stored display line, plus
+ * the name when display is quantity-only text (e.g. display "1 tsp" with name
+ * "white miso" renders "1 tsp white miso" instead of dropping the name).
+ */
+fun ingredientFullLine(display: String, name: String): String {
+    val d = display.trim()
+    val n = name.trim()
+    return when {
+        d.isBlank() -> n
+        n.isBlank() || d.contains(n, ignoreCase = true) || n.contains(d, ignoreCase = true) -> d
+        else -> "$d $n"
+    }
+}
+
+/** Header predicate shared by detail bullets, share text and the editor. */
+fun isIngredientHeaderRow(quantity: Double?, unit: String, line: String): Boolean =
+    quantity == null && unit.isBlank() && line.isNotBlank() && line.trim().endsWith(":")
 
 /** "25 min" / "1 hr 25 min" / "2 hr"; null/negative renders blank. */
 fun formatMinutes(mins: Int?): String {
@@ -156,6 +211,7 @@ suspend fun loadRecipeEditDraft(container: AppContainer, recipeId: String): Reci
     }.getOrDefault(emptyList())
     val ingredients = container.db.ingredients().forRecipe(recipeId)
     val steps = container.db.steps().forRecipe(recipeId)
+    val extras = loadEditorExtras(container, recipeId)
     return RecipeEditDraft(
         title = r.title,
         description = r.recipeDescription,
@@ -166,13 +222,15 @@ suspend fun loadRecipeEditDraft(container: AppContainer, recipeId: String): Reci
         source = r.source,
         sourceUrl = r.sourceUrl,
         categories = cats,
-        difficulty = null, // No Room column (see kdoc) — always starts unset.
+        difficulty = extras.difficulty,
         photoOriginal = r.photoOriginal,
         photoThumb = r.photoThumb,
-        ingredientsText = ingredients.map { it.display.ifBlank { it.name } }.joinToString("\n"),
+        ingredientsText = ingredients.joinToString("\n") {
+            ingredientFullLine(it.display, it.name)
+        },
         directionsText = steps.map { it.text }.joinToString("\n\n"),
-        notes = "", // TODO: hydrate from Room once a nullable notes column exists.
-        nutritionText = "", // TODO: hydrate from Room once a nullable column exists.
+        notes = extras.notes,
+        nutritionText = extras.nutritionText,
     )
 }
 
@@ -335,8 +393,10 @@ fun RecipeEditorScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        val thumb = d.photoThumb ?: d.photoOriginal
-                        if (!thumb.isNullOrBlank()) {
+                        val thumb = resolvePhotoUrl(
+                            d.photoThumb?.takeIf { it.isNotBlank() } ?: d.photoOriginal,
+                        )
+                        if (thumb != null) {
                             AsyncImage(
                                 model = thumb,
                                 contentDescription = "Recipe photo",
@@ -417,7 +477,10 @@ fun RecipeEditorScreen(
                             Icon(Icons.Filled.Remove, contentDescription = "Fewer servings")
                         }
                         var servingsText by remember(d.servings) {
-                            mutableStateOf(fractionDisplayString(d.servings))
+                            // Decimal text: the change handler parses doubles, so
+                            // fraction glyphs (fractionDisplayString) would make
+                            // values like 1½ uneditable. Fractions stay display-only.
+                            mutableStateOf(d.servings.toString().removeSuffix(".0"))
                         }
                         TextField(
                             value = servingsText,

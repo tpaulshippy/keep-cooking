@@ -6,56 +6,26 @@
 // collapsible DisclosureGroup sections (Info expanded by default), card
 // rows bound to a draft copy. Save writes back through the same store/sync
 // path the detail view uses (mutate + updatedAt bump + context.save());
-// Cancel discards the draft. No model migration: difficulty, notes, and
-// nutrition text are optional passthroughs persisted in UserDefaults keyed
-// by recipe id. Cookbook is display-only (membership read from Cookbook
-// models). Times map to prepMinutes/cookMinutes; Total is derived.
+// Cancel discards the draft. Difficulty, notes, and nutritionText live on
+// the synced Recipe model (envelope keys, LWW) — never local-only.
+// Cookbook is display-only (membership read from Cookbook models).
+// Times map to prepMinutes/cookMinutes; Total is stored when edited,
+// otherwise preserved/derived.
 
 import SwiftUI
 import SwiftData
 
-/// Optional difficulty passthrough (no model key — no migration).
-/// Persisted per-recipe in UserDefaults so the picker round-trips.
+/// Difficulty options. The selection is stored on the synced Recipe model
+/// (`difficulty`, nil = unspecified) — never local-only.
 public enum RecipeDifficulty: String, CaseIterable, Hashable {
     case unspecified = "Unspecified"
     case easy = "Easy"
     case medium = "Medium"
     case hard = "Hard"
 
-    static func load(for recipeId: String) -> RecipeDifficulty {
-        let raw = UserDefaults.standard.string(forKey: Self.key(for: recipeId)) ?? ""
-        return RecipeDifficulty(rawValue: raw) ?? .unspecified
-    }
-
-    func save(for recipeId: String) {
-        if self == .unspecified {
-            UserDefaults.standard.removeObject(forKey: Self.key(for: recipeId))
-        } else {
-            UserDefaults.standard.set(rawValue, forKey: Self.key(for: recipeId))
-        }
-    }
-
-    static func key(for recipeId: String) -> String {
-        "smidgen.recipeDifficulty.\(recipeId)"
-    }
-}
-
-/// Optional free-text passthroughs (no model keys — no migration).
-enum RecipeEditorNotes {
-    static func loadNotes(for recipeId: String) -> String {
-        UserDefaults.standard.string(forKey: "smidgen.recipeNotes.\(recipeId)") ?? ""
-    }
-
-    static func saveNotes(_ text: String, for recipeId: String) {
-        UserDefaults.standard.set(text, forKey: "smidgen.recipeNotes.\(recipeId)")
-    }
-
-    static func loadNutrition(for recipeId: String) -> String {
-        UserDefaults.standard.string(forKey: "smidgen.recipeNutrition.\(recipeId)") ?? ""
-    }
-
-    static func saveNutrition(_ text: String, for recipeId: String) {
-        UserDefaults.standard.set(text, forKey: "smidgen.recipeNutrition.\(recipeId)")
+    /// Stored model value → picker selection (unknown strings are unspecified).
+    static func fromStored(_ raw: String?) -> RecipeDifficulty {
+        RecipeDifficulty(rawValue: raw ?? "") ?? .unspecified
     }
 }
 
@@ -92,6 +62,11 @@ public struct RecipeEditorView: View {
     @State private var nutritionText: String
     @State private var nutritionShowsTable = false
 
+    /// Original prep/cook: a foreign explicit total is preserved until the
+    /// user edits times, at which point the stored total is recomputed.
+    private let originalPrepMinutes: Int?
+    private let originalCookMinutes: Int?
+
     /// Original serialized lines, used to match edited lines back to their
     /// model objects so untouched rows round-trip with zero data loss.
     private let originalIngredientLines: [String]
@@ -104,7 +79,7 @@ public struct RecipeEditorView: View {
         _servingsValue = State(initialValue: recipe.servings)
         _servingsText = State(initialValue: Self.servingsString(recipe.servings))
         _sourceUrl = State(initialValue: recipe.sourceUrl)
-        _difficulty = State(initialValue: RecipeDifficulty.load(for: recipe.id))
+        _difficulty = State(initialValue: RecipeDifficulty.fromStored(recipe.difficulty))
         _categoriesText = State(initialValue: recipe.categories.joined(separator: ", "))
         _photoUrlText = State(initialValue: recipe.photoThumb ?? recipe.photoOriginal ?? "")
         _prepText = State(initialValue: recipe.prepMinutes.map(String.init) ?? "")
@@ -115,8 +90,10 @@ public struct RecipeEditorView: View {
         _ingredientsText = State(initialValue: ingLines.joined(separator: "\n"))
         let steps = recipe.steps.sorted { $0.position < $1.position }.map { $0.text }
         _directionsText = State(initialValue: steps.joined(separator: "\n\n"))
-        _notesText = State(initialValue: RecipeEditorNotes.loadNotes(for: recipe.id))
-        _nutritionText = State(initialValue: RecipeEditorNotes.loadNutrition(for: recipe.id))
+        _notesText = State(initialValue: recipe.notes ?? "")
+        _nutritionText = State(initialValue: recipe.nutritionText ?? "")
+        self.originalPrepMinutes = recipe.prepMinutes
+        self.originalCookMinutes = recipe.cookMinutes
         self.originalIngredientLines = ingLines
         self.originalStepTexts = steps
     }
@@ -154,15 +131,16 @@ public struct RecipeEditorView: View {
     /// have no public-URL resolver yet and render as placeholders).
     /// Matches the detail view's photoURL(forKey:) behavior.
     private var photoCount: Int {
-        [photoUrlText, recipe.photoThumb ?? "", recipe.photoOriginal ?? ""]
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter {
-                guard !$0.isEmpty, let u = URL(string: $0),
-                      let s = u.scheme?.lowercased()
-                else { return false }
-                return s == "http" || s == "https"
-            }
-            .count
+        Array(Set(
+            [photoUrlText, recipe.photoThumb ?? "", recipe.photoOriginal ?? ""]
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter {
+                    guard !$0.isEmpty, let u = URL(string: $0),
+                          let s = u.scheme?.lowercased()
+                    else { return false }
+                    return s == "http" || s == "https"
+                }
+        )).count
     }
 
     private var sourceDomain: String {
@@ -181,15 +159,26 @@ public struct RecipeEditorView: View {
         Int(cookText.trimmingCharacters(in: .whitespaces)).flatMap { $0 > 0 ? $0 : nil }
     }
 
-    private var totalMinutes: Int? {
+    private var derivedTotalMinutes: Int? {
         let p = prepMinutes ?? 0, c = cookMinutes ?? 0
         let total = p + c
         return total > 0 ? total : nil
     }
 
-    /// Display-only: first cookbook containing this recipe, else placeholder.
+    /// True once the user edits prep/cook. A stored foreign total is shown
+    /// until then; afterwards the stored total is recomputed from the edits.
+    private var timesEdited: Bool {
+        prepMinutes != originalPrepMinutes || cookMinutes != originalCookMinutes
+    }
+
+    private var shownTotalMinutes: Int? {
+        timesEdited ? derivedTotalMinutes : (recipe.totalMinutes ?? derivedTotalMinutes)
+    }
+
+    /// Display-only: first live cookbook containing this recipe, else
+    /// placeholder. Tombstoned cookbooks never surface here.
     private var cookbookName: String {
-        cookbooks.first { $0.recipeIds.contains(recipe.id) }?.name ?? "My Cookbook"
+        cookbooks.first { !$0.tombstoned && $0.recipeIds.contains(recipe.id) }?.name ?? "My Cookbook"
     }
 
     private var canSave: Bool {
@@ -422,7 +411,7 @@ public struct RecipeEditorView: View {
                         if rating == Double(star) { rating = nil }
                         else { rating = Double(star) }
                     } label: {
-                        Image(systemName: filled ? "star.fill" : "star.fill")
+                        Image(systemName: filled ? "star.fill" : "star")
                             .font(.title3)
                             .foregroundStyle(filled ? .yellow : Color(.tertiaryLabel))
                             .frame(width: 40, height: 44)
@@ -451,11 +440,12 @@ public struct RecipeEditorView: View {
                 .accessibilityIdentifier("recipe-editor-servings-field")
                 .onChange(of: servingsText) {
                     let cleaned = servingsText.trimmingCharacters(in: .whitespaces)
-                    if let v = Double(cleaned), v > 0, v <= 100 {
+                    // Shared editor range 0.25–100: never alter other values.
+                    if let v = Double(cleaned), v >= 0.25, v <= 100 {
                         servingsValue = v
                     }
                 }
-            Stepper("", value: $servingsValue, in: 1...60, step: 1)
+            Stepper("", value: $servingsValue, in: 0.25...100, step: 1)
                 .labelsHidden()
                 .accessibilityLabel("Servings")
                 .accessibilityIdentifier("recipe-editor-servings-stepper")
@@ -579,7 +569,7 @@ public struct RecipeEditorView: View {
                 Text("Total Time")
                     .font(.body)
                 Spacer()
-                Text(Self.formatMinutes(totalMinutes))
+                Text(Self.formatMinutes(shownTotalMinutes))
                     .font(.body)
                 Image(systemName: "clock")
                     .font(.body)
@@ -588,7 +578,7 @@ public struct RecipeEditorView: View {
             }
             .padding(.vertical, 10)
             .accessibilityIdentifier("recipe-editor-total-time")
-            .accessibilityLabel("Total time: \(Self.formatMinutes(totalMinutes).isEmpty ? "not set" : Self.formatMinutes(totalMinutes))")
+            .accessibilityLabel("Total time: \(Self.formatMinutes(shownTotalMinutes).isEmpty ? "not set" : Self.formatMinutes(shownTotalMinutes))")
         }
         .padding(.horizontal, 16)
         .background(cardStyle)
@@ -734,39 +724,55 @@ public struct RecipeEditorView: View {
         guard !trimmed.isEmpty else { return }
         recipe.title = trimmed
         recipe.rating = rating
+        // Shared editor range 0.25–100: only clamp values outside it so
+        // valid foreign servings (e.g. 0.5, 120→clamped) survive untouched.
         let servings = Double(servingsText.trimmingCharacters(in: .whitespaces)) ?? servingsValue
-        recipe.servings = min(max(servings, 1), 60)
+        recipe.servings = min(max(servings, 0.25), 100)
         let urlRaw = sourceUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         recipe.sourceUrl = urlRaw
-        if let url = URL(string: urlRaw.isEmpty ? "" : urlRaw), let host = url.host, !host.isEmpty {
-            recipe.source = host
-        } else if urlRaw.isEmpty {
-            recipe.source = ""
-        } else if let url = URL(string: "https://\(urlRaw)"), let host = url.host {
-            recipe.source = host
-        } else {
-            recipe.source = urlRaw
+        if !urlRaw.isEmpty {
+            // Derive the display name from the new URL …
+            if let url = URL(string: urlRaw), let host = url.host, !host.isEmpty {
+                recipe.source = host
+            } else if let url = URL(string: "https://\(urlRaw)"), let host = url.host {
+                recipe.source = host
+            } else {
+                recipe.source = urlRaw
+            }
+            // … but a blank URL preserves the existing source name: the
+            // editor offers no source-name control, so clearing the field
+            // must not erase it.
         }
         let cats = categoriesText.split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         recipe.categories = cats
+        // Clearing the photo URL removes the thumbnail (nil, not ignored).
         let photoRaw = photoUrlText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !photoRaw.isEmpty {
-            recipe.photoThumb = photoRaw
-        }
-        difficulty.save(for: recipe.id)
+        recipe.photoThumb = photoRaw.isEmpty ? nil : photoRaw
+        // Editor metadata lives on the synced model (envelope keys), so it
+        // survives cross-device sync. Verbatim text (even "") is stored so a
+        // deliberate clear propagates; nil means never set.
+        recipe.difficulty = (difficulty == .unspecified) ? nil : difficulty.rawValue
+        recipe.notes = notesText
+        recipe.nutritionText = nutritionText
 
-        // Times map straight onto the model; Total stays derived.
+        // Times map straight onto the model. A stored foreign total is kept
+        // until prep/cook are edited, then recomputed from the new values.
         recipe.prepMinutes = prepMinutes
         recipe.cookMinutes = cookMinutes
+        if timesEdited {
+            recipe.totalMinutes = derivedTotalMinutes
+        }
 
         // Description maps straight onto the model.
         recipe.recipeDescription = descriptionText
 
-        // Ingredients: reuse model objects for untouched lines (zero loss,
-        // incl. group headers which are plain name==display rows); new or
-        // edited lines become fresh rows carrying the edited line verbatim.
+        // Ingredients: exact-text matches reuse their model objects (zero
+        // loss, incl. group headers). Remaining edited lines pair in order
+        // with remaining originals — preserving id — and are re-parsed for
+        // structured quantity/unit so rows keep scaling after an edit.
+        // Truly new lines become fresh rows; removed originals are deleted.
         let newIngLines = ingredientsText.components(separatedBy: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
@@ -775,56 +781,80 @@ public struct RecipeEditorView: View {
         for (line, ing) in zip(originalIngredientLines, existingIngs) {
             unmatched[line, default: []].append(ing)
         }
-        var orderedIngs: [Ingredient] = []
-        orderedIngs.reserveCapacity(newIngLines.count)
-        for line in newIngLines {
+        let consumedIDs = NSMutableSet()
+        var orderedIngs: [Ingredient?] = Array(repeating: nil, count: newIngLines.count)
+        for (i, line) in newIngLines.enumerated() {
             if var queue = unmatched[line], !queue.isEmpty {
                 let ing = queue.removeFirst()
                 unmatched[line] = queue
-                orderedIngs.append(ing)
+                consumedIDs.add(ing.id)
+                orderedIngs[i] = ing
+            }
+        }
+        let leftoverIngs = existingIngs.filter { !consumedIDs.contains($0.id) }
+        var li = 0
+        for (i, line) in newIngLines.enumerated() where orderedIngs[i] == nil {
+            if li < leftoverIngs.count {
+                let ing = leftoverIngs[li]
+                li += 1
+                let parsed = IngredientParser.parse(line)
+                ing.name = parsed.name
+                ing.quantity = parsed.quantity
+                ing.unit = parsed.unit
+                ing.display = line
+                ing.updatedAt = Date()
+                orderedIngs[i] = ing
             } else {
-                let ing = Ingredient(recipeId: recipe.id, name: line, display: line,
+                let parsed = IngredientParser.parse(line)
+                let ing = Ingredient(recipeId: recipe.id, name: parsed.name,
+                    quantity: parsed.quantity, unit: parsed.unit, display: line,
                     position: 0, updatedAt: Date(), deviceId: recipe.deviceId)
                 ing.recipe = recipe
                 context.insert(ing)
-                orderedIngs.append(ing)
+                orderedIngs[i] = ing
             }
         }
-        for (_, queue) in unmatched {
-            for ing in queue { context.delete(ing) }
-        }
-        for (i, ing) in orderedIngs.enumerated() { ing.position = i }
+        for ing in leftoverIngs.dropFirst(li) { context.delete(ing) }
+        for (i, ing) in orderedIngs.enumerated() { ing?.position = i }
 
-        // Directions: same reuse-by-exact-text strategy for steps.
+        // Directions: same two-pass strategy. Positional pairing preserves
+        // each step's id AND timers when its text is edited; untouched steps
+        // reuse their objects verbatim.
         let newStepTexts = Self.splitDirections(directionsText)
         let existingSteps = recipe.steps.sorted { $0.position < $1.position }
         var unmatchedSteps: [String: [Step]] = [:]
         for (text, step) in zip(originalStepTexts, existingSteps) {
             unmatchedSteps[text, default: []].append(step)
         }
-        var orderedSteps: [Step] = []
-        orderedSteps.reserveCapacity(newStepTexts.count)
-        for text in newStepTexts {
+        let consumedStepIDs = NSMutableSet()
+        var orderedSteps: [Step?] = Array(repeating: nil, count: newStepTexts.count)
+        for (i, text) in newStepTexts.enumerated() {
             if var queue = unmatchedSteps[text], !queue.isEmpty {
                 let step = queue.removeFirst()
                 unmatchedSteps[text] = queue
-                orderedSteps.append(step)
+                consumedStepIDs.add(step.id)
+                orderedSteps[i] = step
+            }
+        }
+        let leftoverSteps = existingSteps.filter { !consumedStepIDs.contains($0.id) }
+        var si = 0
+        for (i, text) in newStepTexts.enumerated() where orderedSteps[i] == nil {
+            if si < leftoverSteps.count {
+                let step = leftoverSteps[si]
+                si += 1
+                step.text = text
+                step.updatedAt = Date()
+                orderedSteps[i] = step
             } else {
                 let step = Step(recipeId: recipe.id, position: 0, text: text,
                     updatedAt: Date(), deviceId: recipe.deviceId)
                 step.recipe = recipe
                 context.insert(step)
-                orderedSteps.append(step)
+                orderedSteps[i] = step
             }
         }
-        for (_, queue) in unmatchedSteps {
-            for step in queue { context.delete(step) }
-        }
-        for (i, step) in orderedSteps.enumerated() { step.position = i }
-
-        // Notes + nutrition: optional passthroughs (no model keys).
-        RecipeEditorNotes.saveNotes(notesText, for: recipe.id)
-        RecipeEditorNotes.saveNutrition(nutritionText, for: recipe.id)
+        for step in leftoverSteps.dropFirst(si) { context.delete(step) }
+        for (i, step) in orderedSteps.enumerated() { step?.position = i }
 
         // Last-write-wins sync: bump updatedAt so this edit beats remotes.
         recipe.updatedAt = Date()

@@ -30,7 +30,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material3.FilterChip
@@ -525,9 +524,13 @@ fun RecipeDetailScreen(
     onBack: () -> Unit = {},
     onCook: (String) -> Unit = {},
     onEdit: (String) -> Unit = {},
-    onDelete: (String) -> Unit = {},
+    /** Tombstones the recipe. Throws on failure — the caller pops only on success. */
+    onDelete: suspend (String) -> Unit = {},
+    onDeleted: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val snackbar = remember { androidx.compose.material3.SnackbarHostState() }
     var title by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var ingredients by remember { mutableStateOf(listOf<IngredientEntity>()) }
@@ -535,12 +538,14 @@ fun RecipeDetailScreen(
     var servings by remember { mutableStateOf(4.0) }
     var isFavorite by remember { mutableStateOf(false) }
     var rating by remember { mutableStateOf<Double?>(null) }
+    var prepMinutes by remember { mutableStateOf<Int?>(null) }
+    var cookMinutes by remember { mutableStateOf<Int?>(null) }
     var source by remember { mutableStateOf("") }
     var sourceUrl by remember { mutableStateOf("") }
     var categories by remember { mutableStateOf(listOf<String>()) }
     var photoThumb by remember { mutableStateOf<String?>(null) }
     var showDelete by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
+    var deleteError by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(recipeId) {
         val r = container.db.recipes().byId(recipeId)
         if (r != null) {
@@ -549,9 +554,11 @@ fun RecipeDetailScreen(
             servings = r.servings
             isFavorite = r.isFavorite
             rating = r.rating
+            prepMinutes = r.prepMinutes
+            cookMinutes = r.cookMinutes
             source = r.source
             sourceUrl = r.sourceUrl
-            photoThumb = r.photoThumb ?: r.photoOriginal
+            photoThumb = r.photoThumb?.takeIf { it.isNotBlank() } ?: r.photoOriginal
             categories = runCatching {
                 kotlinx.serialization.json.Json.parseToJsonElement(r.categoriesJson)
                     .jsonArray.map { it.jsonPrimitive.content }
@@ -561,15 +568,18 @@ fun RecipeDetailScreen(
         }
     }
     fun shareRecipe() {
-        val lines = ingredients.map { it.display.ifBlank { it.name } }
         val text = buildString {
             appendLine(title)
             appendLine("Serves ${fractionDisplayString(servings)}")
             if (sourceUrl.isNotBlank()) appendLine(sourceUrl)
-            if (lines.isNotEmpty()) {
+            if (ingredients.isNotEmpty()) {
                 appendLine()
                 appendLine("Ingredients")
-                lines.forEach { appendLine("• $it") }
+                ingredients.forEach { ing ->
+                    val line = ingredientFullLine(ing.display, ing.name)
+                    val header = isIngredientHeaderRow(ing.quantity, ing.unit, line)
+                    appendLine(if (header) line else "• $line")
+                }
             }
             steps.forEachIndexed { i, s ->
                 if (i == 0) appendLine()
@@ -585,6 +595,7 @@ fun RecipeDetailScreen(
         context.startActivity(Intent.createChooser(send, "Share recipe"))
     }
     Scaffold(
+        snackbarHost = { androidx.compose.material3.SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
                 title = { Text(title.ifBlank { "Recipe" }) },
@@ -613,9 +624,10 @@ fun RecipeDetailScreen(
                 TextButton(onClick = onBack) { Text("Back") }
                 return@Column
             }
-            if (!photoThumb.isNullOrBlank()) {
+            val photoUrl = resolvePhotoUrl(photoThumb)
+            if (photoUrl != null) {
                 AsyncImage(
-                    model = photoThumb,
+                    model = photoUrl,
                     contentDescription = "Recipe photo",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxWidth().height(200.dp)
@@ -668,8 +680,21 @@ fun RecipeDetailScreen(
             Text(
                 "Serves ${fractionDisplayString(servings)}",
                 style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier.padding(vertical = 8.dp),
+                modifier = Modifier.padding(top = 8.dp, bottom = if (prepMinutes != null || cookMinutes != null) 0.dp else 8.dp),
             )
+            if (prepMinutes != null || cookMinutes != null) {
+                val total = (prepMinutes ?: 0) + (cookMinutes ?: 0)
+                Text(
+                    buildString {
+                        prepMinutes?.let { append("Prep ${formatMinutes(it)}") }
+                        if (prepMinutes != null && cookMinutes != null) append(" · ")
+                        cookMinutes?.let { append("Cook ${formatMinutes(it)}") }
+                        append(" · Total ${formatMinutes(total)}")
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = {
                     scope.launch {
@@ -756,9 +781,7 @@ fun RecipeDetailScreen(
             Text("Ingredients", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
             ingredients.forEach { ing ->
                 val line = ing.display.ifBlank { ing.name }
-                val isHeader = ing.quantity == null && ing.unit.isBlank() &&
-                    line.trim().endsWith(":") && line.isNotBlank()
-                if (isHeader) {
+                if (isIngredientHeaderRow(ing.quantity, ing.unit, line)) {
                     Text(
                         line,
                         style = MaterialTheme.typography.titleSmall,
@@ -790,11 +813,28 @@ fun RecipeDetailScreen(
             title = { Text("Delete recipe?") },
             text = { Text("“$title” will be removed on this device and the delete will sync.") },
             confirmButton = {
-                TextButton(onClick = { showDelete = false; onDelete(recipeId) }) {
+                TextButton(onClick = {
+                    scope.launch {
+                        // Pop only after a successful tombstone + enqueue so a
+                        // failed delete stays visible; surface the failure.
+                        runCatching { onDelete(recipeId) }
+                            .onSuccess { showDelete = false; onDeleted() }
+                            .onFailure { e ->
+                                showDelete = false
+                                deleteError = "Couldn't delete (${e.message ?: "unknown error"}). Try again."
+                            }
+                    }
+                }) {
                     Text("Delete", color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = { TextButton(onClick = { showDelete = false }) { Text("Cancel") } },
         )
+    }
+    deleteError?.let { message ->
+        LaunchedEffect(message) {
+            snackbar.showSnackbar(message)
+            deleteError = null
+        }
     }
 }

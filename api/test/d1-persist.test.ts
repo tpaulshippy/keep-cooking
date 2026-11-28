@@ -43,20 +43,45 @@ describe('D1Store SQL generation (fake binding)', () => {
     );
     const upsert = stmts.find((s) => s.sql.startsWith('INSERT INTO recipes'));
     expect(upsert).toBeDefined();
-    for (const col of ['prep_minutes', 'cook_minutes', 'rating', 'is_favorite', 'source', 'source_url', 'categories', 'photo_original']) {
+    for (const col of ['prep_minutes', 'cook_minutes', 'total_minutes', 'rating', 'is_favorite', 'difficulty', 'source', 'source_url', 'categories', 'cookbooks', 'notes', 'nutrition_text', 'photo_original']) {
       expect(upsert!.sql).toContain(`${col}=excluded.${col}`);
     }
     // Favorite must actually bind 1 (not just appear in SQL): guards
     // against a misaligned placeholder that silently writes 0.
     // params: id, household_id, title, description, servings,
-    // prep_minutes, cook_minutes, rating, is_favorite, ...
-    expect(upsert!.params[8]).toBe(1);
+    // prep_minutes, cook_minutes, total_minutes, rating, is_favorite, ...
+    expect(upsert!.params[9]).toBe(1);
     // Update omitting all children: DELETEs must cover both child tables.
     stmts.length = 0;
     await store.updateRecipe(r.id, { title: 'R2', householdId: 'hh-demo', ingredients: [], steps: [] }, { deviceId: 'd1' });
     const dels = stmts.filter((s) => s.sql.startsWith('DELETE FROM'));
     expect(dels.some((s) => s.sql === 'DELETE FROM ingredients WHERE recipe_id = ?')).toBe(true);
     expect(dels.some((s) => s.sql === 'DELETE FROM steps WHERE recipe_id = ?')).toBe(true);
+  });
+
+  it('recipe upsert persists editor metadata columns', async () => {
+    const { db, stmts } = makeFakeD1();
+    const store = new D1Store(db as never);
+    const r = await store.createRecipe(
+      {
+        title: 'R', householdId: 'hh-demo', totalMinutes: 85, difficulty: 'Easy',
+        cookbooks: ['My Cookbook'], notes: 'Chill.', nutritionText: 'Calories: 130',
+        ingredients: [], steps: [],
+      },
+      { deviceId: 'd1' },
+    );
+    expect(r.totalMinutes).toBe(85);
+    const upsert = stmts.find((s) => s.sql.startsWith('INSERT INTO recipes'));
+    expect(upsert).toBeDefined();
+    // params: id(0) household(1) title(2) description(3) servings(4)
+    // prep(5) cook(6) total(7) rating(8) favorite(9) difficulty(10)
+    // source(11) sourceUrl(12) categories(13) cookbooks(14) notes(15)
+    // nutrition_text(16) photoKeys(17..19) ...
+    expect(upsert!.params[7]).toBe(85);
+    expect(upsert!.params[10]).toBe('Easy');
+    expect(upsert!.params[14]).toBe('["My Cookbook"]');
+    expect(upsert!.params[15]).toBe('Chill.');
+    expect(upsert!.params[16]).toBe('Calories: 130');
   });
 
   it('recipe update keeps present children via NOT IN prune', async () => {

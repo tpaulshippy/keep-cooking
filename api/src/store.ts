@@ -29,11 +29,16 @@ export interface RecipeRow {
   servings: number;
   prepMinutes: number | null;
   cookMinutes: number | null;
+  totalMinutes: number | null;
   rating: number | null;
   isFavorite: boolean;
+  difficulty: string;
   source: string;
   sourceUrl: string;
   categories: string[];
+  cookbooks: string[];
+  notes: string;
+  nutritionText: string;
   photoKeys: { original: string; large1024: string; thumb: string };
   updatedAt: string;
   deviceId: string;
@@ -398,11 +403,16 @@ export class MemoryStore implements Store {
       servings: input.servings ?? 4,
       prepMinutes: input.prepMinutes ?? null,
       cookMinutes: input.cookMinutes ?? null,
+      totalMinutes: input.totalMinutes ?? null,
       rating: input.rating ?? null,
       isFavorite: input.isFavorite ?? false,
+      difficulty: input.difficulty ?? '',
       source: input.source ?? '',
       sourceUrl: input.sourceUrl ?? '',
       categories: input.categories ?? [],
+      cookbooks: input.cookbooks ?? [],
+      notes: input.notes ?? '',
+      nutritionText: input.nutritionText ?? '',
       photoKeys: {
         original: input.photoKeys?.original ?? '',
         large1024: input.photoKeys?.large1024 ?? '',
@@ -842,11 +852,16 @@ export class MemoryStore implements Store {
         servings: p.servings ?? 4,
         prepMinutes: p.prepMinutes ?? null,
         cookMinutes: p.cookMinutes ?? null,
+        totalMinutes: p.totalMinutes ?? existing?.totalMinutes ?? null,
         rating: p.rating ?? null,
         isFavorite: p.isFavorite ?? existing?.isFavorite ?? false,
+        difficulty: p.difficulty ?? existing?.difficulty ?? '',
         source: p.source ?? '',
         sourceUrl: p.sourceUrl ?? '',
         categories: p.categories ?? [],
+        cookbooks: p.cookbooks ?? existing?.cookbooks ?? [],
+        notes: p.notes ?? existing?.notes ?? '',
+        nutritionText: p.nutritionText ?? existing?.nutritionText ?? '',
         photoKeys: p.photoKeys ?? { original: '', large1024: '', thumb: '' },
         updatedAt: env.updatedAt,
         deviceId: env.deviceId,

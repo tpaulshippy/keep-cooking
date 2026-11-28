@@ -143,6 +143,8 @@ code { background: #f5f5f4; padding: 0.1em 0.3em; border-radius: 0.25rem; color:
 .sheet-rowline { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
 .sheet-linkicon { color: #60a5fa; font-size: 1.25rem; text-decoration: none; }
 span.sheet-linkicon { opacity: 0.45; }
+.sheet-fav { background: transparent; border: 0; font-size: 1.5rem; line-height: 1; color: #fbbf24; padding: 0.2rem 0.4rem; }
+.sheet-fav[aria-pressed="false"] { color: #57534e; }
 .sheet-sublabel { display: grid; gap: 0.3rem; font-size: 0.85rem; color: #d6d3d1; font-weight: 500; margin-top: 0.6rem; }
 .sheet-sublabel input, .sheet-sublabel textarea, .sheet-sublabel select { background: #1c1917; color: #fafaf9; border: 1px solid #57534e; }
 .sheet-row input#ed-cats { background: transparent; border: 0; color: inherit; text-align: right; max-width: 55%; padding: 0; }
@@ -177,4 +179,17 @@ span.sheet-linkicon { opacity: 0.45; }
 /* Light-mode sheet keeps the same dark-modal chrome for parity with native. */
 @media (prefers-color-scheme: light) {
   .sheet input, .sheet select, .sheet textarea { color-scheme: dark; }
+}
+/* Dark mode: the generic `:root button` rule (0,1,1) outranks single-class
+   sheet selectors, so restate sheet controls scoped (0,2,0+) to keep their
+   intended Save/cancel/section/link/star colors. */
+@media (prefers-color-scheme: dark) {
+  :root .sheet-check { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+  :root .sheet-x { background: transparent; border-color: #57534e; color: #f87171; }
+  :root .sheet-section { background: transparent; color: #a8a29e; }
+  :root .sheet-linkbtn { background: transparent; color: #60a5fa; }
+  :root .sheet-fav { background: transparent; color: #fbbf24; }
+  :root .sheet-fav[aria-pressed="false"] { color: #57534e; }
+  :root .star { background: transparent; color: #57534e; }
+  :root .star.on { color: #fbbf24; }
 }

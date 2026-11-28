@@ -927,6 +927,7 @@ struct RecipeDetailView: View {
     @State private var servings: Double
     @State private var pane: DetailPane = .ingredients
     @State private var showEditor = false
+    @State private var showDeleteConfirm = false
 
     /// Paprika-style segmented pane (custom capsule toggle, no copy).
     private enum DetailPane: String, CaseIterable {
@@ -993,7 +994,12 @@ struct RecipeDetailView: View {
         .navigationTitle(recipe.title)
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("recipe-detail-title")
-        .sheet(isPresented: $showEditor) {
+        .sheet(isPresented: $showEditor, onDismiss: {
+            // The editor may save a different serving count; resync the
+            // detail's scaling target so the meta row and ingredient
+            // scaling reflect the saved value instead of the stale one.
+            servings = recipe.servings
+        }) {
             RecipeEditorView(recipe: recipe)
         }
         .toolbar {
@@ -1021,12 +1027,21 @@ struct RecipeDetailView: View {
                     Image(systemName: "square.and.arrow.up")
                 }
                 .accessibilityLabel("Share recipe")
-                Button(role: .destructive) { deleteRecipe() } label: {
+                Button(role: .destructive) { showDeleteConfirm = true } label: {
                     Image(systemName: "trash")
                 }
                 .accessibilityIdentifier("delete-recipe-button")
                 .accessibilityLabel("Delete recipe")
             }
+        }
+        .confirmationDialog("Delete this recipe?", isPresented: $showDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Recipe", role: .destructive) { deleteRecipe() }
+                .accessibilityIdentifier("confirm-delete-recipe-button")
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This moves \(recipe.title) to Trash and removes its planned meals. You can restore it from Trash.")
         }
     }
 
@@ -1318,9 +1333,18 @@ struct RecipeDetailView: View {
 
     /// Sync-safe delete: tombstone + updatedAt bump (last-write-wins), then
     /// pop back to the list. Mirrors the library swipe-to-delete path.
+    /// Linked plans are tombstoned too so Plan keeps no dangling schedule
+    /// that could leak the recipe's ingredients into the weekly shop.
     private func deleteRecipe() {
         recipe.tombstoned = true
         recipe.updatedAt = Date()
+        let linked = (try? context.fetch(FetchDescriptor<Plan>()))?.filter {
+            $0.recipeId == recipe.id && !$0.tombstoned
+        } ?? []
+        for plan in linked {
+            plan.tombstoned = true
+            plan.updatedAt = Date()
+        }
         try? context.save()
         dismiss()
     }
@@ -1423,9 +1447,17 @@ struct PlanTabView: View {
         Dictionary(uniqueKeysWithValues: recipes.map { ($0.id, $0) })
     }
 
+    /// Live (non-tombstoned) recipe lookup. Tombstoned recipes are treated
+    /// as missing so deleted recipes never surface in the plan, the picker
+    /// confirm copy, or the weekly grocery aggregation.
+    private func liveRecipe(id: String?) -> Recipe? {
+        guard let id, let recipe = recipesById[id], !recipe.tombstoned else { return nil }
+        return recipe
+    }
+
     private var entries: [PlanEntrySnapshot] {
         plans.filter { !$0.tombstoned }.map { plan in
-            let recipe = plan.recipeId.flatMap { recipesById[$0] }
+            let recipe = liveRecipe(id: plan.recipeId)
             return PlanEntrySnapshot(id: plan.id, date: plan.date,
                 meal: plan.mealRaw, recipeId: plan.recipeId,
                 recipeTitle: recipe?.title ?? (plan.note.isEmpty ? nil : plan.note),
@@ -1484,7 +1516,7 @@ struct PlanTabView: View {
         }()
         if dup { return }
         let title: String
-        if let recipeId, let recipe = recipesById[recipeId] {
+        if let recipeId, let recipe = liveRecipe(id: recipeId) {
             title = recipe.title
         } else {
             let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1532,7 +1564,7 @@ struct PlanTabView: View {
     /// `onSelectEntry`.
     private func selectEntry(id: String) {
         guard let plan = plans.first(where: { $0.id == id && !$0.tombstoned }) else { return }
-        if let recipeId = plan.recipeId, let recipe = recipesById[recipeId] {
+        if plan.recipeId != nil, let recipe = liveRecipe(id: plan.recipeId) {
             selectedRecipe = recipe
         } else {
             let label = plan.note.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1564,7 +1596,7 @@ struct PlanTabView: View {
         let weekPlans = plans.filter { !$0.tombstoned && $0.date >= weekStart && $0.date < weekEnd }
         var inputs: [PlanGroceryInput] = []
         for plan in weekPlans {
-            guard let rid = plan.recipeId, let recipe = recipesById[rid] else { continue }
+            guard let rid = plan.recipeId, let recipe = liveRecipe(id: rid) else { continue }
             for ing in recipe.ingredients {
                 inputs.append(PlanGroceryInput(name: ing.name, quantity: ing.quantity,
                     unit: ing.unit, baseServings: recipe.servings,
