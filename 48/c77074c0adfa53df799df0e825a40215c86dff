@@ -1,0 +1,28 @@
+api/scripts/apply-migration.sh
+  h_6bbd00fe0a456a 9-13,20-26
+apps/android/app/src/main/java/com/keepcooking/app/sync/SyncEngine.kt
+  h_6bbd00fe0a456a 261-267
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/LibraryScreen.kt
+  h_6bbd00fe0a456a 62,633-636,638-640,648-655
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/PhotoUrls.kt
+  h_6bbd00fe0a456a 26-73,78-81,83-87,91-96
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/RecipeEditorScreen.kt
+  h_6bbd00fe0a456a 419,421-423,432-437
+apps/android/app/src/test/java/com/keepcooking/app/RecipeEditPayloadTest.kt
+  h_6bbd00fe0a456a 8-9,13,202-251
+apps/web/src/main.ts
+  h_6bbd00fe0a456a 374-376
+scripts/deploy-backend.sh
+  h_6bbd00fe0a456a 30-34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "48c77074c0adfa53df799df0e825a40215c86dff",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
