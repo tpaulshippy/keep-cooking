@@ -1,0 +1,50 @@
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/ExportScreen.kt
+  h_6bbd00fe0a456a 11,14,19,28,35,39-42,50-51,58-69,73,79-111,127-132,133-135,136-146,148-152,153-156,157-167,170,172-182
+apps/ios/Export/ExportView.swift
+  h_6bbd00fe0a456a 4-5,52,60-61,66,67-70,71-73,74,78-79,81-87,88,89-93,97-99,101-102,106-115,118-125,128-131,132,133-146,150-155,157-161,168-177
+apps/ios/Export/README.md
+  h_6bbd00fe0a456a 8,9,10-11
+apps/web/src/main.ts
+  h_6bbd00fe0a456a 228,230,296-298,301-405,412-653,656-660,663-676,682,701-702,708,711,725-726,732,734,736,738-741,1475-1476,1480,1482-1483,1484-1485,1487,1493-1496,1566-1568,1676-1677,1700,2262,2281,2282-2283,2284-2285,2310-2311,2344-2351,2352,2353-2368,2370-2378,2380,2383,2386,2388,2389-2394,2395-2398,2399-2404,2407
+apps/web/src/styles.css
+  h_6bbd00fe0a456a 52-54,118-180
+api/src/export.ts
+  h_6bbd00fe0a456a 54-77
+api/src/index.ts
+  h_6bbd00fe0a456a 9,512-562
+api/test/recipes.test.ts
+  h_6bbd00fe0a456a 53-100
+apps/android/app/src/main/java/com/keepcooking/app/export/RecipeExporter.kt
+  h_6bbd00fe0a456a 147,155-175
+apps/ios/Export/RecipeExporter.swift
+  h_6bbd00fe0a456a 228-231,235-243,389-406,421-427,432,434-448
+apps/android/app/src/main/java/com/keepcooking/app/navigation/NavGraph.kt
+  h_6bbd00fe0a456a 31,47-48,51,306-457,610,613,616-641
+apps/android/app/src/main/java/com/keepcooking/app/navigation/Routes.kt
+  h_6bbd00fe0a456a 27-29
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/LibraryScreen.kt
+  h_6bbd00fe0a456a 3,16-24,58-60,62,67,515-519,527-528,530,533,537-542,551-559,563-610,616-625,627-667,750-755,757-770,773-784,787-799
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/RecipeEditorScreen.kt
+  h_6bbd00fe0a456a 1-1002
+apps/ios/App/DemoFlows.swift
+  h_6bbd00fe0a456a 923,929,996-998,1001-1005,1024-1028,1110-1111,1116,1119-1121,1124,1313-1314,1319-1322,1325
+apps/ios/Features/Library/RecipeEditorView.swift
+  h_6bbd00fe0a456a 1-834
+apps/ios/Smidgen.xcodeproj/project.pbxproj
+  h_6bbd00fe0a456a 58-59,61,207,342,397,753,784
+apps/ios/UITests/RecipeEditorScreenshotTests.swift
+  h_6bbd00fe0a456a 1-53
+apps/web/src/router.test.ts
+  h_6bbd00fe0a456a 40-46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "02083eb5c38113261fb165c248ae34abb5a07a6a",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
