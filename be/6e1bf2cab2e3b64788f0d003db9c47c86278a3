@@ -1,0 +1,14 @@
+apps/ios/App/MenusPaprikaViews.swift
+  h_6bbd00fe0a456a 19-24,30-31,340,730,833-838,864,881,891,904,923,1016,1050-1064,1104,1106-1107,1109,1125
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "be6e1bf2cab2e3b64788f0d003db9c47c86278a3",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
