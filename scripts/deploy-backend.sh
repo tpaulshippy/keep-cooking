@@ -3,23 +3,18 @@
 # Prints the Worker URL to paste into the app: Settings → Server (BYO backend).
 #
 # Usage:
-#   INTERNAL_BETA_TOKEN=$(openssl rand -base64 32) ./scripts/deploy-backend.sh
-#   PUBLIC_BASE_URL=https://api.example.com INTERNAL_BETA_TOKEN=… ./scripts/deploy-backend.sh
-#   BYO_NO_TOKEN=1 ./scripts/deploy-backend.sh   # explicit local/no-token setup only
+#   ./scripts/deploy-backend.sh
+#   PUBLIC_BASE_URL=https://api.example.com ./scripts/deploy-backend.sh
 #
 # Prerequisites: `wrangler login`, node >= 20, curl. Run from the repo root.
-# The script is idempotent-ish: D1/R2 creates are skipped when they exist,
-# secrets are only (re)set when provided via env.
+# The script is idempotent-ish: D1/R2 creates are skipped when they exist.
 
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 API_DIR="api"
-TOKEN="${INTERNAL_BETA_TOKEN:-}"
 BASE_URL="${PUBLIC_BASE_URL:-}"
-# Explicit opt-out for a local/no-token backend (writes ungated — never expose).
-ALLOW_NO_TOKEN="${BYO_NO_TOKEN:-}"
 
 need() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -31,6 +26,11 @@ need() {
 need wrangler
 need node
 need curl
+
+# Resolve once so the migration helper invokes the exact preflighted binary
+# (never a different copy npx might fetch); exported for apply-migration.sh.
+WRANGLER_BIN="$(command -v wrangler)"
+export WRANGLER_BIN
 
 if [ ! -d "$API_DIR" ]; then
   echo "run from the repo root (expected ./$API_DIR)" >&2
@@ -90,56 +90,26 @@ else
 fi
 
 echo "==> 3/6 D1 schema (remote)"
-for migration in "$API_DIR/drizzle/0001_init.sql" "$API_DIR/drizzle/0002_e2e_blobs.sql"; do
+for migration in "$API_DIR/drizzle/0001_init.sql" "$API_DIR/drizzle/0002_e2e_blobs.sql" "$API_DIR/drizzle/0003_device_keys.sql" "$API_DIR/drizzle/0004_agent_enrollments.sql" "$API_DIR/drizzle/0005_is_favorite.sql" "$API_DIR/drizzle/0006_editor_metadata.sql"; do
   if [ -f "$migration" ]; then
     echo "    applying $migration --remote"
-    wrangler d1 execute keep-cooking --remote --file="$migration"
+    # One-time ALTER TABLEs (0005/0006, no ADD COLUMN IF NOT EXISTS) fail
+    # with "duplicate column" on re-runs — the ONLY tolerated failure (see
+    # api/scripts/apply-migration.sh). Anything else aborts the deploy.
+    "$API_DIR/scripts/apply-migration.sh" --remote "$migration"
   else
     echo "    skipping $migration (not found)"
   fi
 done
 
-echo "==> 4/6 secrets / vars"
-if [ -n "$TOKEN" ]; then
-  printf '%s' "$TOKEN" | wrangler secret put INTERNAL_BETA_TOKEN
-  echo "    INTERNAL_BETA_TOKEN secret set. Enter the same value in the app:"
-  echo "    Settings → Server (BYO backend) → Beta token → Save & sync now."
-else
-  echo "    INTERNAL_BETA_TOKEN not provided; checking existing secret…"
-  SECRET_LIST="$(wrangler secret list 2>/dev/null || true)"
-  if exact_name_present "INTERNAL_BETA_TOKEN" "$SECRET_LIST"; then
-    echo "    secret already set — keeping it."
-    echo "    Make sure the same value is entered in the app:"
-    echo "    Settings → Server (BYO backend) → Beta token → Save & sync now."
-  elif [ "$ALLOW_NO_TOKEN" = "1" ]; then
-    # BYO_NO_TOKEN=1 leaves writes ungated, so it is only ever valid
-    # against a genuinely local dev target. Refuse remote deploys (the
-    # checked-in workers.dev URL included) — gated writes there would 401
-    # on every request with no token configured.
-    NO_TOKEN_TARGET="${BASE_URL:-}"
-    if [ -z "$NO_TOKEN_TARGET" ]; then
-      NO_TOKEN_TARGET="$(grep -E '^[[:space:]]*PUBLIC_BASE_URL[[:space:]]*=' "$API_DIR/wrangler.toml" | cut -d'"' -f2 | head -n 1 || true)"
-    fi
-    case "$NO_TOKEN_TARGET" in
-      *localhost*|*127.0.0.1*|*.local*)
-        echo "    BYO_NO_TOKEN=1: proceeding WITHOUT a beta token against local target $NO_TOKEN_TARGET." >&2
-        echo "    Writes are ungated — never expose this backend." >&2
-        ;;
-      *)
-        echo "    ERROR: BYO_NO_TOKEN=1 is for a local dev target only (localhost / 127.0.0.1 / *.local)." >&2
-        echo "    Target '${NO_TOKEN_TARGET:-<unknown>}' is remote and gated writes would 401." >&2
-        echo "    Either provide INTERNAL_BETA_TOKEN or point PUBLIC_BASE_URL at a local dev server." >&2
-        exit 1
-        ;;
-    esac
-  else
-    echo "    ERROR: INTERNAL_BETA_TOKEN is required." >&2
-    echo "    Re-run with: INTERNAL_BETA_TOKEN=\$(openssl rand -base64 32) ./scripts/deploy-backend.sh" >&2
-    echo "    Then enter the same value in the app: Settings → Server (BYO backend) → Beta token." >&2
-    echo "    (Only for an explicit local/no-token setup: BYO_NO_TOKEN=1 ./scripts/deploy-backend.sh)" >&2
-    exit 1
-  fi
-fi
+echo "==> 4/6 vars"
+# Photo signed URLs fall back to a dev-only default when the secret is unset,
+# so a fresh Worker without it signs URLs with public 'dev-only-change-me'.
+# Operators who previously set BETTER_AUTH_SECRET must re-set it under the
+# new name — the old name is no longer read.
+echo "    NOTE: if 'wrangler secret list' does not show PHOTOS_SIGNING_SECRET,"
+echo "    run once per Worker: wrangler secret put PHOTOS_SIGNING_SECRET"
+echo "    (without it, photo URLs are signed with a dev-only default)."
 if [ -n "$BASE_URL" ]; then
   if grep -qE '^[[:space:]]*PUBLIC_BASE_URL[[:space:]]*=' "$API_DIR/wrangler.toml"; then
     sed -i.bak -E "s|^[[:space:]]*PUBLIC_BASE_URL[[:space:]]*=.*|PUBLIC_BASE_URL = \"$BASE_URL\"|" "$API_DIR/wrangler.toml"
@@ -169,17 +139,18 @@ if [ -z "$WORKER_URL" ]; then
   echo "    could not determine the published Worker URL from deploy output" >&2
   exit 1
 fi
-echo "    GET $WORKER_URL/health"
-curl -fsS "$WORKER_URL/health" || {
+# Single-serve: every route (including /health) lives under /api. Normalize a
+# bare worker origin to the API base; an already-prefixed base passes through.
+API_BASE="$WORKER_URL"
+case "$API_BASE" in */api) ;; *) API_BASE="$API_BASE/api";; esac
+echo "    GET $API_BASE/health"
+curl -fsS "$API_BASE/health" || {
   echo "    health check failed — verify the Worker URL and bindings" >&2
   exit 1
 }
 
 echo ""
 echo "================================================================"
-echo "  Backend is live: $WORKER_URL"
+echo "  Backend is live: $API_BASE"
 echo "  Paste it into the app: Settings → Server (BYO backend) → Test"
-if [ -n "$TOKEN" ]; then
-  echo "  + enter your INTERNAL_BETA_TOKEN in the Beta token field → Save & sync now"
-fi
 echo "================================================================"

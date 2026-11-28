@@ -5,6 +5,8 @@ import {
   nowIso,
   newId,
   e2eIsNewer,
+  decodePublicKeyB64,
+  deviceKeysEqual,
   type Store,
   type Recipe,
   type ShoppingList,
@@ -13,8 +15,10 @@ import {
   type Menu,
   type Membership,
   type Household,
+  type DeviceKey,
 } from './store';
 import { envelopeHeader, type EncryptedEnvelope } from './e2e';
+import type { AgentEnrollment } from './agent';
 
 // D1-backed store. Uses drizzle() for the connection (D1 via Drizzle) and
 // parameterized raw SQL for queries — table/column names match
@@ -85,6 +89,7 @@ export class D1Store extends MemoryStore implements Store {
         const u = String(m['user_id']);
         this.memberships.set(`${hh}|${u}`, { householdId: hh, userId: u, role: String(m['role']) as Role });
       }
+      await this.loadAgentEnrollments();
       const ingByRecipe = new Map<string, { id: string; recipeId: string; name: string; quantity: number | null; unit: string; display: string; position: number }[]>();
       for (const g of await q('SELECT id, recipe_id, name, quantity, unit, display, position FROM ingredients ORDER BY position')) {
         const rid = String(g['recipe_id']);
@@ -115,10 +120,16 @@ export class D1Store extends MemoryStore implements Store {
           servings: Number(r['servings'] ?? 4),
           prepMinutes: r['prep_minutes'] == null ? null : Number(r['prep_minutes']),
           cookMinutes: r['cook_minutes'] == null ? null : Number(r['cook_minutes']),
+          totalMinutes: r['total_minutes'] == null ? null : Number(r['total_minutes']),
           rating: r['rating'] == null ? null : Number(r['rating']),
+          isFavorite: Number(r['is_favorite'] ?? 0) === 1,
+          difficulty: String(r['difficulty'] ?? ''),
           source: String(r['source'] ?? ''),
           sourceUrl: String(r['source_url'] ?? ''),
           categories: jparse<string[]>(r['categories'], []),
+          cookbooks: jparse<string[]>(r['cookbooks'], []),
+          notes: String(r['notes'] ?? ''),
+          nutritionText: String(r['nutrition_text'] ?? ''),
           photoKeys: {
             original: String(r['photo_original'] ?? ''),
             large1024: String(r['photo_large1024'] ?? ''),
@@ -193,6 +204,37 @@ export class D1Store extends MemoryStore implements Store {
       newer(this.pantry, prev.pantry);
       newer(this.plans, prev.plans);
       newer(this.menus, prev.menus);
+      // Device keys: D1 is the source of truth; merge rows into memory so a
+      // fresh isolate sees enrollments. Isolated try/catch: pre-migration
+      // DBs have no device_keys table and must not disturb the maps above.
+      try {
+        const drows = await q('SELECT device_id, public_key, display_name, created_at, revoked_at FROM device_keys');
+        for (const r of drows) {
+          const id = String(r['device_id'] ?? '');
+          if (!id) continue;
+          let bytes: Uint8Array;
+          try {
+            bytes = decodePublicKeyB64(String(r['public_key'] ?? ''));
+          } catch {
+            continue;
+          }
+          if (bytes.length !== 32) continue;
+          const createdAt = String(r['created_at'] ?? nowIso());
+          const mem = this.devices.get(id);
+          if (!mem) {
+            this.devices.set(id, {
+              deviceId: id,
+              publicKeyB64: String(r['public_key'] ?? ''),
+              publicKey: bytes,
+              displayName: r['display_name'] == null ? null : String(r['display_name']),
+              createdAt,
+              revokedAt: r['revoked_at'] == null ? null : String(r['revoked_at']),
+            });
+          }
+        }
+      } catch {
+        // pre-migration DB: no device_keys table — memory fallback stays.
+      }
       this.hydrated = true;
     } catch (e) {
       // Fresh DB (tables may not exist until migration runs): stay empty.
@@ -212,6 +254,18 @@ export class D1Store extends MemoryStore implements Store {
     }
   }
 
+  /** Delete child rows omitted from an update (recipes: ingredients/steps;
+   *  lists: list_items). An empty keep-list deletes all children of the
+   *  parent (NOT IN () is invalid SQL, so branch explicitly). */
+  private async pruneChildren(table: string, parentCol: string, parentId: string, keepIds: string[]): Promise<void> {
+    if (keepIds.length === 0) {
+      await this.persist(`DELETE FROM ${table} WHERE ${parentCol} = ?`, parentId);
+      return;
+    }
+    const placeholders = keepIds.map(() => '?').join(',');
+    await this.persist(`DELETE FROM ${table} WHERE ${parentCol} = ? AND id NOT IN (${placeholders})`, parentId, ...keepIds);
+  }
+
   override async ensureHousehold(id: string, name = id): Promise<Household> {
     const h = await super.ensureHousehold(id, name);
     await this.persist(
@@ -227,13 +281,290 @@ export class D1Store extends MemoryStore implements Store {
       householdId, userId, role,
     );
   }
+  override async countMemberships(householdId: string): Promise<number> {
+    try {
+      const row = await this.db
+        .prepare('SELECT COUNT(*) AS n FROM memberships WHERE household_id = ?')
+        .bind(householdId)
+        .first();
+      const n = Number(row?.['n']);
+      if (Number.isFinite(n)) return n;
+    } catch {
+      // D1 unreachable / pre-migration: memory fallback below.
+    }
+    return super.countMemberships(householdId);
+  }
+
+  // ---------- Device keys (D1 device_keys; memory fallback) ----------
+  // D1 is the cross-isolate source of truth for no-clobber: the winner is
+  // checked before the memory write, and the insert is DO NOTHING so a
+  // concurrent winner with a different key keeps its row. A post-insert
+  // re-read detects that lost race and surfaces 409.
+
+  override async getDevice(deviceId: string): Promise<DeviceKey | null> {
+    try {
+      const row = await this.db
+        .prepare('SELECT device_id, public_key, display_name, created_at, revoked_at FROM device_keys WHERE device_id = ?')
+        .bind(deviceId)
+        .first();
+      if (row) {
+        let bytes: Uint8Array;
+        try {
+          bytes = decodePublicKeyB64(String(row['public_key'] ?? ''));
+        } catch {
+          return super.getDevice(deviceId);
+        }
+        if (bytes.length !== 32) return super.getDevice(deviceId);
+        const revokedAt = row['revoked_at'] == null ? null : String(row['revoked_at']);
+        if (!this.devices.get(deviceId)) {
+          this.devices.set(deviceId, {
+            deviceId,
+            publicKeyB64: String(row['public_key'] ?? ''),
+            publicKey: bytes,
+            displayName: row['display_name'] == null ? null : String(row['display_name']),
+            createdAt: String(row['created_at'] ?? nowIso()),
+            revokedAt,
+          });
+        }
+        return { deviceId, publicKey: bytes, revokedAt };
+      }
+    } catch {
+      // pre-migration DB or unreachable: memory fallback.
+    }
+    return super.getDevice(deviceId);
+  }
+
+  override async enrollDevice(input: { deviceId: string; publicKeyB64: string; displayName?: string }): Promise<{ deviceId: string; enrolledAt: string }> {
+    // Cross-isolate no-clobber check against the D1 winner first.
+    try {
+      const row = await this.db
+        .prepare('SELECT device_id, public_key, created_at FROM device_keys WHERE device_id = ?')
+        .bind(input.deviceId)
+        .first();
+      if (row) {
+        const storedB64 = String(row['public_key'] ?? '');
+        let same = false;
+        try {
+          same = deviceKeysEqual(decodePublicKeyB64(storedB64), decodePublicKeyB64(input.publicKeyB64));
+        } catch {
+          // Malformed input: let super.enrollDevice raise the 400 below.
+          return super.enrollDevice(input);
+        }
+        if (!same) {
+          const err = new Error('device already enrolled with different key') as Error & { status: number };
+          err.status = 409;
+          throw err;
+        }
+        if (!this.devices.get(input.deviceId)) {
+          try {
+            const bytes = decodePublicKeyB64(storedB64);
+            this.devices.set(input.deviceId, {
+              deviceId: input.deviceId,
+              publicKeyB64: storedB64,
+              publicKey: bytes,
+              displayName: input.displayName ?? null,
+              createdAt: String(row['created_at'] ?? nowIso()),
+              revokedAt: null,
+            });
+          } catch {
+            // fall through to super for validation
+          }
+        }
+        return { deviceId: input.deviceId, enrolledAt: String(row['created_at'] ?? nowIso()) };
+      }
+    } catch (e) {
+      const status = (e as { status?: unknown } | null | undefined)?.status;
+      if (status === 409) throw e;
+      // D1 unreachable / pre-migration: memory fallback below.
+    }
+    const res = await super.enrollDevice(input);
+    await this.persist(
+      'INSERT INTO device_keys (device_id, public_key, display_name, created_at, revoked_at) VALUES (?, ?, ?, ?, NULL) ON CONFLICT(device_id) DO NOTHING',
+      input.deviceId, input.publicKeyB64, input.displayName ?? null, res.enrolledAt,
+    );
+    // Lost-race detect: another isolate may have won with a different key
+    // between our check and insert (DO NOTHING kept their row). Re-read the
+    // winner; a different key is a 409. Missing table/unreachable: keep res.
+    try {
+      const win = await this.db
+        .prepare('SELECT public_key FROM device_keys WHERE device_id = ?')
+        .bind(input.deviceId)
+        .first();
+      if (win) {
+        const winB64 = String(win['public_key'] ?? '');
+        if (winB64 !== input.publicKeyB64) {
+          let same = true;
+          try {
+            same = deviceKeysEqual(decodePublicKeyB64(winB64), decodePublicKeyB64(input.publicKeyB64));
+          } catch {
+            same = true; // unreadable winner: don't false-409 our own write
+          }
+          if (!same) {
+            // Lost race: our key was rejected by D1's winner. Drop it from
+            // the memory cache before surfacing 409 — otherwise a later D1
+            // failure would fall back to the cache and authenticate a key
+            // the enrollment rejected. Re-warm from the D1 winner instead.
+            this.devices.delete(input.deviceId);
+            try {
+              await this.getDevice(input.deviceId);
+            } catch {
+              // Keep the cache cleared; the next read retries D1.
+            }
+            const err = new Error('device already enrolled with different key') as Error & { status: number };
+            err.status = 409;
+            throw err;
+          }
+        }
+      }
+    } catch (e) {
+      const status = (e as { status?: unknown } | null | undefined)?.status;
+      if (status === 409) throw e;
+    }
+    return res;
+  }
+
+  // Revoke: D1 UPDATE wins cross-isolate, memory mirrors. getDevice warms a
+  // fresh isolate's memory from the D1 row first, so revoke works without a
+  // prior hydrate. Idempotent: the write is first-write-wins via
+  // COALESCE(revoked_at, ?) and the reported timestamp is re-read from D1,
+  // so concurrent revokes all observe the original timestamp. A D1 failure
+  // fails the request (500) instead of acking a local-only revoke as 200 —
+  // except pre-migration DBs (no device_keys table), which keep the memory
+  // fallback.
+  override async revokeDevice(deviceId: string): Promise<{ deviceId: string; revokedAt: string } | null> {
+    const known = await this.getDevice(deviceId);
+    if (!known) return null;
+    const revokedAt = known.revokedAt ?? nowIso();
+    try {
+      await this.db
+        .prepare('UPDATE device_keys SET revoked_at = COALESCE(revoked_at, ?) WHERE device_id = ?')
+        .bind(revokedAt, deviceId)
+        .run();
+    } catch (e) {
+      if (e instanceof Error && /no such table/i.test(e.message)) {
+        const mem = this.devices.get(deviceId);
+        if (mem) mem.revokedAt = mem.revokedAt ?? revokedAt;
+        return { deviceId, revokedAt: mem?.revokedAt ?? revokedAt };
+      }
+      // D1 persist failed: do not mark local-only state as revoked, do not
+      // return 200 — surface the failure so the caller retries (500).
+      throw e;
+    }
+    // Re-read the winner: COALESCE may have kept an older timestamp from a
+    // concurrent isolate's revoke.
+    const winner = await this.getDevice(deviceId);
+    const finalTs = winner?.revokedAt ?? revokedAt;
+    const mem = this.devices.get(deviceId);
+    if (mem) mem.revokedAt = finalTs;
+    return { deviceId, revokedAt: finalTs };
+  }
+
+  // ---------- key-only agent enrollments (#26; D1 agent_enrollments) ----------
+  // Memory maps stay the read path; D1 is the durable copy loaded in
+  // hydrate(). Unlike legacy rows, the enrollment write throws on D1
+  // failure (only the pre-migration missing-table case falls back to
+  // memory) and is applied to D1 before memory.
+
+  override async agentEnroll(e: AgentEnrollment): Promise<AgentEnrollment> {
+    // A verifier already bound to a different household hash is a 409
+    // (unique verifier index in D1) — reject before touching D1 so a
+    // conflicting write never lands in either store. Same-household reuse is
+    // fine (token rotation re-enrolls the same hash with a new verifier).
+    const clash = await this.agentGetByVerifier(e.verifier);
+    if (clash && clash.householdHash !== e.householdHash) {
+      const err = new Error('verifier is already bound to a different household hash') as Error & { status?: number };
+      err.status = 409;
+      throw err;
+    }
+    // D1 first (durable), then memory: a D1 failure surfaces (HTTP 500)
+    // instead of acking an enrollment that never persisted. Only the
+    // pre-migration "no such table" case falls back to memory-only. The
+    // WHERE predicate keeps a stale rotation from overwriting a newer row
+    // (same LWW rule as the E2E blob upsert).
+    let res: unknown;
+    try {
+      res = await this.db
+        .prepare(
+          'INSERT INTO agent_enrollments (household_hash, household_id, verifier, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(household_hash) DO UPDATE SET household_id = excluded.household_id, verifier = excluded.verifier, updated_at = excluded.updated_at WHERE excluded.updated_at > agent_enrollments.updated_at',
+        )
+        .bind(e.householdHash, e.householdId, e.verifier, e.updatedAt)
+        .run();
+    } catch (err) {
+      if (err instanceof Error && /no such table/i.test(err.message)) return super.agentEnroll(e);
+      // A stale isolate skips the in-memory pre-check above (its maps don't
+      // know the binding yet), so D1 raises the unique-constraint failure
+      // instead. Map it to the documented 409 — a conflicting binding is a
+      // client conflict, never a 500.
+      if (err instanceof Error && /UNIQUE constraint failed: agent_enrollments\.(verifier|household_id)/i.test(err.message)) {
+        const conflict = new Error('agent enrollment conflicts with an existing binding') as Error & { status?: number };
+        conflict.status = 409;
+        throw conflict;
+      }
+      throw err;
+    }
+    const changes = (res as { meta?: { changes?: unknown } } | null | undefined)?.meta?.changes;
+    if (typeof changes === 'number' && changes === 0) {
+      // A concurrent isolate's newer row won: reconcile memory to the D1
+      // winner instead of staging the stale loser.
+      const row = await this.db
+        .prepare('SELECT household_hash, household_id, verifier, updated_at FROM agent_enrollments WHERE household_hash = ?')
+        .bind(e.householdHash)
+        .first();
+      if (row && row['household_hash']) {
+        return super.agentEnroll({
+          householdHash: String(row['household_hash']),
+          householdId: String(row['household_id'] ?? ''),
+          verifier: String(row['verifier'] ?? ''),
+          updatedAt: String(row['updated_at'] ?? ''),
+        });
+      }
+    }
+    return super.agentEnroll(e);
+  }
+
+  /** Load enrollments without re-persisting (hydrate path only). */
+  async loadAgentEnrollments(): Promise<void> {
+    let rows: Record<string, unknown>[];
+    try {
+      rows = (
+        await this.db
+          .prepare('SELECT household_hash, household_id, verifier, updated_at FROM agent_enrollments')
+          .all()
+      ).results;
+    } catch {
+      return; // pre-migration DB: memory fallback untouched
+    }
+    for (const r of rows) {
+      const e: AgentEnrollment = {
+        householdHash: String(r['household_hash'] ?? ''),
+        householdId: String(r['household_id'] ?? ''),
+        verifier: String(r['verifier'] ?? ''),
+        updatedAt: String(r['updated_at'] ?? ''),
+      };
+      if (e.householdHash && e.householdId && e.verifier) await super.agentEnroll(e);
+    }
+  }
+
+  /** Revoke one hash's enrollment: delete the D1 row, then clear the memory
+   * indexes (D1 is durable, memory is the read path — both must forget the
+   * old token or it keeps authenticating on some isolate). A missing table
+   * (pre-migration DB) still clears memory so the token dies everywhere. */
+  override async agentRevokeByHash(householdHash: string): Promise<boolean> {
+    try {
+      await this.db.prepare('DELETE FROM agent_enrollments WHERE household_hash = ?').bind(householdHash).run();
+    } catch (e) {
+      if (!(e instanceof Error) || !/no such table/i.test(e.message)) throw e;
+    }
+    return super.agentRevokeByHash(householdHash);
+  }
 
   override async createRecipe(input: any, meta: { deviceId: string; id?: string; updatedAt?: string }): Promise<Recipe> {
     const r = await super.createRecipe(input, meta);
     await this.persist(
-      'INSERT INTO recipes (id, household_id, title, description, servings, prep_minutes, cook_minutes, rating, source, source_url, categories, photo_original, photo_large1024, photo_thumb, updated_at, device_id, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0) ON CONFLICT(id) DO UPDATE SET title=excluded.title, description=excluded.description, servings=excluded.servings, updated_at=excluded.updated_at, device_id=excluded.device_id',
-      r.id, r.householdId, r.title, r.description, r.servings, r.prepMinutes, r.cookMinutes, r.rating,
-      r.source, r.sourceUrl, JSON.stringify(r.categories),
+      'INSERT INTO recipes (id, household_id, title, description, servings, prep_minutes, cook_minutes, total_minutes, rating, is_favorite, difficulty, source, source_url, categories, cookbooks, notes, nutrition_text, photo_original, photo_large1024, photo_thumb, updated_at, device_id, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0) ON CONFLICT(id) DO UPDATE SET title=excluded.title, description=excluded.description, servings=excluded.servings, prep_minutes=excluded.prep_minutes, cook_minutes=excluded.cook_minutes, total_minutes=excluded.total_minutes, rating=excluded.rating, is_favorite=excluded.is_favorite, difficulty=excluded.difficulty, source=excluded.source, source_url=excluded.source_url, categories=excluded.categories, cookbooks=excluded.cookbooks, notes=excluded.notes, nutrition_text=excluded.nutrition_text, photo_original=excluded.photo_original, photo_large1024=excluded.photo_large1024, photo_thumb=excluded.photo_thumb, updated_at=excluded.updated_at, device_id=excluded.device_id',
+      r.id, r.householdId, r.title, r.description, r.servings, r.prepMinutes, r.cookMinutes, r.totalMinutes, r.rating,
+      r.isFavorite ? 1 : 0,
+      r.difficulty, r.source, r.sourceUrl, JSON.stringify(r.categories), JSON.stringify(r.cookbooks), r.notes, r.nutritionText,
       r.photoKeys.original, r.photoKeys.large1024, r.photoKeys.thumb, r.updatedAt, r.deviceId,
     );
     for (const g of r.ingredients) {
@@ -248,12 +579,45 @@ export class D1Store extends MemoryStore implements Store {
         s.id, r.id, s.position, s.text, JSON.stringify(s.timers),
       );
     }
+    // Omitted children were deleted by the update: prune stale D1 rows so a
+    // later hydrate can't resurrect them. Empty set deletes all children.
+    await this.pruneChildren('ingredients', 'recipe_id', r.id, r.ingredients.map((g) => g.id));
+    await this.pruneChildren('steps', 'recipe_id', r.id, r.steps.map((s) => s.id));
     return r;
   }
   override async deleteRecipe(id: string, deviceId: string): Promise<boolean> {
     const ok = await super.deleteRecipe(id, deviceId);
     if (ok) await this.persist('UPDATE recipes SET deleted = 1, updated_at = ?, device_id = ? WHERE id = ?', nowIso(), deviceId, id);
     return ok;
+  }
+
+  override async applyEnvelopeFull(env: { id: string; updatedAt: string; deviceId: string; deleted: boolean; entity: string; payload?: unknown }): Promise<void> {
+    await super.applyEnvelopeFull(env as never);
+    if (env.entity !== 'recipe') return;
+    const row = this.recipes.get(env.id);
+    if (!row) return;
+    await this.persist(
+      'INSERT INTO recipes (id, household_id, title, description, servings, prep_minutes, cook_minutes, total_minutes, rating, is_favorite, difficulty, source, source_url, categories, cookbooks, notes, nutrition_text, photo_original, photo_large1024, photo_thumb, updated_at, device_id, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET title=excluded.title, description=excluded.description, servings=excluded.servings, prep_minutes=excluded.prep_minutes, cook_minutes=excluded.cook_minutes, total_minutes=excluded.total_minutes, rating=excluded.rating, is_favorite=excluded.is_favorite, difficulty=excluded.difficulty, source=excluded.source, source_url=excluded.source_url, categories=excluded.categories, cookbooks=excluded.cookbooks, notes=excluded.notes, nutrition_text=excluded.nutrition_text, photo_original=excluded.photo_original, photo_large1024=excluded.photo_large1024, photo_thumb=excluded.photo_thumb, updated_at=excluded.updated_at, device_id=excluded.device_id, deleted=excluded.deleted',
+      row.id, row.householdId, row.title, row.description, row.servings, row.prepMinutes, row.cookMinutes, row.totalMinutes, row.rating,
+      (row as { isFavorite?: boolean }).isFavorite ? 1 : 0,
+      row.difficulty, row.source, row.sourceUrl, JSON.stringify(row.categories), JSON.stringify(row.cookbooks), row.notes, row.nutritionText,
+      row.photoKeys.original, row.photoKeys.large1024, row.photoKeys.thumb, row.updatedAt, row.deviceId,
+      row.deleted ? 1 : 0,
+    );
+    for (const g of row.ingredients) {
+      await this.persist(
+        'INSERT INTO ingredients (id, recipe_id, name, quantity, unit, display, position) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, quantity=excluded.quantity, unit=excluded.unit, display=excluded.display, position=excluded.position',
+        g.id, row.id, g.name, g.quantity, g.unit, g.display, g.position,
+      );
+    }
+    for (const s of row.steps) {
+      await this.persist(
+        'INSERT INTO steps (id, recipe_id, position, text, timers) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET position=excluded.position, text=excluded.text, timers=excluded.timers',
+        s.id, row.id, s.position, s.text, JSON.stringify(s.timers),
+      );
+    }
+    await this.pruneChildren('ingredients', 'recipe_id', row.id, row.ingredients.map((g) => g.id));
+    await this.pruneChildren('steps', 'recipe_id', row.id, row.steps.map((s) => s.id));
   }
 
   override async createList(input: any, meta: { deviceId: string; id?: string; updatedAt?: string }): Promise<ShoppingList> {
@@ -264,10 +628,11 @@ export class D1Store extends MemoryStore implements Store {
     );
     for (const it of l.items) {
       await this.persist(
-        'INSERT INTO list_items (id, list_id, name, quantity, aisle, checked, recipe_id) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, quantity=excluded.quantity, aisle=excluded.aisle, checked=excluded.checked',
+        'INSERT INTO list_items (id, list_id, name, quantity, aisle, checked, recipe_id) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET list_id=excluded.list_id, name=excluded.name, quantity=excluded.quantity, aisle=excluded.aisle, checked=excluded.checked, recipe_id=excluded.recipe_id',
         it.id, l.id, it.name, it.quantity, it.aisle, it.checked ? 1 : 0, it.recipeId,
       );
     }
+    await this.pruneChildren('list_items', 'list_id', l.id, l.items.map((it) => it.id));
     return l;
   }
   override async deleteList(id: string, deviceId: string): Promise<boolean> {
@@ -279,7 +644,7 @@ export class D1Store extends MemoryStore implements Store {
   override async createPantry(input: any, meta: { deviceId: string; id?: string; updatedAt?: string }): Promise<PantryItem> {
     const p = await super.createPantry(input, meta);
     await this.persist(
-      'INSERT INTO pantry_items (id, household_id, name, quantity, location, expires_at, low_threshold, barcode, updated_at, device_id, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0) ON CONFLICT(id) DO UPDATE SET name=excluded.name, quantity=excluded.quantity, updated_at=excluded.updated_at, device_id=excluded.device_id',
+      'INSERT INTO pantry_items (id, household_id, name, quantity, location, expires_at, low_threshold, barcode, updated_at, device_id, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0) ON CONFLICT(id) DO UPDATE SET name=excluded.name, quantity=excluded.quantity, location=excluded.location, expires_at=excluded.expires_at, low_threshold=excluded.low_threshold, barcode=excluded.barcode, updated_at=excluded.updated_at, device_id=excluded.device_id',
       p.id, p.householdId, p.name, p.quantity, p.location, p.expiresAt, p.lowThreshold, p.barcode, p.updatedAt, p.deviceId,
     );
     return p;

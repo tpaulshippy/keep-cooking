@@ -10,8 +10,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "seed": "bun run seed.ts --generate-sql",
-    "db:apply:local": "npx wrangler d1 execute keep-cooking --local --file=./drizzle/0001_init.sql && npx wrangler d1 execute keep-cooking --local --file=./drizzle/0002_e2e_blobs.sql",
-    "db:apply:remote": "npx wrangler d1 execute keep-cooking --remote --file=./drizzle/0001_init.sql && npx wrangler d1 execute keep-cooking --remote --file=./drizzle/0002_e2e_blobs.sql",
+    "db:apply:local": "for f in ./drizzle/0001_init.sql ./drizzle/0002_e2e_blobs.sql ./drizzle/0003_device_keys.sql ./drizzle/0004_agent_enrollments.sql ./drizzle/0005_is_favorite.sql ./drizzle/0006_editor_metadata.sql; do bash scripts/apply-migration.sh --local \"$f\" || exit 1; done",
+    "db:apply:remote": "for f in ./drizzle/0001_init.sql ./drizzle/0002_e2e_blobs.sql ./drizzle/0003_device_keys.sql ./drizzle/0004_agent_enrollments.sql ./drizzle/0005_is_favorite.sql ./drizzle/0006_editor_metadata.sql; do bash scripts/apply-migration.sh --remote \"$f\" || exit 1; done",
     "db:seed:local": "npx wrangler d1 execute keep-cooking --local --file=./drizzle/seed.sql"
   },
   "dependencies": {

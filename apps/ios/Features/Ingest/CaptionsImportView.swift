@@ -108,6 +108,7 @@ public struct CaptionsImportView: View {
                         .buttonStyle(.borderedProminent)
                         .disabled(isLoading || captionText.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(14)
                     .background(Color(.secondarySystemBackground))
                     .clipShape(RoundedRectangle(cornerRadius: 14))
@@ -157,6 +158,7 @@ public struct CaptionsImportView: View {
                                 .focused($focused, equals: .steps)
                                 .accessibilityLabel("Steps")
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(14)
                         .background(Color(.secondarySystemBackground))
                         .clipShape(RoundedRectangle(cornerRadius: 14))
@@ -181,6 +183,7 @@ public struct CaptionsImportView: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(14)
                         .background(Color(.secondarySystemBackground))
                         .clipShape(RoundedRectangle(cornerRadius: 14))
@@ -233,13 +236,17 @@ public struct CaptionsImportView: View {
         )
         do {
             #if os(iOS)
-            let clipDeviceId = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
+            // Enroll before the first signed POST (fresh installs would get
+            // 401 in prod). Re-read afterwards — 409 recovery rotates the id.
+            await DeviceAuth.enrollIfNeeded(baseURL: baseURL, deviceId: DeviceAuth.currentDeviceId())
+            let clipDeviceId = DeviceAuth.currentDeviceId()
             #else
             let clipDeviceId = UUID().uuidString
             #endif
             let client = ClipClient(baseURL: baseURL,
                 betaToken: nil,
-                userId: SyncConfig.userId, deviceId: clipDeviceId)
+                userId: SyncConfig.userId, deviceId: clipDeviceId,
+                signer: DeviceAuth.requestSigner(deviceId: clipDeviceId))
             let rep = try await client.clip(req)
             print(client.logEvent(for: rep, requestURL: req.url).description)
             report = rep
@@ -261,11 +268,7 @@ public struct CaptionsImportView: View {
     }
 
     private func save() {
-        #if os(iOS)
-        let deviceId = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
-        #else
-        let deviceId = UUID().uuidString
-        #endif
+        let deviceId = DeviceAuth.currentDeviceId()
         let trimmed = cleanTitle(title)
         let recipe = Recipe(
             householdId: "hh-demo",

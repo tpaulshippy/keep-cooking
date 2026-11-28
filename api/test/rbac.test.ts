@@ -6,24 +6,24 @@ const RECIPE = { title: 'RBAC Stew', servings: 2, householdId: 'hh-demo' };
 describe('RBAC', () => {
   it('viewer: reads OK, all mutations 403', async () => {
     const { app } = await makeApp();
-    const created = await req(app, 'POST', '/recipes', { body: RECIPE, role: 'owner' });
+    const created = await req(app, 'POST', '/api/recipes', { body: RECIPE, role: 'owner' });
     expect(created.status).toBe(201);
     const id = ((await created.json()) as { id: string }).id;
 
-    const get = await req(app, 'GET', `/recipes/${id}`, { role: 'viewer' });
+    const get = await req(app, 'GET', `/api/recipes/${id}`, { role: 'viewer' });
     expect(get.status).toBe(200);
-    const list = await req(app, 'GET', '/recipes?householdId=hh-demo', { role: 'viewer' });
+    const list = await req(app, 'GET', '/api/recipes?householdId=hh-demo', { role: 'viewer' });
     expect(list.status).toBe(200);
 
     for (const [m, p, b] of [
-      ['POST', '/recipes', RECIPE],
-      ['PUT', `/recipes/${id}`, RECIPE],
-      ['DELETE', `/recipes/${id}`, undefined],
-      ['POST', '/lists', { name: 'x' }],
-      ['POST', '/pantry', { name: 'x' }],
-      ['POST', '/plans', { date: '2026-12-01', meal: 'dinner' }],
-      ['POST', '/menus', { name: 'x' }],
-      ['POST', `/recipes/${id}/scale`, { servings: 4 }],
+      ['POST', '/api/recipes', RECIPE],
+      ['PUT', `/api/recipes/${id}`, RECIPE],
+      ['DELETE', `/api/recipes/${id}`, undefined],
+      ['POST', '/api/lists', { name: 'x' }],
+      ['POST', '/api/pantry', { name: 'x' }],
+      ['POST', '/api/plans', { date: '2026-12-01', meal: 'dinner' }],
+      ['POST', '/api/menus', { name: 'x' }],
+      ['POST', `/api/recipes/${id}/scale`, { servings: 4 }],
     ] as const) {
       // scale is a read-only transform: viewer allowed.
       const res = await req(app, m, p, { body: b, role: 'viewer' });
@@ -34,16 +34,16 @@ describe('RBAC', () => {
 
   it('member: full CRUD, but share/cookbook is owner-only', async () => {
     const { app } = await makeApp();
-    const created = await req(app, 'POST', '/recipes', { body: RECIPE, role: 'member' });
+    const created = await req(app, 'POST', '/api/recipes', { body: RECIPE, role: 'member' });
     expect(created.status).toBe(201);
     const id = ((await created.json()) as { id: string }).id;
 
-    const upd = await req(app, 'PUT', `/recipes/${id}`, { body: { ...RECIPE, title: 'RBAC Stew v2' }, role: 'member' });
+    const upd = await req(app, 'PUT', `/api/recipes/${id}`, { body: { ...RECIPE, title: 'RBAC Stew v2' }, role: 'member' });
     expect(upd.status).toBe(200);
-    const del = await req(app, 'DELETE', `/recipes/${id}`, { role: 'member' });
+    const del = await req(app, 'DELETE', `/api/recipes/${id}`, { role: 'member' });
     expect(del.status).toBe(204);
 
-    const share = await req(app, 'POST', '/share/cookbook', {
+    const share = await req(app, 'POST', '/api/share/cookbook', {
       body: { householdId: 'hh-demo', recipeIds: ['x'] },
       role: 'member',
     });
@@ -52,7 +52,7 @@ describe('RBAC', () => {
 
   it('owner: share/cookbook works', async () => {
     const { app } = await makeApp();
-    const res = await req(app, 'POST', '/share/cookbook', {
+    const res = await req(app, 'POST', '/api/share/cookbook', {
       body: { householdId: 'hh-demo', recipeIds: ['r1'], expiresInDays: 7 },
       role: 'owner',
     });
@@ -66,7 +66,7 @@ describe('RBAC', () => {
     const { app, store } = await makeApp();
     // u-viewer is a viewer in hh-demo per seed; even claiming owner via header, membership wins.
     await store.setMembership('hh-demo', 'sneaky', 'viewer');
-    const res = await req(app, 'POST', '/recipes', {
+    const res = await req(app, 'POST', '/api/recipes', {
       body: RECIPE,
       headers: { 'x-user-id': 'sneaky', 'x-role': 'owner', 'x-device-id': 'd', 'content-type': 'application/json' },
     });
@@ -75,9 +75,9 @@ describe('RBAC', () => {
 
   it('zod rejects invalid inputs (400, no PII echo)', async () => {
     const { app } = await makeApp();
-    const res = await req(app, 'POST', '/recipes', { body: { title: '' }, role: 'owner' });
+    const res = await req(app, 'POST', '/api/recipes', { body: { title: '' }, role: 'owner' });
     expect(res.status).toBe(400);
-    const scale = await req(app, 'POST', '/recipes/nope/scale', { body: { servings: 9999 }, role: 'owner' });
+    const scale = await req(app, 'POST', '/api/recipes/nope/scale', { body: { servings: 9999 }, role: 'owner' });
     expect([400, 404]).toContain(scale.status);
   });
 });

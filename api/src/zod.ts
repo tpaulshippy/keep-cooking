@@ -19,21 +19,28 @@ export const clipRequestSchema = z
   .object({
     url: z.string().url().optional(),
     caption: z.string().max(20000).optional(),
-    source: z.enum(['url', 'tiktok', 'instagram', 'youtube', 'ocr', 'clipboard']).optional(),
+    source: z.enum(['url', 'tiktok', 'instagram', 'youtube', 'ocr', 'clipboard', 'text', 'photo']).optional(),
   })
   .refine((v) => v.url || v.caption, { message: 'url or caption is required' });
 
 // ---- Recipes ----
 export const ingredientInputSchema = z.object({
+  id: z.string().max(120).optional(),
   name: z.string().min(1).max(300),
   quantity: z.number().nullable().optional(),
   unit: z.string().max(60).optional().default(''),
   display: z.string().max(120).optional().default(''),
   position: z.number().int().min(0).optional().default(0),
 });
+export const stepTimerInputSchema = z.object({
+  seconds: z.number().int().min(1),
+  label: z.string().max(120).optional().default('Timer'),
+});
 export const stepInputSchema = z.object({
+  id: z.string().max(120).optional(),
   position: z.number().int().min(0).optional().default(0),
   text: z.string().min(1).max(8000),
+  timers: z.array(stepTimerInputSchema).max(20).optional().default([]),
 });
 export const photoKeysSchema = z
   .object({
@@ -50,10 +57,16 @@ export const recipeInputSchema = z.object({
   servings: z.number().min(0.25).max(100).optional().default(4),
   prepMinutes: z.number().int().min(0).max(10080).nullable().optional(),
   cookMinutes: z.number().int().min(0).max(10080).nullable().optional(),
+  totalMinutes: z.number().int().min(0).max(20160).nullable().optional(),
   rating: z.number().min(0).max(5).nullable().optional(),
+  isFavorite: z.boolean().optional(),
+  difficulty: z.string().max(60).optional().default(''),
   source: z.string().max(300).optional().default(''),
   sourceUrl: z.string().max(2000).optional().default(''),
   categories: z.array(z.string().max(60)).max(30).optional().default([]),
+  cookbooks: z.array(z.string().max(120)).max(30).optional().default([]),
+  notes: z.string().max(8000).optional().default(''),
+  nutritionText: z.string().max(8000).optional().default(''),
   photoKeys: photoKeysSchema,
   ingredients: z.array(ingredientInputSchema).max(200).optional().default([]),
   steps: z.array(stepInputSchema).max(200).optional().default([]),
@@ -62,6 +75,7 @@ export const recipeInputSchema = z.object({
 
 // ---- Lists ----
 export const listItemInputSchema = z.object({
+  id: z.string().max(120).optional(),
   name: z.string().min(1).max(300),
   quantity: z.string().max(120).optional().default(''),
   aisle: z.string().max(120).optional().default(''),

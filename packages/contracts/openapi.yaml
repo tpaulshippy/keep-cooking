@@ -1,10 +1,10 @@
 openapi: 3.1.0
 info:
   title: Keep Cooking API
-  version: 0.1.0
+  version: 0.2.0
   description: Single Hono Worker + D1 + R2. MIT only. See packages/contracts/README.md.
 servers:
-  - url: https://api.keepcooking.local
+  - url: https://keepcooking.app/api
 paths:
   /health:
     get:
@@ -25,8 +25,71 @@ paths:
       responses:
         '200':
           description: OpenAPI JSON (must match packages/contracts/openapi.json)
+  /agent/enroll:
+    post:
+      operationId: agentEnroll
+      description: >-
+        Bind a householdHash bucket to a plaintext householdId label plus a
+        token verifier (hex(SHA256(raw agent token))). Open: knowledge of the
+        unguessable householdHash IS the capability. Re-enroll to rotate the
+        token without rotating the data key. Never receives key material.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgentEnrollRequest' }
+      responses:
+        '201':
+          description: enrolled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentEnrollResponse' }
+        '409':
+          description: householdId label already bound to a different hash (present the existing agent token in x-agent-token to re-bind it)
+  /agent/status:
+    get:
+      operationId: agentStatus
+      security: [{ AgentToken: [] }]
+      responses:
+        '200':
+          description: enrolled household for this token
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentStatus' }
+        '401':
+          description: missing or unknown x-agent-token
+  /mcp:
+    post:
+      operationId: mcpRpc
+      security: [{ AgentToken: [] }]
+      description: >-
+        Stateless JSON-RPC 2.0 (Streamable HTTP subset): initialize (legacy
+        handshake, kept for 2025 clients), server/discover (modern
+        handshake), tools/list, tools/call, ping. Every tool call
+        authenticates via x-agent-token; tools are scoped to the enrolled
+        household. Tool schemas are versioned in packages/contracts/mcp-tools.json.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, description: JSON-RPC 2.0 request }
+      responses:
+        '200':
+          description: JSON-RPC 2.0 response (or isError tool result)
+          content:
+            application/json:
+              schema: { type: object }
+        '202':
+          description: notification accepted (no body, per Streamable HTTP)
+        '401':
+          description: missing or unknown x-agent-token
   /clip:
     post:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
+        - AgentToken: []
       operationId: clipRecipe
       requestBody:
         required: true
@@ -41,6 +104,42 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ClipReport'
+  /import:
+    post:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
+        - AgentToken: []
+      operationId: importRecipes
+      description: >-
+        Paprika full-parity import. Accepts native Paprika bundles
+        (paprika-json decoded JSON, paprika-zip .paprikarecipes ZIP of gzipped
+        JSON, paprika-recipe single gzip/JSON) plus YAML (.yml/.yaml, JSON-as-YAML
+        accepted), HTML directory export (JSON-LD → hRecipe → headings), and
+        third-party formats Paprika imports (mx2/mxp/mz2/mmf/fdx/fdxz/
+        pepperplate-zip/pepperplate-db/copymethat-zip/yum-xml/ysr/mgourmet/dvo/
+        mcb/recipe-manager-txt/hcb/myrecipebook-sqlite/rbox). Binary payloads
+        go in `payload` as base64; already-decoded JSON goes in `payloadJson`.
+        `paprikaUid` is the upsert key (re-import updates in place, trashed
+        match restores); YAML has no identity so it is create-only.
+        `importCookbooks` recreates Paprika cookbooks (else folds into
+        categories). `dryRun` parses and reports without persisting.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportRequest'
+      responses:
+        '200':
+          description: import report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportReport'
+        '400':
+          description: unsupported format or undecodable payload
   /recipes:
     get:
       operationId: listRecipes
@@ -55,6 +154,11 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/Recipe' }
     post:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
+        - AgentToken: []
       operationId: createRecipe
       requestBody:
         required: true
@@ -78,6 +182,11 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Recipe' }
     put:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
+        - AgentToken: []
       operationId: updateRecipe
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       requestBody:
@@ -92,12 +201,22 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Recipe' }
     delete:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
+        - AgentToken: []
       operationId: deleteRecipe
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       responses:
         '204': { description: deleted }
   /recipes/{id}/scale:
     post:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
+        - AgentToken: []
       operationId: scaleRecipe
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       requestBody:
@@ -127,6 +246,11 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/ShoppingList' }
     post:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
+        - AgentToken: []
       operationId: createShoppingList
       requestBody:
         required: true
@@ -150,6 +274,11 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ShoppingList' }
     put:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
+        - AgentToken: []
       operationId: updateShoppingList
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       requestBody:
@@ -164,6 +293,11 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ShoppingList' }
     delete:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
+        - AgentToken: []
       operationId: deleteShoppingList
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       responses:
@@ -180,6 +314,11 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/PantryItem' }
     post:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
+        - AgentToken: []
       operationId: createPantryItem
       requestBody:
         required: true
@@ -194,6 +333,11 @@ paths:
               schema: { $ref: '#/components/schemas/PantryItem' }
   /pantry/{id}:
     put:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
+        - AgentToken: []
       operationId: updatePantryItem
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       requestBody:
@@ -208,6 +352,11 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/PantryItem' }
     delete:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
+        - AgentToken: []
       operationId: deletePantryItem
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       responses:
@@ -224,6 +373,11 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/Plan' }
     post:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
+        - AgentToken: []
       operationId: createPlan
       requestBody:
         required: true
@@ -247,6 +401,11 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Plan' }
     put:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
+        - AgentToken: []
       operationId: updatePlan
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       requestBody:
@@ -261,6 +420,11 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Plan' }
     delete:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
+        - AgentToken: []
       operationId: deletePlan
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       responses:
@@ -277,6 +441,11 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/Menu' }
     post:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
+        - AgentToken: []
       operationId: createMenu
       requestBody:
         required: true
@@ -300,6 +469,11 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Menu' }
     put:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
+        - AgentToken: []
       operationId: updateMenu
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       requestBody:
@@ -314,6 +488,11 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Menu' }
     delete:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
+        - AgentToken: []
       operationId: deleteMenu
       parameters: [{ $ref: '#/components/parameters/IdParam' }]
       responses:
@@ -329,6 +508,11 @@ paths:
               schema: { type: string }
   /share/cookbook:
     post:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
+        - AgentToken: []
       operationId: shareCookbook
       requestBody:
         required: true
@@ -377,6 +561,70 @@ paths:
           content:
             text/html:
               schema: { type: string }
+  /export/{id}.paprikarecipes:
+    get:
+      operationId: exportPaprikaRecipe
+      description: >-
+        Single-recipe native Paprika export: gzipped JSON (.paprikarecipe
+        bytes). Always emits a `photo` filename when `photo_data` is present
+        (synthesized `${UID}.jpg`), reuses stored `paprikaUid`, stringifies
+        servings/times from raw text fields when present.
+      parameters: [{ $ref: '#/components/parameters/IdParam' }]
+      responses:
+        '200':
+          description: gzipped Paprika recipe JSON
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+  /export/{id}.yaml:
+    get:
+      operationId: exportYaml
+      description: >-
+        Single-recipe Paprika YAML export (emitted as JSON-as-YAML, valid YAML).
+        `on_favorites` is accepted on import but unreliable on Paprika iOS —
+        clients should warn.
+      parameters: [{ $ref: '#/components/parameters/IdParam' }]
+      responses:
+        '200':
+          description: YAML export (JSON-as-YAML)
+          content:
+            text/yaml:
+              schema: { type: string }
+  /export:
+    get:
+      operationId: exportBulk
+      description: >-
+        Bulk export. `?format=` selects json|md|html|paprikarecipes|yaml
+        (default json; paprikarecipes returns a .paprikarecipes ZIP of gzipped
+        per-recipe JSON, yaml returns a multi-recipe YAML list as
+        JSON-as-YAML). `?all=true` exports every recipe in the household;
+        otherwise pass `?ids=` (comma-separated) or a single `?id=`.
+        Cookbook-scoped export passes `?cookbook=`. Single-recipe suffix routes
+        (/export/{id}.json|.md|.html|.paprikarecipes|.yaml) remain canonical
+        for one recipe.
+      parameters:
+        - $ref: '#/components/parameters/HouseholdId'
+        - name: format
+          in: query
+          schema: { type: string, enum: [json, md, html, paprikarecipes, yaml], default: json }
+        - name: all
+          in: query
+          description: export every recipe in the household
+          schema: { type: boolean, default: false }
+        - name: ids
+          in: query
+          description: comma-separated recipe ids (ignored when all=true)
+          schema: { type: string }
+        - name: cookbook
+          in: query
+          description: limit bulk export to one cookbook/menu name
+          schema: { type: string }
+      responses:
+        '200':
+          description: bulk export bytes (content-type follows format)
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
   /sync/pull:
     get:
       operationId: syncPull
@@ -394,6 +642,11 @@ paths:
                 items: { $ref: '#/components/schemas/SyncEnvelope' }
   /sync/push:
     post:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
+        - AgentToken: []
       operationId: syncPush
       requestBody:
         required: true
@@ -410,6 +663,69 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/SyncEnvelope' }
+  /v2/devices:
+    post:
+      operationId: enrollDevice
+      description: >-
+        Open enrollment — no device signature required (this is how devices
+        join). 201 on first enroll, 200 on idempotent re-enroll with the same
+        key, 410 when the id was revoked (gone, enroll a fresh deviceId
+        instead), 409 when the id is already enrolled with a different key,
+        400 on validation failure. Reads stay open; every other write requires
+        the enrolled key (see DeviceSig).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeviceEnrollRequest' }
+      responses:
+        '201':
+          description: enrolled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceEnrollResponse' }
+        '200':
+          description: already enrolled with the same key (idempotent)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceEnrollResponse' }
+        '400':
+          description: invalid deviceId / publicKey / displayName
+        '409':
+          description: device id already enrolled with a different key
+        '410':
+          description: device id was revoked (gone) — enroll a fresh deviceId instead
+  /v2/devices/{id}/revoke:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: enrolled device id to revoke (self-only)
+    post:
+      operationId: revokeDevice
+      description: >-
+        Signed revocation (caller signs with its own enrolled key). Revoking
+        your own key is logout — the next write from that key gets 401
+        (device revoked). There is no shared token to rotate; enroll a fresh
+        deviceId instead (re-enrolling this revoked id returns 410).
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
+        - AgentToken: []
+      responses:
+        '200':
+          description: revoked
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceRevokeResponse' }
+        '401':
+          description: missing / unknown / stale / bad / revoked device signature
+        '403':
+          description: not self (cross-device revoke deferred)
+        '404':
+          description: unknown device id
   /v2/sync/{hash}:
     parameters:
       - name: hash
@@ -432,6 +748,11 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/EncryptedEnvelope' }
     put:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
+        - AgentToken: []
       operationId: e2ePush
       requestBody:
         required: true
@@ -450,7 +771,17 @@ paths:
                 required: [stored]
                 properties:
                   stored: { type: array, items: { type: string } }
+        '413':
+          description: >-
+            batch exceeds E2E_MAX_PUSH_BATCH (500 envelopes) — chunk and
+            retry. Native outboxes must split large backlog drains into
+            <=500-envelope pushes.
     delete:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
+        - AgentToken: []
       operationId: e2eWipe
       responses:
         '200':
@@ -462,7 +793,74 @@ paths:
                 required: [wiped]
                 properties:
                   wiped: { type: integer }
+  /photos/dl:
+    get:
+      operationId: photoDownload
+      description: >-
+        Serve R2 photo bytes for a signed URL minted by GET /photos/sign (or
+        the photos_sign MCP tool, which targets this route). Verifies the
+        HMAC exp/sig first; no device signature or agent token required (the
+        signature IS the capability, expiring in <15min).
+      parameters:
+        - name: key
+          in: query
+          required: true
+          schema: { type: string }
+        - name: exp
+          in: query
+          required: true
+          schema: { type: integer }
+        - name: sig
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: photo bytes (image/jpeg)
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+        '400':
+          description: key, exp, or sig missing
+        '403':
+          description: invalid or expired signature
+        '404':
+          description: photo serving unconfigured or key does not exist
 components:
+  securitySchemes:
+    AgentToken:
+      type: apiKey
+      in: header
+      name: x-agent-token
+      description: >-
+        Key-derived bearer (base64url of 32 HKDF-SHA256 bytes, domain-separated
+        from the data key — see docs/agents/). Enroll via POST /agent/enroll,
+        which stores only hex(SHA256(token)). Accepted as an alternative to
+        the Ed25519 device signature on every mutating route (prod): reads
+        are scoped to the enrolled household (out-of-scope reads are 404),
+        writes require an explicit matching householdId (else 403). Blind
+        /v2 envelopes stay opaque — the server verifies the token, never
+        content.
+    DeviceId:
+      type: apiKey
+      in: header
+      name: x-device-id
+      description: enrolled device id (UUIDv4, from POST /v2/devices)
+    DeviceTs:
+      type: apiKey
+      in: header
+      name: x-device-ts
+      description: millis since epoch, digits only; |now - ts| <= 5 min. Replay window is a documented limitation (no server nonce ledger).
+    DeviceSig:
+      type: apiKey
+      in: header
+      name: x-device-sig
+      description: >-
+        base64 Ed25519 signature over the canonical string METHOD + "\n" +
+        path+query + "\n" + ts + "\n" + hex(SHA256(bodyBytes)) (empty body
+        hashes as hex(SHA256(""))). Required on every POST/PUT/DELETE except
+        POST /v2/devices; GET/HEAD/OPTIONS, /health and /openapi.json stay
+        open. Unknown / stale / revoked keys get 401 (self-revoke = logout).
   parameters:
     IdParam:
       name: id
@@ -474,6 +872,25 @@ components:
       in: query
       schema: { type: string }
   schemas:
+    DeviceEnrollRequest:
+      type: object
+      required: [deviceId, publicKey]
+      properties:
+        deviceId: { type: string, format: uuid, description: "UUIDv4, stable per device" }
+        publicKey: { type: string, description: base64 of exactly 32 bytes (Ed25519 public key); the private half never leaves the device }
+        displayName: { type: string, maxLength: 64 }
+    DeviceEnrollResponse:
+      type: object
+      required: [deviceId, enrolledAt]
+      properties:
+        deviceId: { type: string, format: uuid }
+        enrolledAt: { type: string, format: date-time }
+    DeviceRevokeResponse:
+      type: object
+      required: [deviceId, revokedAt]
+      properties:
+        deviceId: { type: string, format: uuid }
+        revokedAt: { type: string, format: date-time }
     SyncEnvelope:
       type: object
       required: [id, updatedAt, deviceId]
@@ -502,10 +919,15 @@ components:
         ciphertext: { type: string, description: base64, AES-GCM-256(raw-ciphertext + 16-byte tag) over canonical JSON of the v1 envelope payload }
     ClipRequest:
       type: object
+      description: >-
+        Clip source hint. `text` = generic pasted text, `photo` = photo/OCR
+        transcript; request requires url or caption (caption max 20000);
+        when url is supplied the JSON-LD → reader pipeline runs first
+        with caption as fallback.
       properties:
         url: { type: string, format: uri }
-        caption: { type: string }
-        source: { type: string, enum: [url, tiktok, instagram, youtube, ocr, clipboard] }
+        caption: { type: string, maxLength: 20000 }
+        source: { type: string, enum: [url, tiktok, instagram, youtube, ocr, clipboard, text, photo] }
       anyOf:
         - required: [url]
         - required: [caption]
@@ -518,6 +940,32 @@ components:
         warnings: { type: array, items: { type: string } }
         sourceUrl: { type: string }
         recipe: { $ref: '#/components/schemas/RecipeInput' }
+    ImportRequest:
+      type: object
+      description: Paprika full-parity import request. Mirrors ClipRequest conventions (anyOf payload variants).
+      required: [householdId, format]
+      properties:
+        householdId: { type: string }
+        format:
+          type: string
+          enum: [paprika-json, paprika-zip, paprika-recipe, yaml, html, mx2, mxp, mz2, mmf, fdx, fdxz, pepperplate-zip, pepperplate-db, copymethat-zip, yum-xml, ysr, mgourmet, dvo, mcb, recipe-manager-txt, hcb, myrecipebook-sqlite, rbox]
+        payload: { type: string, description: base64-encoded file bytes (ZIP/gzip/YAML/HTML/SQLite/blob per format) }
+        payloadJson: { type: object, description: already-decoded JSON (alternative to payload; for paprika-json / JSON-as-YAML) }
+        importCookbooks: { type: boolean, default: true, description: recreate Paprika cookbooks; else fold into categories }
+        dryRun: { type: boolean, default: false, description: parse and report without persisting }
+      anyOf:
+        - required: [payload]
+        - required: [payloadJson]
+    ImportReport:
+      type: object
+      description: Paprika import result. Mirrors ClipReport conventions (warnings[] + parsed recipes).
+      required: [imported, updated]
+      properties:
+        imported: { type: array, items: { $ref: '#/components/schemas/Recipe' } }
+        updated: { type: integer, minimum: 0, description: re-import uid matches updated in place }
+        warnings: { type: array, items: { type: string } }
+        dryRun: { type: boolean }
+        cookbooksCreated: { type: array, items: { type: string } }
     Recipe:
       allOf:
         - $ref: '#/components/schemas/SyncEnvelope'
@@ -531,6 +979,7 @@ components:
             cookMinutes: { type: integer }
             totalMinutes: { type: integer }
             rating: { type: number, minimum: 0, maximum: 5 }
+            isFavorite: { type: boolean }
             source: { type: string }
             sourceUrl: { type: string }
             categories: { type: array, items: { type: string } }
@@ -538,6 +987,18 @@ components:
             ingredients: { type: array, items: { $ref: '#/components/schemas/Ingredient' } }
             steps: { type: array, items: { $ref: '#/components/schemas/Step' } }
             householdId: { type: string }
+            notes: { type: string, description: 'Paprika notes free text (native-only; appended after description, never merged into steps)' }
+            nutritionText: { type: string, description: Paprika nutritional_info blob (free text, no structured nutrients) }
+            difficulty: { type: string, description: 'Paprika difficulty (no enum enforcement, e.g. Easy)' }
+            servingsText: { type: string, description: raw Paprika servings string (e.g. 4-6 servings, 1 pie) }
+            prepTimeText: { type: string, description: raw Paprika prep_time string }
+            cookTimeText: { type: string, description: raw Paprika cook_time string }
+            totalTimeText: { type: string, description: raw Paprika total_time string (native-only) }
+            paprikaUid: { type: string, description: stable Paprika uid (uppercase UUID); upsert key for re-import idempotency }
+            paprikaRaw: { type: object, description: original Paprika JSON sidecar for lossless round-trip }
+            cookbooks: { type: array, items: { type: string }, description: Paprika cookbook(s) (v4 cookbook); created on import when importCookbooks is on }
+            isFavorite: { type: boolean, description: Paprika on_favorites flag }
+            scaleFactor: { type: string, description: Paprika saved serving multiplier (raw string) }
     RecipeInput:
       type: object
       required: [title]
@@ -547,7 +1008,9 @@ components:
         servings: { type: number, default: 4 }
         prepMinutes: { type: integer }
         cookMinutes: { type: integer }
+        totalMinutes: { type: integer }
         rating: { type: number, minimum: 0, maximum: 5 }
+        isFavorite: { type: boolean }
         source: { type: string }
         sourceUrl: { type: string }
         categories: { type: array, items: { type: string } }
@@ -555,6 +1018,18 @@ components:
         ingredients: { type: array, items: { $ref: '#/components/schemas/IngredientInput' } }
         steps: { type: array, items: { $ref: '#/components/schemas/StepInput' } }
         householdId: { type: string }
+        notes: { type: string }
+        nutritionText: { type: string }
+        difficulty: { type: string }
+        servingsText: { type: string }
+        prepTimeText: { type: string }
+        cookTimeText: { type: string }
+        totalTimeText: { type: string }
+        paprikaUid: { type: string }
+        paprikaRaw: { type: object }
+        cookbooks: { type: array, items: { type: string } }
+        isFavorite: { type: boolean }
+        scaleFactor: { type: string }
     Ingredient:
       type: object
       required: [id, name]
@@ -570,6 +1045,7 @@ components:
       type: object
       required: [name]
       properties:
+        id: { type: string, description: "stable client-generated id, echoed back and preserved across updates" }
         name: { type: string }
         quantity: { type: number, nullable: true }
         unit: { type: string }
@@ -588,8 +1064,10 @@ components:
       type: object
       required: [text]
       properties:
+        id: { type: string, description: "stable client-generated id, echoed back and preserved across updates" }
         position: { type: integer }
         text: { type: string }
+        timers: { type: array, items: { $ref: '#/components/schemas/StepTimer' } }
     StepTimer:
       type: object
       required: [seconds, label]
@@ -629,6 +1107,7 @@ components:
       type: object
       required: [name]
       properties:
+        id: { type: string, description: "stable client-generated id, echoed back and preserved across updates" }
         name: { type: string }
         quantity: { type: string }
         aisle: { type: string }
@@ -723,6 +1202,29 @@ components:
         id: { type: string, format: uuid }
         name: { type: string }
         role: { type: string, enum: [owner, member, viewer] }
+    AgentEnrollRequest:
+      type: object
+      description: Binds an unguessable householdHash bucket to a householdId label + token verifier. Carries no key material.
+      required: [householdHash, householdId, verifier]
+      properties:
+        householdHash: { type: string, pattern: '^[0-9a-f]{64}$' }
+        householdId: { type: string }
+        verifier: { type: string, description: hex(SHA256(raw agent-token bytes)), pattern: '^[0-9a-f]{64}$' }
+    AgentEnrollResponse:
+      type: object
+      required: [ok, householdId, householdHash, hashPrefix8]
+      properties:
+        ok: { type: boolean }
+        householdId: { type: string }
+        householdHash: { type: string }
+        hashPrefix8: { type: string }
+    AgentStatus:
+      type: object
+      required: [householdId, hashPrefix8, deviceId]
+      properties:
+        householdId: { type: string }
+        hashPrefix8: { type: string }
+        deviceId: { type: string }
     ShareLink:
       type: object
       required: [id, url]

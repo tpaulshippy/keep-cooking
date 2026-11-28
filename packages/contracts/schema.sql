@@ -21,9 +21,15 @@ CREATE TABLE IF NOT EXISTS recipes (
   prep_minutes INTEGER,
   cook_minutes INTEGER,
   rating REAL CHECK (rating IS NULL OR (rating >= 0 AND rating <= 5)),
+  is_favorite INTEGER NOT NULL DEFAULT 0,
+  difficulty TEXT DEFAULT '',
   source TEXT DEFAULT '',
   source_url TEXT DEFAULT '',
   categories TEXT DEFAULT '[]',
+  cookbooks TEXT DEFAULT '[]',
+  notes TEXT DEFAULT '',
+  nutrition_text TEXT DEFAULT '',
+  total_minutes INTEGER,
   photo_original TEXT, photo_large1024 TEXT, photo_thumb TEXT,
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   device_id TEXT NOT NULL DEFAULT '',
@@ -76,6 +82,16 @@ CREATE TABLE IF NOT EXISTS share_links (
   id TEXT PRIMARY KEY, household_id TEXT NOT NULL REFERENCES households(id),
   recipe_ids TEXT NOT NULL DEFAULT '[]', url TEXT NOT NULL, expires_at TEXT NOT NULL
 );
+-- Key-only agent auth (#26): verifier = hex(SHA256(raw agent token)), a
+-- one-way hash — never key material. PK is the unguessable householdHash.
+CREATE TABLE IF NOT EXISTS agent_enrollments (
+  household_hash TEXT PRIMARY KEY,
+  household_id TEXT NOT NULL REFERENCES households(id),
+  verifier TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_enrollments_verifier ON agent_enrollments(verifier);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_enrollments_household_id ON agent_enrollments(household_id);
 CREATE INDEX IF NOT EXISTS idx_recipes_household ON recipes(household_id);
 CREATE INDEX IF NOT EXISTS idx_ingredients_recipe ON ingredients(recipe_id);
 CREATE INDEX IF NOT EXISTS idx_steps_recipe ON steps(recipe_id);

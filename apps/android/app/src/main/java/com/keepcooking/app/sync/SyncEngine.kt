@@ -22,6 +22,8 @@ import com.keepcooking.app.network.createApiService
 import com.keepcooking.app.network.E2EPushResponse
 import com.keepcooking.app.network.EncryptedEnvelopeDto
 import com.keepcooking.app.network.SyncEnvelopeDto
+import com.keepcooking.app.ui.screens.EditorExtras
+import com.keepcooking.app.ui.screens.editorExtrasKey
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -64,31 +66,38 @@ class SyncEngine(
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
 
     companion object {
-        val KEY_DEVICE_ID = stringPreferencesKey("device_id")
+        val KEY_DEVICE_ID = DeviceAuth.KEY_DEVICE_ID
         val KEY_BASE_URL = stringPreferencesKey("api_base_url")
         val KEY_USER_ID = stringPreferencesKey("user_id")
         val KEY_LAST_SYNC = stringPreferencesKey("last_sync_at")
-        const val PROD_BASE_URL = "https://keep-cooking-api.pshippy-245.workers.dev"
+        const val PROD_BASE_URL = "https://keepcooking.app/api"
     }
 
-    suspend fun deviceId(): String {
-        val existing = dataStore.data.map { it[KEY_DEVICE_ID] }.first()
-        if (existing != null) return existing
-        val fresh = UUID.randomUUID().toString()
-        dataStore.edit { it[KEY_DEVICE_ID] = fresh }
-        return fresh
-    }
+    /**
+     * Persisted UUIDv4 device id (stable across launches). identifierForVendor
+     * / Build.MODEL are display hints only — the device key is the identity.
+     */
+    suspend fun deviceId(): String = DeviceAuth.deviceId(dataStore)
 
-    /** Transport for this run: Advanced custom-server override or the built-in server. */
+    /**
+     * Transport for this run: Advanced custom-server override or the built-in
+     * server. Enrollment runs first on every call (unsigned, idempotent,
+     * best-effort) and retries until this endpoint's marker persists, so a
+     * failed first enroll never sticks. Every transport carries the device
+     * interceptor, which signs mutating requests (POST/PUT/DELETE) and
+     * leaves reads unsigned.
+     */
     private val overrideApiCache = mutableMapOf<String, ApiService>()
 
     suspend fun activeApi(): ApiService {
         val override = dataStore.data.map { it[KEY_BASE_URL]?.trim().orEmpty() }.first()
+        val base = override.ifEmpty { PROD_BASE_URL }
+        runCatching { DeviceAuth.ensure(dataStore, base) }
         if (override.isEmpty()) return api
         // Cache per base URL: a Retrofit/OkHttpClient per sync run would
         // leak connection pools and threads.
         synchronized(overrideApiCache) {
-            return overrideApiCache.getOrPut(override) { createApiService(override) }
+            return overrideApiCache.getOrPut(override) { createApiService(override, DeviceAuth.interceptor()) }
         }
     }
 
@@ -222,6 +231,7 @@ class SyncEngine(
             // a later full recipe envelope converges via normal header LWW.
         }
         val photos = p["photoKeys"]?.takeIf { it != JsonNull }?.jsonObject
+        val existingRow = database.recipes().byId(env.id)
         database.recipes().upsert(
             RecipeEntity(
                 id = env.id,
@@ -232,18 +242,57 @@ class SyncEngine(
                 prepMinutes = p.int("prepMinutes"),
                 cookMinutes = p.int("cookMinutes"),
                 rating = p.dbl("rating"),
+                isFavorite = p["isFavorite"]?.takeIf { it != JsonNull }?.jsonPrimitive?.booleanOrNull ?: existingRow?.isFavorite ?: false,
                 source = p.str("source") ?: "",
                 sourceUrl = p.str("sourceUrl") ?: "",
                 categoriesJson = categoriesJsonOf(p),
                 photoOriginal = photos?.str("original"),
                 photoLarge1024 = photos?.str("large1024"),
                 photoThumb = photos?.str("thumb"),
+                nutritionText = if (p.containsKey("nutritionText")) p.str("nutritionText") ?: "" else existingRow?.nutritionText ?: "",
                 updatedAt = remoteTs,
                 deviceId = env.deviceId,
                 deleted = env.deleted,
             ),
         )
         val did = env.deviceId
+        // Envelope-only extras (difficulty/notes/totalMinutes, plus
+        // nutritionText which additionally has a Room column for the
+        // detail panel): merge present keys into the per-recipe
+        // DataStore sidecar so the editor hydrates synced values (including
+        // clears) instead of resurrecting stale local ones. Shells return
+        // early above. A winning deleted envelope drops the sidecar so a
+        // tombstoned recipe cannot retain stale editor metadata.
+        if (env.deleted) {
+            runCatching {
+                dataStore.edit { prefs -> prefs.remove(editorExtrasKey(env.id)) }
+            }
+        } else {
+            val extrasKeys = listOf("difficulty", "notes", "nutritionText", "totalMinutes")
+            if (extrasKeys.any { p.containsKey(it) }) {
+                runCatching {
+                    dataStore.edit { prefs ->
+                        val storedKey = editorExtrasKey(env.id)
+                        val current = prefs[storedKey]?.let { raw ->
+                            runCatching { Json.decodeFromString<EditorExtras>(raw) }.getOrNull()
+                        } ?: EditorExtras()
+                        fun presentString(key: String): String? =
+                            p[key]?.takeIf { it != JsonNull }?.jsonPrimitive?.content
+                        val total = p["totalMinutes"]?.takeIf { it != JsonNull }
+                            ?.jsonPrimitive?.content?.toIntOrNull()
+                        prefs[storedKey] = Json.encodeToString(
+                            EditorExtras.serializer(),
+                            current.copy(
+                                difficulty = presentString("difficulty") ?: current.difficulty,
+                                notes = presentString("notes") ?: current.notes,
+                                nutritionText = presentString("nutritionText") ?: current.nutritionText,
+                                totalMinutes = total ?: current.totalMinutes,
+                            ),
+                        )
+                    }
+                }
+            }
+        }
         database.ingredients().deleteForRecipe(env.id)
         database.ingredients().upsertAll(
             p["ingredients"]?.jsonArray.orEmpty().mapIndexed { i, el ->
@@ -466,6 +515,9 @@ class SyncEngine(
     private fun JsonObject.int(key: String): Int? =
         this[key]?.takeIf { it != JsonNull }?.jsonPrimitive?.content?.toIntOrNull()
 
+    private fun JsonObject.bool(key: String): Boolean? =
+        this[key]?.takeIf { it != JsonNull }?.jsonPrimitive?.booleanOrNull
+
     // --- E2E sync (/v2/sync/:hash) ---
 
     /** The `since` bound for the next pull: one tick behind the cursor (strict `>` filter). */
@@ -496,6 +548,8 @@ class SyncEngine(
     suspend fun syncE2E(identity: E2ESyncIdentity, authHeader: String? = null): SyncResult {
         // Open access: no token enrollment. An explicit authHeader still
         // overrides (tests/local targets); otherwise no Authorization header.
+        // Device identity (Ed25519 enroll + signed mutating requests) flows
+        // via the transport's device interceptor (see activeApi/DeviceAuth).
         val token = authHeader
         val transport = activeApi()
         val remoteEncrypted = transport.pullEncrypted(token, identity.hash, pullSinceValue())

@@ -99,3 +99,53 @@ Unit suite (touched files it compiles): `xcodebuild test -scheme KeepCookingTest
   recorded (stub sheets / no Calendar in sim).
 - iOS 18.5 recording was impossible (installd/widgetkit, above); 18.5 build
   verified green. The stray `KeepCooking26` simulator is intentional test infra.
+
+## Menus demo (issue 25, no recording yet — simulator steps)
+
+No `menus.mp4` recorded (no macOS host in CI). Manual simulator path covers
+the same flow on iOS + Android against Room/SwiftData offline-first:
+
+1. iOS: drawer → **Menus** (also via More → Menus). Android: Plan tab →
+   **Reusable menus**. **Create** "Week 1 — High protein" → **Edit** →
+   day-count stepper to 7, rename a slot if desired (slot renames update
+   that slot's entries) → per-cell recipe picker assigns a recipe +
+   servings (iOS shows photo + name, Android shows name) → Save.
+   Only entry-backed days/slots persist and sync — trailing empty days
+   from the stepper are editor-local until filled.
+2. Rename to "Week 1 — HP", **Duplicate** ("Week 1 — HP copy"), delete copy.
+3. **Apply to week** with week-start date → skip-filled ON leaves occupied
+   day+meal plans intact (reports skipped count); toggle OFF overwrites
+   (conflicts tombstoned first, LWW via `updatedAt`).
+4. Plan tab day/week/month shows applied entries; **Add week to list**
+   aggregates menu-applied recipes into the aisle-sorted grocery list.
+5. Offline edit (airplane mode) → reconnect → converges via `SyncEnvelope`
+   `entity: "menu"` outbox/LWW path like plans/lists (see
+   `MenuPlanningTests` iOS / `MenuPlanningTest` Android for helper-unit
+   coverage of day-count, slots, meal mapping, expand, and skip-filled
+   filtering; API `menus` CRUD smoke in `api/test/recipes.test.ts`).
+6. No contract changes: menu length/slots derive from `entries`
+   (`dayOffset`/`meal`), persisted in existing `entriesJSON`/`entriesJson`.
+   Custom slot labels are kept on the menu but mapped to a supported plan
+   meal (breakfast/lunch/dinner/snack, else dinner) at apply time, since
+   plans only allow those four; entries with an empty meal or
+   `dayOffset` outside 0–27 are ignored by Apply and reported.
+
+## Backend origin (issue 28)
+
+- Canonical API origin is now `https://keepcooking.app/api` (custom domain
+  in front of the same single Worker + D1 + R2 — no new infra). One-time
+  prerequisite: a Cloudflare Worker Route `keepcooking.app/api/*` → the
+  `keep-cooking-api` Worker (plus DNS for `keepcooking.app`) must exist
+  before this base URL works — until then keep using the workers.dev origin
+  with the same `/api` prefix (`https://keep-cooking-api.<account>.workers.dev/api`,
+  not the bare origin: this Worker serves `/api/…` only, so root paths 404).
+- The Worker serves `/api/…` only (no root-path fallback). Old
+  `https://keep-cooking-api.<account>.workers.dev` root-path clients 404 —
+  expected: pre-launch, single tester, just update the base URL.
+- Any demo command that used the workers.dev origin can swap the base URL
+  to `https://keepcooking.app/api` with no other change (auth is
+  header-signature over the full path, not cookies) — EXCEPT manually
+  signed curl commands: the signature canonical string covers the full
+  path as sent, so re-derive it from the serialized request URL
+  (`METHOD + "\n" + /api/...path+query + "\n" + ts + "\n" + hex(SHA256(body))`).
+  Swapping only the host while signing the old root path yields 401.

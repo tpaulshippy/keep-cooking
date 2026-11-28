@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { clipRecipe, parseJsonLd, parseReader, parseCaption } from '../src/clip';
+import { clipRequestSchema } from '../src/zod';
 import { makeApp, req } from './helpers';
 
 // 12 representative fixtures for CLIP_TEST_REPORT.md.
@@ -80,7 +81,7 @@ describe('clip pipeline (12 fixtures)', () => {
 
   it('POST /clip with caption (no network)', async () => {
     const { app } = await makeApp();
-    const res = await req(app, 'POST', '/clip', {
+    const res = await req(app, 'POST', '/api/clip', {
       body: { caption: 'Gochujang Noodles\n2 packs ramen\nBoil 3 min.' },
     });
     expect(res.status).toBe(200);
@@ -91,7 +92,50 @@ describe('clip pipeline (12 fixtures)', () => {
 
   it('POST /clip requires url or caption', async () => {
     const { app } = await makeApp();
-    const res = await req(app, 'POST', '/clip', { body: {} });
+    const res = await req(app, 'POST', '/api/clip', { body: {} });
     expect(res.status).toBe(400);
+  });
+
+  it('POST /clip caption-only with source:text -> 200 + strategy caption', async () => {
+    const { app } = await makeApp();
+    const res = await req(app, 'POST', '/api/clip', {
+      body: { caption: 'Pasted Weeknight Pasta\n2 cups pasta\n1 cup sauce\nBoil pasta. Add sauce.', source: 'text' },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { strategy: string; recipe: { title: string } };
+    expect(body.strategy).toBe('caption');
+    expect(body.recipe.title).toBe('Pasted Weeknight Pasta');
+  });
+
+  it('POST /clip caption-only with source:photo -> 200 + strategy caption', async () => {
+    const { app } = await makeApp();
+    const res = await req(app, 'POST', '/api/clip', {
+      body: { caption: 'Photo transcript soup\n8 oz mushrooms\n2 cups cream\nSimmer 20 minutes.', source: 'photo' },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { strategy: string; recipe: { title: string } };
+    expect(body.strategy).toBe('caption');
+    expect(body.recipe.title).toBe('Photo transcript soup');
+  });
+
+  it('clipRequestSchema accepts source text/photo, still requires url or caption', async () => {
+    expect(clipRequestSchema.safeParse({ caption: 'a\nb', source: 'text' }).success).toBe(true);
+    expect(clipRequestSchema.safeParse({ caption: 'a\nb', source: 'photo' }).success).toBe(true);
+    expect(
+      clipRequestSchema.safeParse({ url: 'https://example.com/x', caption: 'a\nb', source: 'text' }).success,
+    ).toBe(true);
+    expect(clipRequestSchema.safeParse({ source: 'text' }).success).toBe(false);
+    expect(clipRequestSchema.safeParse({ source: 'bogus', caption: 'a' }).success).toBe(false);
+  });
+
+  it('url+caption still works (url wins via stubbed fetch)', async () => {
+    const htmlMap = new Map([[CLIP_FIXTURES[0]!.url as string, JSONLD('Weeknight Miso Salmon')]]);
+    const r = await clipRecipe({
+      url: CLIP_FIXTURES[0]!.url as string,
+      caption: 'Fallback caption\n2 eggs\nFry.',
+      fetchFn: stubFetch(htmlMap) as typeof fetch,
+    });
+    expect(r.strategy).toBe('jsonld');
+    expect(r.recipe.title).toBe('Weeknight Miso Salmon');
   });
 });

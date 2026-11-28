@@ -223,6 +223,7 @@ public struct OCRScanView: View {
                             .accessibilityIdentifier("ocr-parse")
                             .disabled(isScanning)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(14)
                     .background(Color(.secondarySystemBackground))
                     .clipShape(RoundedRectangle(cornerRadius: 14))
@@ -260,6 +261,7 @@ public struct OCRScanView: View {
                             .accessibilityLabel("Steps")
                             .disabled(isScanning)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(14)
                     .background(Color(.secondarySystemBackground))
                     .clipShape(RoundedRectangle(cornerRadius: 14))
@@ -300,6 +302,7 @@ public struct OCRScanView: View {
                             .accessibilityIdentifier("ocr-saved")
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(14)
                     .background(Color(.secondarySystemBackground))
                     .clipShape(RoundedRectangle(cornerRadius: 14))
@@ -386,11 +389,7 @@ public struct OCRScanView: View {
     }
 
     private func save() {
-        #if os(iOS)
-        let deviceId = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
-        #else
-        let deviceId = UUID().uuidString
-        #endif
+        let deviceId = DeviceAuth.currentDeviceId()
         let recipe = Recipe(householdId: "hh-demo", title: cleanTitle(title),
                             source: "ocr", deviceId: deviceId)
         context.insert(recipe)

@@ -285,11 +285,8 @@ public struct CookbookEditView: View {
     }
 
     private func currentDeviceId() -> String {
-        #if os(iOS)
-        return UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
-        #else
-        return UUID().uuidString
-        #endif
+        // Persisted UUIDv4 (DeviceAuth); identifierForVendor is display-only.
+        DeviceAuth.currentDeviceId()
     }
 }
 

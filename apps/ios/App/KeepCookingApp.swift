@@ -46,6 +46,8 @@ struct KeepCookingApp: App {
 struct AdaptiveShell: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.modelContext) private var context
+    /// Set when a Files/Mail file tap stages an importable document.
+    @State private var showImport = false
 
     var body: some View {
         Group {
@@ -59,6 +61,12 @@ struct AdaptiveShell: View {
             PhoneTabView()
             #endif
         }
+        // Files/Mail taps of .paprikarecipes/.paprikarecipe/.yml/.yaml stage
+        // via ImportPendingStore; ImportView consumes the staged file on appear.
+        .modifier(ImportURLHandler(onFile: { url in
+            if ImportPendingStore.stage(url) { showImport = true }
+        }))
+        .sheet(isPresented: $showImport) { ImportView() }
         .task {
             // Airplane-mode demo: seeds load once, then sync when online.
             await SyncCoordinator.shared.seedIfNeeded(context: context)
@@ -237,7 +245,13 @@ struct ListsPlaceholder: View {
 struct MorePlaceholder: View {
     var body: some View {
         List {
+            Section("Add") {
+                NavigationLink("Import file") { ImportView() }
+                    .accessibilityIdentifier("more-import-file")
+            }
             Section("Library") {
+                NavigationLink("Export") { RecipeExportView() }
+                    .accessibilityIdentifier("more-export")
                 NavigationLink {
                     LibraryHomeView()
                 } label: {
@@ -270,14 +284,14 @@ struct MorePlaceholder: View {
 // MARK: - Sync status + coordinator (views talk ONLY to this)
 
 struct SyncStatusRow: View {
-    @State private var status = "Offline-ready"
+    // Reads the coordinator's result directly (no local snapshot): the row
+    // refreshes on every sync instead of freezing the first value it saw.
     var body: some View {
         HStack {
             Text("Status")
             Spacer()
-            Text(status).foregroundStyle(.secondary)
+            Text(SyncCoordinator.shared.lastResult).foregroundStyle(.secondary)
         }
-        .task { status = await SyncCoordinator.shared.describe() }
     }
 }
 
@@ -322,11 +336,18 @@ final class SyncCoordinator {
             lastResult = "sync unavailable — check connection"
             return
         }
-        let did = currentDeviceId()
+        // Device identity: persisted UUIDv4 + Ed25519 key (DeviceAuth.swift).
+        // identifierForVendor is a display hint only — the device key is the
+        // identity. Enrollment is idempotent and best-effort (offline safe).
+        // Re-read the id afterwards: 409 recovery rotates it.
+        let did = DeviceAuth.currentDeviceId()
+        await DeviceAuth.enrollIfNeeded(baseURL: base, deviceId: did)
+        let enrolledId = DeviceAuth.currentDeviceId()
+        let signer = DeviceAuth.requestSigner(deviceId: enrolledId)
         let auth = SyncAuth(betaToken: nil,
-                            userId: SyncConfig.userId, deviceId: did)
-        let transport = APISyncTransport(baseURL: base, auth: auth)
-        let engine = SyncEngine(deviceId: did, transport: transport)
+                            userId: SyncConfig.userId, deviceId: enrolledId)
+        let transport = APISyncTransport(baseURL: base, auth: auth, signer: signer)
+        let engine = SyncEngine(deviceId: enrolledId, transport: transport)
         do {
             for env in try collectEnvelopes(ctx: ctx) {
                 await engine.enqueue(env)
@@ -340,7 +361,7 @@ final class SyncCoordinator {
             _ = e2eEnsureIdentity(householdId: household)
             let res = try await engine.syncRouted(
                 route: resolveSyncRoute(),
-                e2eTransport: APIE2ETransport(baseURL: base, auth: auth),
+                e2eTransport: APIE2ETransport(baseURL: base, auth: auth, signer: signer),
                 applyRemote: { box.append($0) })
             for env in box.all { applyEnvelope(env, ctx: ctx) }
             try? ctx.save()
@@ -365,19 +386,18 @@ final class SyncCoordinator {
 
     func describe() async -> String { lastResult }
 
+    /// Persisted UUIDv4 device id (DeviceAuth). identifierForVendor is a
+    /// display hint only (see DeviceAuth.displayHint) — the device key is
+    /// the identity.
     private func currentDeviceId() -> String {
-        #if os(iOS)
-        return UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
-        #else
-        return UUID().uuidString
-        #endif
+        DeviceAuth.currentDeviceId()
     }
 }
 
 // MARK: - Sync endpoint (out of the box; Advanced override only)
 
 enum SyncConfig {
-    static let prodBaseURL = "https://keep-cooking-api.pshippy-245.workers.dev"
+    static let prodBaseURL = "https://keepcooking.app/api"
 
     static var baseURL: URL? {
         if let o = UserDefaults.standard.string(forKey: "smidgen.apiBaseURL"),
@@ -393,7 +413,7 @@ enum SyncConfig {
 
     static var baseURLString: String { baseURL?.absoluteString ?? prodBaseURL }
 
-    /// Shared household identity (pass 2 = Apple id).
+    /// Shared household identity (beta default beta-user; no login).
     static var userId: String {
         let s = UserDefaults.standard.string(forKey: "smidgen.userId") ?? ""
         return s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "beta-user" : s
@@ -460,7 +480,11 @@ extension SyncCoordinator {
         ]
         if let v = r.prepMinutes { payload["prepMinutes"] = .int(v) }
         if let v = r.cookMinutes { payload["cookMinutes"] = .int(v) }
+        if let v = r.totalMinutes { payload["totalMinutes"] = .int(v) }
         if let v = r.rating { payload["rating"] = .double(v) }
+        if let v = r.difficulty, !v.isEmpty { payload["difficulty"] = .string(v) }
+        if let v = r.notes, !v.isEmpty { payload["notes"] = .string(v) }
+        if let v = r.nutritionText, !v.isEmpty { payload["nutritionText"] = .string(v) }
         payload["isFavorite"] = .bool(r.isFavorite)
         payload["ingredients"] = .array(r.ingredients.map { ing in
             .object([
@@ -574,7 +598,15 @@ extension SyncCoordinator {
             if let v = p["servings"]?.doubleValue { r.servings = v }
             if let v = p["prepMinutes"]?.intValue { r.prepMinutes = v }
             if let v = p["cookMinutes"]?.intValue { r.cookMinutes = v }
+            if let v = p["totalMinutes"]?.intValue { r.totalMinutes = v }
             if let v = p["rating"]?.doubleValue { r.rating = v }
+            // Editor metadata: key-present (not just non-nil) distinguishes
+            // "leave alone" from "cleared"; empty difficulty means unspecified.
+            if p.keys.contains("difficulty") {
+                r.difficulty = str("difficulty").flatMap { $0.isEmpty ? nil : $0 }
+            }
+            if p.keys.contains("notes") { r.notes = str("notes") }
+            if p.keys.contains("nutritionText") { r.nutritionText = str("nutritionText") }
             if let v = p["isFavorite"]?.boolValue { r.isFavorite = v }
             if let v = str("source") { r.source = v }
             if let v = str("sourceUrl") { r.sourceUrl = v }
@@ -633,6 +665,10 @@ extension SyncCoordinator {
                 photoOriginal: p["photoKeys"]?.objectValue?["original"]?.stringValue,
                 photoLarge1024: p["photoKeys"]?.objectValue?["large1024"]?.stringValue,
                 photoThumb: p["photoKeys"]?.objectValue?["thumb"]?.stringValue,
+                difficulty: str("difficulty"),
+                notes: str("notes"),
+                nutritionText: str("nutritionText"),
+                totalMinutes: p["totalMinutes"]?.intValue,
                 updatedAt: env.updatedAt, deviceId: env.deviceId, tombstoned: env.deleted)
             ctx.insert(r)
             for (i, j) in (p["ingredients"]?.arrayValue ?? []).enumerated() {
@@ -785,6 +821,7 @@ enum DrawerSection: String, CaseIterable, Identifiable {
     case lists
     case pantry
     case library
+    case export
     case settings
 
     var id: String { rawValue }
@@ -797,6 +834,7 @@ enum DrawerSection: String, CaseIterable, Identifiable {
         case .lists: return "Shopping"
         case .pantry: return "Pantry"
         case .library: return "Library"
+        case .export: return "Export"
         case .settings: return "Settings"
         }
     }
@@ -809,6 +847,7 @@ enum DrawerSection: String, CaseIterable, Identifiable {
         case .lists: return "cart"
         case .pantry: return "refrigerator"
         case .library: return "square.stack.3d.up"
+        case .export: return "square.and.arrow.up"
         case .settings: return "gear"
         }
     }
@@ -820,6 +859,7 @@ enum DrawerSection: String, CaseIterable, Identifiable {
         case .plan, .menus: return "Planner"
         case .lists, .pantry: return "Shopping"
         case .library: return "Organize"
+        case .export: return "Organize"
         case .settings: return nil
         }
     }
@@ -829,6 +869,8 @@ enum QuickAddKind: String, Identifiable {
     case clip
     case scan
     case caption
+    case importFile
+    case paste
 
     var id: String { rawValue }
     var title: String {
@@ -836,6 +878,8 @@ enum QuickAddKind: String, Identifiable {
         case .clip: return "Clip recipe URL"
         case .scan: return "Scan cookbook"
         case .caption: return "Import caption"
+        case .importFile: return "Import file"
+        case .paste: return "Paste text"
         }
     }
 }
@@ -858,8 +902,10 @@ struct DrawerShellView: View {
     var body: some View {
         ZStack(alignment: .leading) {
             VStack(spacing: 0) {
-                topBar
-                Divider()
+                if selection != .menus {
+                    topBar
+                    Divider()
+                }
                 content
             }
             .background(Color(.systemBackground))
@@ -890,6 +936,8 @@ struct DrawerShellView: View {
             case .clip: ClipView()
             case .scan: OCRScanView()
             case .caption: CaptionsImportView()
+            case .importFile: ImportView()
+            case .paste: PasteImportView()
             }
         }
     }
@@ -941,6 +989,16 @@ struct DrawerShellView: View {
                     quickAdd = .caption
                 } label: {
                     Label("Import caption", systemImage: "captions.bubble")
+                }
+                Button {
+                    quickAdd = .importFile
+                } label: {
+                    Label("Import file", systemImage: "tray.and.arrow.down")
+                }
+                Button {
+                    quickAdd = .paste
+                } label: {
+                    Label("Paste text", systemImage: "doc.on.clipboard")
                 }
             } label: {
                 Image(systemName: "plus")
@@ -1019,13 +1077,15 @@ struct DrawerShellView: View {
             case .plan:
                 PlanTabView()
             case .menus:
-                MenusTabView()
+                MenusTabView(onOpenDrawer: { withAnimation { drawerOpen = true } })
             case .lists:
                 ListsTabView()
             case .pantry:
                 PantryTabView()
             case .library:
                 LibraryHomeView()
+            case .export:
+                RecipeExportView()
             case .settings:
                 SettingsView()
             }
@@ -1065,6 +1125,7 @@ struct DrawerShellView: View {
                     drawerRow(.pantry)
                     drawerGroupHeader("Organize")
                     drawerRow(.library)
+                    drawerRow(.export)
                     Divider().padding(.vertical, 8)
                     drawerRow(.settings)
                 }

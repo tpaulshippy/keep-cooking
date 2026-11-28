@@ -6,10 +6,12 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.room.Room
 import com.keepcooking.app.data.AppDatabase
+import com.keepcooking.app.data.MIGRATION_2_3
 import com.keepcooking.app.data.SeedLoader
 import com.keepcooking.app.export.RecipeExporter
 import com.keepcooking.app.network.ApiService
 import com.keepcooking.app.network.createApiService
+import com.keepcooking.app.sync.DeviceAuth
 import com.keepcooking.app.sync.SyncEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,11 +30,12 @@ class AppContainer(private val context: Context) {
 
     val db: AppDatabase by lazy {
         Room.databaseBuilder(context, AppDatabase::class.java, "keepcooking.db")
+            .addMigrations(MIGRATION_2_3)
             .fallbackToDestructiveMigration()
             .build()
     }
 
-    val api: ApiService by lazy { createApiService() }
+    val api: ApiService by lazy { createApiService(deviceAuth = DeviceAuth.interceptor()) }
 
     val syncEngine: SyncEngine by lazy {
         SyncEngine(
@@ -60,6 +63,12 @@ class AppContainer(private val context: Context) {
     fun seedIfNeeded() {
         scope.launch(Dispatchers.IO) {
             SeedLoader(context, db).seedIfNeeded()
+        }
+        // Device identity enroll-once (unsigned, idempotent, best-effort):
+        // warms the interceptor state so the first sync/clip is already
+        // signed. SyncEngine.activeApi() re-ensures per run regardless.
+        scope.launch(Dispatchers.IO) {
+            runCatching { DeviceAuth.ensure(appDataStore, SyncEngine.PROD_BASE_URL) }
         }
     }
 }

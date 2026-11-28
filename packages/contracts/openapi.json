@@ -18,6 +18,71 @@
       }
     },
     "schemas": {
+      "AgentEnrollRequest": {
+        "description": "Binds an unguessable householdHash bucket to a householdId label + token verifier. Carries no key material.",
+        "properties": {
+          "householdHash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "householdId": {
+            "type": "string"
+          },
+          "verifier": {
+            "description": "hex(SHA256(raw agent-token bytes))",
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "householdHash",
+          "householdId",
+          "verifier"
+        ],
+        "type": "object"
+      },
+      "AgentEnrollResponse": {
+        "properties": {
+          "hashPrefix8": {
+            "type": "string"
+          },
+          "householdHash": {
+            "type": "string"
+          },
+          "householdId": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "householdId",
+          "householdHash",
+          "hashPrefix8"
+        ],
+        "type": "object"
+      },
+      "AgentStatus": {
+        "properties": {
+          "deviceId": {
+            "type": "string"
+          },
+          "hashPrefix8": {
+            "type": "string"
+          },
+          "householdId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "householdId",
+          "hashPrefix8",
+          "deviceId"
+        ],
+        "type": "object"
+      },
       "ClipReport": {
         "properties": {
           "confidence": {
@@ -66,8 +131,10 @@
             ]
           }
         ],
+        "description": "Clip source hint. `text` = generic pasted text, `photo` = photo/OCR transcript; request requires url or caption (caption max 20000); when url is supplied the JSON-LD \u2192 reader pipeline runs first with caption as fallback.",
         "properties": {
           "caption": {
+            "maxLength": 20000,
             "type": "string"
           },
           "source": {
@@ -77,7 +144,9 @@
               "instagram",
               "youtube",
               "ocr",
-              "clipboard"
+              "clipboard",
+              "text",
+              "photo"
             ],
             "type": "string"
           },
@@ -86,6 +155,62 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "DeviceEnrollRequest": {
+        "properties": {
+          "deviceId": {
+            "description": "UUIDv4, stable per device",
+            "format": "uuid",
+            "type": "string"
+          },
+          "displayName": {
+            "maxLength": 64,
+            "type": "string"
+          },
+          "publicKey": {
+            "description": "base64 of exactly 32 bytes (Ed25519 public key); the private half never leaves the device",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deviceId",
+          "publicKey"
+        ],
+        "type": "object"
+      },
+      "DeviceEnrollResponse": {
+        "properties": {
+          "deviceId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "enrolledAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deviceId",
+          "enrolledAt"
+        ],
+        "type": "object"
+      },
+      "DeviceRevokeResponse": {
+        "properties": {
+          "deviceId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "revokedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deviceId",
+          "revokedAt"
+        ],
         "type": "object"
       },
       "EncryptedEnvelope": {
@@ -186,6 +311,113 @@
         ],
         "type": "object"
       },
+      "ImportReport": {
+        "description": "Paprika import result. Mirrors ClipReport conventions (warnings[] + parsed recipes).",
+        "properties": {
+          "cookbooksCreated": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "dryRun": {
+            "type": "boolean"
+          },
+          "imported": {
+            "items": {
+              "$ref": "#/components/schemas/Recipe"
+            },
+            "type": "array"
+          },
+          "updated": {
+            "description": "re-import uid matches updated in place",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "imported",
+          "updated"
+        ],
+        "type": "object"
+      },
+      "ImportRequest": {
+        "anyOf": [
+          {
+            "required": [
+              "payload"
+            ]
+          },
+          {
+            "required": [
+              "payloadJson"
+            ]
+          }
+        ],
+        "description": "Paprika full-parity import request. Mirrors ClipRequest conventions (anyOf payload variants).",
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "parse and report without persisting",
+            "type": "boolean"
+          },
+          "format": {
+            "enum": [
+              "paprika-json",
+              "paprika-zip",
+              "paprika-recipe",
+              "yaml",
+              "html",
+              "mx2",
+              "mxp",
+              "mz2",
+              "mmf",
+              "fdx",
+              "fdxz",
+              "pepperplate-zip",
+              "pepperplate-db",
+              "copymethat-zip",
+              "yum-xml",
+              "ysr",
+              "mgourmet",
+              "dvo",
+              "mcb",
+              "recipe-manager-txt",
+              "hcb",
+              "myrecipebook-sqlite",
+              "rbox"
+            ],
+            "type": "string"
+          },
+          "householdId": {
+            "type": "string"
+          },
+          "importCookbooks": {
+            "default": true,
+            "description": "recreate Paprika cookbooks; else fold into categories",
+            "type": "boolean"
+          },
+          "payload": {
+            "description": "base64-encoded file bytes (ZIP/gzip/YAML/HTML/SQLite/blob per format)",
+            "type": "string"
+          },
+          "payloadJson": {
+            "description": "already-decoded JSON (alternative to payload; for paprika-json / JSON-as-YAML)",
+            "type": "object"
+          }
+        },
+        "required": [
+          "householdId",
+          "format"
+        ],
+        "type": "object"
+      },
       "Ingredient": {
         "properties": {
           "display": {
@@ -222,6 +454,10 @@
       "IngredientInput": {
         "properties": {
           "display": {
+            "type": "string"
+          },
+          "id": {
+            "description": "stable client-generated id, echoed back and preserved across updates",
             "type": "string"
           },
           "name": {
@@ -280,6 +516,10 @@
           },
           "checked": {
             "type": "boolean"
+          },
+          "id": {
+            "description": "stable client-generated id, echoed back and preserved across updates",
+            "type": "string"
           },
           "name": {
             "type": "string"
@@ -539,7 +779,22 @@
               "cookMinutes": {
                 "type": "integer"
               },
+              "cookTimeText": {
+                "description": "raw Paprika cook_time string",
+                "type": "string"
+              },
+              "cookbooks": {
+                "description": "Paprika cookbook(s) (v4 cookbook); created on import when importCookbooks is on",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
               "description": {
+                "type": "string"
+              },
+              "difficulty": {
+                "description": "Paprika difficulty (no enum enforcement, e.g. Easy)",
                 "type": "string"
               },
               "householdId": {
@@ -551,19 +806,53 @@
                 },
                 "type": "array"
               },
+              "isFavorite": {
+                "description": "Paprika on_favorites flag",
+                "type": "boolean"
+              },
+              "notes": {
+                "description": "Paprika notes free text (native-only; appended after description, never merged into steps)",
+                "type": "string"
+              },
+              "nutritionText": {
+                "description": "Paprika nutritional_info blob (free text",
+                "no structured nutrients)": null,
+                "type": "string"
+              },
+              "paprikaRaw": {
+                "description": "original Paprika JSON sidecar for lossless round-trip",
+                "type": "object"
+              },
+              "paprikaUid": {
+                "description": "stable Paprika uid (uppercase UUID); upsert key for re-import idempotency",
+                "type": "string"
+              },
               "photoKeys": {
                 "$ref": "#/components/schemas/PhotoKeys"
               },
               "prepMinutes": {
                 "type": "integer"
               },
+              "prepTimeText": {
+                "description": "raw Paprika prep_time string",
+                "type": "string"
+              },
               "rating": {
                 "maximum": 5,
                 "minimum": 0,
                 "type": "number"
               },
+              "scaleFactor": {
+                "description": "Paprika saved serving multiplier (raw string)",
+                "type": "string"
+              },
               "servings": {
                 "type": "number"
+              },
+              "servingsText": {
+                "1 pie)": null,
+                "description": "raw Paprika servings string (e.g. 4-6 servings",
+                "type": "string"
               },
               "source": {
                 "type": "string"
@@ -582,6 +871,10 @@
               },
               "totalMinutes": {
                 "type": "integer"
+              },
+              "totalTimeText": {
+                "description": "raw Paprika total_time string (native-only)",
+                "type": "string"
               }
             },
             "required": [
@@ -603,7 +896,19 @@
           "cookMinutes": {
             "type": "integer"
           },
+          "cookTimeText": {
+            "type": "string"
+          },
+          "cookbooks": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "description": {
+            "type": "string"
+          },
+          "difficulty": {
             "type": "string"
           },
           "householdId": {
@@ -615,20 +920,44 @@
             },
             "type": "array"
           },
+          "isFavorite": {
+            "type": "boolean"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "nutritionText": {
+            "type": "string"
+          },
+          "paprikaRaw": {
+            "type": "object"
+          },
+          "paprikaUid": {
+            "type": "string"
+          },
           "photoKeys": {
             "$ref": "#/components/schemas/PhotoKeys"
           },
           "prepMinutes": {
             "type": "integer"
           },
+          "prepTimeText": {
+            "type": "string"
+          },
           "rating": {
             "maximum": 5,
             "minimum": 0,
             "type": "number"
           },
+          "scaleFactor": {
+            "type": "string"
+          },
           "servings": {
             "default": 4,
             "type": "number"
+          },
+          "servingsText": {
+            "type": "string"
           },
           "source": {
             "type": "string"
@@ -643,6 +972,12 @@
             "type": "array"
           },
           "title": {
+            "type": "string"
+          },
+          "totalMinutes": {
+            "type": "integer"
+          },
+          "totalTimeText": {
             "type": "string"
           }
         },
@@ -746,11 +1081,21 @@
       },
       "StepInput": {
         "properties": {
+          "id": {
+            "description": "stable client-generated id, echoed back and preserved across updates",
+            "type": "string"
+          },
           "position": {
             "type": "integer"
           },
           "text": {
             "type": "string"
+          },
+          "timers": {
+            "items": {
+              "$ref": "#/components/schemas/StepTimer"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -814,15 +1159,97 @@
         ],
         "type": "object"
       }
+    },
+    "securitySchemes": {
+      "AgentToken": {
+        "description": "Key-derived bearer (base64url of 32 HKDF-SHA256 bytes, domain-separated from the data key \u2014 see docs/agents/). Enroll via POST /agent/enroll, which stores only hex(SHA256(token)). Accepted as an alternative to the Ed25519 device signature on every mutating route (prod): reads are scoped to the enrolled household (out-of-scope reads are 404), writes require an explicit matching householdId (else 403). Blind /v2 envelopes stay opaque \u2014 the server verifies the token, never content.",
+        "in": "header",
+        "name": "x-agent-token",
+        "type": "apiKey"
+      },
+      "DeviceId": {
+        "description": "enrolled device id (UUIDv4, from POST /v2/devices)",
+        "in": "header",
+        "name": "x-device-id",
+        "type": "apiKey"
+      },
+      "DeviceSig": {
+        "description": "base64 Ed25519 signature over the canonical string METHOD + \"\\n\" + path+query + \"\\n\" + ts + \"\\n\" + hex(SHA256(bodyBytes)) (empty body hashes as hex(SHA256(\"\"))). Required on every POST/PUT/DELETE except POST /v2/devices; GET/HEAD/OPTIONS, /health and /openapi.json stay open. Unknown / stale / revoked keys get 401 (self-revoke = logout).",
+        "in": "header",
+        "name": "x-device-sig",
+        "type": "apiKey"
+      },
+      "DeviceTs": {
+        "description": "millis since epoch, digits only; |now - ts| <= 5 min. Replay window is a documented limitation (no server nonce ledger).",
+        "in": "header",
+        "name": "x-device-ts",
+        "type": "apiKey"
+      }
     }
   },
   "info": {
     "description": "Single Hono Worker + D1 + R2. MIT only. See packages/contracts/README.md.",
     "title": "Keep Cooking API",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "openapi": "3.1.0",
   "paths": {
+    "/agent/enroll": {
+      "post": {
+        "description": "Bind a householdHash bucket to a plaintext householdId label plus a token verifier (hex(SHA256(raw agent token))). Open: knowledge of the unguessable householdHash IS the capability. Re-enroll to rotate the token without rotating the data key. Never receives key material.",
+        "operationId": "agentEnroll",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentEnrollRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentEnrollResponse"
+                }
+              }
+            },
+            "description": "enrolled"
+          },
+          "409": {
+            "description": "householdId label already bound to a different hash (present the existing agent token in x-agent-token to re-bind it)"
+          }
+        }
+      }
+    },
+    "/agent/status": {
+      "get": {
+        "operationId": "agentStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentStatus"
+                }
+              }
+            },
+            "description": "enrolled household for this token"
+          },
+          "401": {
+            "description": "missing or unknown x-agent-token"
+          }
+        },
+        "security": [
+          {
+            "AgentToken": []
+          }
+        ]
+      }
+    },
     "/clip": {
       "post": {
         "operationId": "clipRecipe",
@@ -846,6 +1273,80 @@
               }
             },
             "description": "parsed recipe"
+          }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
+      }
+    },
+    "/export": {
+      "get": {
+        "description": "Bulk export. `?format=` selects json|md|html|paprikarecipes|yaml (default json; paprikarecipes returns a .paprikarecipes ZIP of gzipped per-recipe JSON, yaml returns a multi-recipe YAML list as JSON-as-YAML). `?all=true` exports every recipe in the household; otherwise pass `?ids=` (comma-separated) or a single `?id=`. Cookbook-scoped export passes `?cookbook=`. Single-recipe suffix routes (/export/{id}.json|.md|.html|.paprikarecipes|.yaml) remain canonical for one recipe.",
+        "operationId": "exportBulk",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HouseholdId"
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "schema": {
+              "default": "json",
+              "enum": [
+                "json",
+                "md",
+                "html",
+                "paprikarecipes",
+                "yaml"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "export every recipe in the household",
+            "in": "query",
+            "name": "all",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "comma-separated recipe ids (ignored when all=true)",
+            "in": "query",
+            "name": "ids",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "limit bulk export to one cookbook/menu name",
+            "in": "query",
+            "name": "cookbook",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "bulk export bytes (content-type follows format)"
           }
         }
       }
@@ -916,6 +1417,53 @@
         }
       }
     },
+    "/export/{id}.paprikarecipes": {
+      "get": {
+        "description": "Single-recipe native Paprika export: gzipped JSON (.paprikarecipe bytes). Always emits a `photo` filename when `photo_data` is present (synthesized `${UID}.jpg`), reuses stored `paprikaUid`, stringifies servings/times from raw text fields when present.",
+        "operationId": "exportPaprikaRecipe",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "gzipped Paprika recipe JSON"
+          }
+        }
+      }
+    },
+    "/export/{id}.yaml": {
+      "get": {
+        "description": "Single-recipe Paprika YAML export (emitted as JSON-as-YAML, valid YAML). `on_favorites` is accepted on import but unreliable on Paprika iOS \u2014 clients should warn.",
+        "operationId": "exportYaml",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/yaml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "YAML export (JSON-as-YAML)"
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "operationId": "health",
@@ -939,6 +1487,47 @@
             "description": "ok"
           }
         }
+      }
+    },
+    "/import": {
+      "post": {
+        "description": "Paprika full-parity import. Accepts native Paprika bundles (paprika-json decoded JSON, paprika-zip .paprikarecipes ZIP of gzipped JSON, paprika-recipe single gzip/JSON) plus YAML (.yml/.yaml, JSON-as-YAML accepted), HTML directory export (JSON-LD \u2192 hRecipe \u2192 headings), and third-party formats Paprika imports (mx2/mxp/mz2/mmf/fdx/fdxz/ pepperplate-zip/pepperplate-db/copymethat-zip/yum-xml/ysr/mgourmet/dvo/ mcb/recipe-manager-txt/hcb/myrecipebook-sqlite/rbox). Binary payloads go in `payload` as base64; already-decoded JSON goes in `payloadJson`. `paprikaUid` is the upsert key (re-import updates in place, trashed match restores); YAML has no identity so it is create-only. `importCookbooks` recreates Paprika cookbooks (else folds into categories). `dryRun` parses and reports without persisting.",
+        "operationId": "importRecipes",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportReport"
+                }
+              }
+            },
+            "description": "import report"
+          },
+          "400": {
+            "description": "unsupported format or undecodable payload"
+          }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/lists": {
@@ -983,7 +1572,17 @@
             },
             "description": "created"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/lists/{id}": {
@@ -998,7 +1597,17 @@
           "204": {
             "description": "deleted"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       },
       "get": {
         "operationId": "getShoppingList",
@@ -1048,7 +1657,57 @@
             },
             "description": "ok"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
+      }
+    },
+    "/mcp": {
+      "post": {
+        "description": "Stateless JSON-RPC 2.0 (Streamable HTTP subset): initialize (legacy handshake, kept for 2025 clients), server/discover (modern handshake), tools/list, tools/call, ping. Every tool call authenticates via x-agent-token; tools are scoped to the enrolled household. Tool schemas are versioned in packages/contracts/mcp-tools.json.",
+        "operationId": "mcpRpc",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "JSON-RPC 2.0 request",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "JSON-RPC 2.0 response (or isError tool result)"
+          },
+          "202": {
+            "description": "notification accepted (no body, per Streamable HTTP)"
+          },
+          "401": {
+            "description": "missing or unknown x-agent-token"
+          }
+        },
+        "security": [
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/menus": {
@@ -1093,7 +1752,17 @@
             },
             "description": "created"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/menus/{id}": {
@@ -1108,7 +1777,17 @@
           "204": {
             "description": "deleted"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       },
       "get": {
         "operationId": "getMenu",
@@ -1158,7 +1837,17 @@
             },
             "description": "ok"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/openapi.json": {
@@ -1213,7 +1902,17 @@
             },
             "description": "created"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/pantry/{id}": {
@@ -1228,7 +1927,17 @@
           "204": {
             "description": "deleted"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       },
       "put": {
         "operationId": "updatePantryItem",
@@ -1257,6 +1966,70 @@
               }
             },
             "description": "ok"
+          }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
+      }
+    },
+    "/photos/dl": {
+      "get": {
+        "description": "Serve R2 photo bytes for a signed URL minted by GET /photos/sign (or the photos_sign MCP tool, which targets this route). Verifies the HMAC exp/sig first; no device signature or agent token required (the signature IS the capability, expiring in <15min).",
+        "operationId": "photoDownload",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "exp",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sig",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "photo bytes (image/jpeg)"
+          },
+          "400": {
+            "description": "key, exp, or sig missing"
+          },
+          "403": {
+            "description": "invalid or expired signature"
+          },
+          "404": {
+            "description": "photo serving unconfigured or key does not exist"
           }
         }
       }
@@ -1303,7 +2076,17 @@
             },
             "description": "created"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/plans/feed.ics": {
@@ -1335,7 +2118,17 @@
           "204": {
             "description": "deleted"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       },
       "get": {
         "operationId": "getPlan",
@@ -1385,7 +2178,17 @@
             },
             "description": "ok"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/recipes": {
@@ -1435,7 +2238,17 @@
             },
             "description": "created"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/recipes/{id}": {
@@ -1450,7 +2263,17 @@
           "204": {
             "description": "deleted"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       },
       "get": {
         "operationId": "getRecipe",
@@ -1500,7 +2323,17 @@
             },
             "description": "ok"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/recipes/{id}/scale": {
@@ -1542,7 +2375,17 @@
             },
             "description": "scaled ingredient quantities (fraction-rounded display strings)"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/share/cookbook": {
@@ -1588,7 +2431,17 @@
             },
             "description": "share link"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/sync/pull": {
@@ -1651,7 +2504,113 @@
             },
             "description": "server-won conflicts (empty = all accepted)"
           }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
+      }
+    },
+    "/v2/devices": {
+      "post": {
+        "description": "Open enrollment \u2014 no device signature required (this is how devices join). 201 on first enroll, 200 on idempotent re-enroll with the same key, 410 when the id was revoked (gone, enroll a fresh deviceId instead), 409 when the id is already enrolled with a different key, 400 on validation failure. Reads stay open; every other write requires the enrolled key (see DeviceSig).",
+        "operationId": "enrollDevice",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceEnrollRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceEnrollResponse"
+                }
+              }
+            },
+            "description": "already enrolled with the same key (idempotent)"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceEnrollResponse"
+                }
+              }
+            },
+            "description": "enrolled"
+          },
+          "400": {
+            "description": "invalid deviceId / publicKey / displayName"
+          },
+          "409": {
+            "description": "device id already enrolled with a different key"
+          },
+          "410": {
+            "description": "device id was revoked (gone) \u2014 enroll a fresh deviceId instead"
+          }
         }
+      }
+    },
+    "/v2/devices/{id}/revoke": {
+      "parameters": [
+        {
+          "description": "enrolled device id to revoke (self-only)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "description": "Signed revocation (caller signs with its own enrolled key). Revoking your own key is logout \u2014 the next write from that key gets 401 (device revoked). There is no shared token to rotate; enroll a fresh deviceId instead (re-enrolling this revoked id returns 410).",
+        "operationId": "revokeDevice",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceRevokeResponse"
+                }
+              }
+            },
+            "description": "revoked"
+          },
+          "401": {
+            "description": "missing / unknown / stale / bad / revoked device signature"
+          },
+          "403": {
+            "description": "not self (cross-device revoke deferred)"
+          },
+          "404": {
+            "description": "unknown device id"
+          }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/v2/sync/{hash}": {
@@ -1676,7 +2635,17 @@
             },
             "description": "wiped row count"
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       },
       "get": {
         "operationId": "e2ePull",
@@ -1754,14 +2723,27 @@
               }
             },
             "description": "stored ids (stale writes are idempotent no-ops)"
+          },
+          "413": {
+            "description": "batch exceeds E2E_MAX_PUSH_BATCH (500 envelopes) \u2014 chunk and retry. Native outboxes must split large backlog drains into <=500-envelope pushes."
           }
-        }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     }
   },
   "servers": [
     {
-      "url": "https://api.keepcooking.local"
+      "url": "https://keepcooking.app/api"
     }
   ]
 }

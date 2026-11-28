@@ -2,9 +2,11 @@ package com.keepcooking.app.network
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
+import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import retrofit2.http.Body
@@ -64,6 +66,37 @@ interface ApiService {
     @GET("health")
     suspend fun health(): JsonObject
 
+    // --- Device identity (Pass 1 Ed25519 enroll; idempotent) ---
+
+    /**
+     * POST /v2/devices {deviceId, publicKey (standard b64, 32B), displayName?}.
+     * Deliberately UNSIGNED (the server does not know this key yet).
+     * 200/201 mark enrolled; a 409 means the deviceId is bound to a different
+     * key (rotation is a non-goal) — see DeviceAuth.ensure for recovery.
+     */
+    @POST("v2/devices")
+    suspend fun enrollDevice(@Body body: DeviceEnrollRequest): Response<JsonObject>
+
+    // --- File import (POST /import; offline parse fallback when absent) ---
+
+    /**
+     * Server-side file import (Paprika/YAML/P1 formats). Optional: when the
+     * server does not implement this route (404/5xx) callers fall back to the
+     * on-device parser in `com.keepcooking.app.import`, so import works offline.
+     * Request (`ImportRequest`, see packages/contracts/openapi.yaml `POST
+     * /import` and api/src/import.ts): `{ filename, payload (base64 file
+     * bytes), format?, text?, householdId?, importCookbooks?, dryRun? }`.
+     * `format` is detected from filename/content when absent. Response
+     * (`ImportReport`): `{ imported (count), ids, warnings }` — the server
+     * persists via uid upsert; the client then relies on sync pull (or its
+     * local offline parse) for the recipe rows.
+     */
+    @POST("import")
+    suspend fun importFile(
+        @Header("Authorization") auth: String?,
+        @Body body: ImportRequestDto,
+    ): ImportReportDto
+
     // --- Share (POST /share/cookbook — parity with ShareAPIClient) ---
 
     @POST("share/cookbook")
@@ -71,7 +104,27 @@ interface ApiService {
         @Header("Authorization") auth: String?,
         @Body body: ShareCookbookRequest,
     ): ShareLinkDto
+
+    // --- Photos (GET /photos/sign — mints a short-lived R2 download URL) ---
+
+    /**
+     * Mint a signed download URL for an R2 photo key (e.g. `photos/<id>/thumb.jpg`).
+     * Unsigned read (no device signature or token required — the signature in
+     * the returned URL is the capability, expiring in <15min).
+     */
+    @GET("photos/sign")
+    suspend fun signPhoto(
+        @Query("key") key: String,
+    ): PhotoSignResponse
 }
+
+/** GET /photos/sign response: `{ url, expiresAt, key }` (see api/src/photos.ts signKey). */
+@kotlinx.serialization.Serializable
+data class PhotoSignResponse(
+    val url: String = "",
+    val expiresAt: String = "",
+    val key: String = "",
+)
 
 @kotlinx.serialization.Serializable
 data class SyncEnvelopeDto(
@@ -81,6 +134,14 @@ data class SyncEnvelopeDto(
     val deleted: Boolean = false,
     val entity: String, // recipe | ingredient | step | list | pantryItem | plan | menu
     val payload: JsonObject,
+)
+
+/** POST /v2/devices request body: device enroll (idempotent per deviceId). */
+@kotlinx.serialization.Serializable
+data class DeviceEnrollRequest(
+    val deviceId: String,
+    val publicKey: String, // standard base64 (padded) of the 32-byte Ed25519 key
+    val displayName: String? = null, // display hint, max 64 chars; never an identity
 )
 
 /** Wire shape for PUT/GET/DELETE /v2/sync/:hash (1:1 with openapi EncryptedEnvelope). */
@@ -106,6 +167,33 @@ data class E2EPushResponse(val stored: List<String> = emptyList())
 @kotlinx.serialization.Serializable
 data class E2EWipeResponse(val wiped: Int = 0)
 
+/** POST /import request body (see packages/contracts/openapi.yaml ImportRequest
+ * and api/src/import.ts: the live server reads `filename` + `payload` (base64
+ * file bytes), with `format` detected from filename/content when absent). */
+@kotlinx.serialization.Serializable
+data class ImportRequestDto(
+    val filename: String,
+    val payload: String, // base64-encoded file bytes
+    val format: String? = null, // paprika-json | paprika-zip | yaml | html | …
+    val text: String? = null, // decoded-text alternative to payload for text formats
+    val householdId: String? = null,
+    val importCookbooks: Boolean = true,
+    val dryRun: Boolean = false,
+)
+
+/** POST /import response body (ImportReport: `{ imported (count), ids, warnings }`). */
+@kotlinx.serialization.Serializable
+data class ImportReportDto(
+    val imported: Int = 0,
+    val ids: List<String> = emptyList(),
+    val warnings: List<String> = emptyList(),
+    // OpenAPI-declared extras the live server may add later; defaulted so
+    // unknown-shape responses still decode (ignoreUnknownKeys is on).
+    val updated: Int = 0,
+    val dryRun: Boolean = false,
+    val cookbooksCreated: List<String> = emptyList(),
+)
+
 @kotlinx.serialization.Serializable
 data class ShareCookbookRequest(
     val householdId: String,
@@ -120,9 +208,18 @@ data class ShareLinkDto(
     val expiresAt: String = "",
 )
 
-fun createApiService(baseUrl: String = "https://keep-cooking-api.pshippy-245.workers.dev/"): ApiService {
+fun createApiService(
+    baseUrl: String = "https://keepcooking.app/api/",
+    deviceAuth: Interceptor? = null,
+): ApiService {
     val logging = HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC }
-    val client = OkHttpClient.Builder().addInterceptor(logging).build()
+    val builder = OkHttpClient.Builder()
+    // Device identity first so the signed headers are on the request before
+    // it is sent. BASIC logging records only request/response lines, never
+    // header values.
+    if (deviceAuth != null) builder.addInterceptor(deviceAuth)
+    builder.addInterceptor(logging)
+    val client = builder.build()
     val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
     return Retrofit.Builder()
         .baseUrl(if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/")

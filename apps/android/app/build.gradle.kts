@@ -39,6 +39,12 @@ android {
     packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
 }
 
+// Run Kotlin/KSP on JDK 17 (required by AGP 8.3 + Kotlin 1.9 / KSP 1.x),
+// even when the Gradle daemon itself runs on a newer JDK.
+kotlin {
+    jvmToolchain(17)
+}
+
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
     implementation(composeBom)
@@ -74,6 +80,9 @@ dependencies {
 
     // Coil (recipe photos)
     implementation("io.coil-kt:coil-compose:2.6.0")
+
+    // ML Kit text recognition (Scan tab: photo → InputImage → recognized text)
+    implementation("com.google.mlkit:text-recognition:16.0.0")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")

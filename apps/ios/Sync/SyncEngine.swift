@@ -180,11 +180,14 @@ public enum SyncTransportError: Error, Sendable {
     case decode(Error)
 }
 
-/// Auth headers for sync + identity.
+/// Auth identity for sync + E2E transports.
 /// - `betaToken`: legacy, unused — callers pass nil (open access, no token
 ///   enrollment). The transport still honors it if ever set, so old call
 ///   sites stay source-compatible.
-/// - `userId`: shared household identity (beta: "beta-user"; pass 2 = Apple id).
+/// - `userId`: display hint only (beta: "beta-user"; the device key is the
+///   identity — see DeviceAuth.swift).
+/// - `deviceId`: persisted UUIDv4 (DeviceAuth.currentDeviceId), NOT
+///   identifierForVendor (display hint only).
 public struct SyncAuth: Sendable {
     public var betaToken: String?
     public var userId: String
@@ -204,17 +207,24 @@ public protocol SyncTransport: Sendable {
 /// Strictly off-main: async/await, JSON with ISO8601 dates.
 /// Sends the identity headers when `auth` is set (user/device; no bearer —
 /// open access). Harmless on local dev.
+///
+/// Mutating requests (POST push) additionally carry x-device-ts +
+/// x-device-sig via `signer` (see DeviceAuth.swift); reads (GET pull) stay
+/// unsigned so they keep working without a key.
 public struct APISyncTransport: SyncTransport {
     private let baseURL: URL
     private let session: URLSession
     private let auth: SyncAuth?
+    private let signer: DeviceRequestSigner?
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
 
-    public init(baseURL: URL, session: URLSession = .shared, auth: SyncAuth? = nil) {
+    public init(baseURL: URL, session: URLSession = .shared, auth: SyncAuth? = nil,
+                signer: DeviceRequestSigner? = nil) {
         self.baseURL = baseURL
         self.session = session
         self.auth = auth
+        self.signer = signer
         let d = JSONDecoder()
         d.dateDecodingStrategy = .iso8601
         self.decoder = d
@@ -232,6 +242,14 @@ public struct APISyncTransport: SyncTransport {
         r.setValue(auth.userId, forHTTPHeaderField: "x-user-id")
         r.setValue(auth.deviceId, forHTTPHeaderField: "x-device-id")
         return r
+    }
+
+    /// Identity headers + Ed25519 signature for mutating requests. Reads
+    /// pass through `authorized(_:)` unsigned.
+    private func authorizedSigned(_ req: URLRequest) -> URLRequest {
+        let r = authorized(req)
+        guard let signer else { return r }
+        return signer.signedRequest(r)
     }
 
     public func pull(since: Date?) async throws -> [SyncEnvelope] {
@@ -254,7 +272,7 @@ public struct APISyncTransport: SyncTransport {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try encoder.encode(envelopes)
-        let (data, resp) = try await session.data(for: authorized(req))
+        let (data, resp) = try await session.data(for: authorizedSigned(req))
         guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
             throw SyncTransportError.httpStatus((resp as? HTTPURLResponse)?.statusCode ?? -1)
         }
@@ -715,17 +733,22 @@ struct E2EPushResponse: Decodable {
 
 /// URLSession transport for /v2/sync/:hash, sharing the `baseURL` + auth
 /// header convention of `APISyncTransport` (identity headers; no bearer).
+/// The PUT push is Ed25519-signed via `signer`; the GET pull stays unsigned
+/// so reads keep working without a key (see DeviceAuth.swift).
 public struct APIE2ETransport: E2EEncryptedTransport {
     private let baseURL: URL
     private let session: URLSession
     private let auth: SyncAuth?
+    private let signer: DeviceRequestSigner?
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
 
-    public init(baseURL: URL, session: URLSession = .shared, auth: SyncAuth? = nil) {
+    public init(baseURL: URL, session: URLSession = .shared, auth: SyncAuth? = nil,
+                signer: DeviceRequestSigner? = nil) {
         self.baseURL = baseURL
         self.session = session
         self.auth = auth
+        self.signer = signer
         let d = JSONDecoder()
         // Millis-precision wire (see `e2eISO8601Formatter`); the fallback
         // still opens older whole-second stamps.
@@ -760,6 +783,14 @@ public struct APIE2ETransport: E2EEncryptedTransport {
         return r
     }
 
+    /// Identity headers + Ed25519 signature for the PUT push. The GET pull
+    /// passes through `authorized(_:)` unsigned.
+    private func authorizedSigned(_ req: URLRequest) -> URLRequest {
+        let r = authorized(req)
+        guard let signer else { return r }
+        return signer.signedRequest(r)
+    }
+
     private func bucketURL(hash: String) throws -> URL {
         let comps = URLComponents(
             url: baseURL.appendingPathComponent("/v2/sync/\(hash)"),
@@ -790,7 +821,7 @@ public struct APIE2ETransport: E2EEncryptedTransport {
         req.httpMethod = "PUT"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try encoder.encode(envelopes)
-        let (data, resp) = try await session.data(for: authorized(req))
+        let (data, resp) = try await session.data(for: authorizedSigned(req))
         guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
             throw SyncTransportError.httpStatus((resp as? HTTPURLResponse)?.statusCode ?? -1)
         }

@@ -1,0 +1,10 @@
+name = "keep-cooking-web"
+main = "worker.ts"
+compatibility_date = "2026-11-01"
+
+# Static SPA bundle (apps/web/dist, built via `npm run build --prefix apps/web`).
+# Served under the keepcooking.app/app/* route (see worker.ts prefix strip +
+# index.html fallback). No D1/R2 bindings — pure static.
+[assets]
+directory = "./dist"
+binding = "ASSETS"

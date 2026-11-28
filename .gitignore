@@ -14,3 +14,8 @@ apps/android/local.properties
 
 # Marketing build output (Pages builds from sites/marketing/public/)
 sites/marketing/dist/
+
+# BEGIN oh-my-opencode-slim worktrees
+.slim/worktrees/
+.slim/worktrees.json
+# END oh-my-opencode-slim worktrees

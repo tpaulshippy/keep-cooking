@@ -2,6 +2,14 @@ package com.keepcooking.app.data
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
+
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE recipes ADD COLUMN nutritionText TEXT NOT NULL DEFAULT ''")
+    }
+}
 
 /** Offline-first store. Local Room is the source of truth (mirrors iOS SwiftData container). */
 @Database(
@@ -16,7 +24,7 @@ import androidx.room.RoomDatabase
         MenuEntity::class,
         OutboxRow::class,
     ],
-    version = 1,
+    version = 3,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

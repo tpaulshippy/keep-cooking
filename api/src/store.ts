@@ -1,5 +1,6 @@
 import type { Role } from './auth';
 import type { EncryptedEnvelope } from './e2e';
+import type { AgentEnrollment } from './agent';
 
 // Row + assembled API types. Recipe/List/etc. mirror the openapi.yaml
 // SyncEnvelope allOf (id/updatedAt/deviceId/deleted/entity + fields).
@@ -28,10 +29,16 @@ export interface RecipeRow {
   servings: number;
   prepMinutes: number | null;
   cookMinutes: number | null;
+  totalMinutes: number | null;
   rating: number | null;
+  isFavorite: boolean;
+  difficulty: string;
   source: string;
   sourceUrl: string;
   categories: string[];
+  cookbooks: string[];
+  notes: string;
+  nutritionText: string;
   photoKeys: { original: string; large1024: string; thumb: string };
   updatedAt: string;
   deviceId: string;
@@ -117,6 +124,49 @@ export interface ShareLink {
   expiresAt: string;
 }
 
+// ---------- Device keys (Ed25519 enrollment) ----------
+
+/** Device identity: Ed25519 public key (32B) + optional revocation timestamp. */
+export interface DeviceKey {
+  deviceId: string;
+  publicKey: Uint8Array;
+  revokedAt: string | null;
+}
+
+const B64_STD_RE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$/;
+
+function httpError(status: number, message: string): Error & { status: number } {
+  const err = new Error(message) as Error & { status: number };
+  err.status = status;
+  return err;
+}
+
+/** Strict standard-base64 decode (no url-safe alphabet). Throws 400 on malformed input. */
+export function decodePublicKeyB64(b64: string): Uint8Array {
+  if (typeof b64 !== 'string' || b64.length === 0 || b64.length % 4 !== 0 || !B64_STD_RE.test(b64)) {
+    throw httpError(400, 'publicKey must be standard base64');
+  }
+  let bin: string;
+  const g = globalThis as unknown as { Buffer?: { from(s: string, enc: string): Uint8Array } };
+  if (g.Buffer?.from) return new Uint8Array(g.Buffer.from(b64, 'base64'));
+  try {
+    bin = atob(b64);
+  } catch {
+    throw httpError(400, 'publicKey must be standard base64');
+  }
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i) & 0xff;
+  return out;
+}
+
+/** Constant-time-ish byte equality (lengths compared first). */
+export function deviceKeysEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= (a[i] as number) ^ (b[i] as number);
+  return diff === 0;
+}
+
 export interface SyncEnvelopeWire {
   id: string;
   updatedAt: string;
@@ -153,6 +203,8 @@ export interface Store {
   ensureHousehold(id: string, name?: string): Promise<Household>;
   getMembership(householdId: string, userId: string): Promise<Membership | null>;
   setMembership(householdId: string, userId: string, role: Role): Promise<void>;
+  // Membership count for a household (first-claim bootstrap in auth.ts).
+  countMemberships(householdId: string): Promise<number>;
   // recipes
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   listRecipes(householdId?: string): Promise<Recipe[]>;
@@ -211,6 +263,26 @@ export interface Store {
   e2ePut(hash: string, env: EncryptedEnvelope): Promise<boolean>;
   e2eList(hash: string, since: string): Promise<EncryptedEnvelope[]>;
   e2eWipe(hash: string): Promise<number>;
+  // key-only agent auth (#26): enrollment binds an unguessable householdHash
+  // to a plaintext householdId label + token verifier (a hash, never a key).
+  agentEnroll(e: AgentEnrollment): Promise<AgentEnrollment>;
+  agentGetByVerifier(verifier: string): Promise<AgentEnrollment | null>;
+  // Plaintext householdId label -> enrollment (the label is non-secret; the
+  // hash binding is what a re-bind must prove, see POST /agent/enroll).
+  agentGetByLabel(label: string): Promise<AgentEnrollment | null>;
+  // Revoke the enrollment for one household hash (label re-bind to a new
+  // hash must kill the old token: D1 row gone + memory indexes cleared so
+  // the previous token stops authenticating on every isolate). Returns true
+  // when an enrollment was removed.
+  agentRevokeByHash(householdHash: string): Promise<boolean>;
+  // device keys (Ed25519 enroll; no-clobber: same deviceId + different key
+  // throws with status 409; identical re-enroll is idempotent)
+  getDevice(deviceId: string): Promise<DeviceKey | null>;
+  enrollDevice(input: { deviceId: string; publicKeyB64: string; displayName?: string }): Promise<{ deviceId: string; enrolledAt: string }>;
+  // Revoke a device key. Sets revokedAt (idempotent: already-revoked keeps
+  // its original timestamp); returns null when the device is unknown.
+  // authenticateDevice rejects revoked devices with 401 (see auth.ts).
+  revokeDevice(deviceId: string): Promise<{ deviceId: string; revokedAt: string } | null>;
 }
 
 // ---------- shared assemblers (used by both stores) ----------
@@ -250,6 +322,7 @@ export class MemoryStore implements Store {
   plans = new Map<string, Plan>();
   menus = new Map<string, Menu>();
   shares = new Map<string, ShareLink>();
+  devices = new Map<string, { deviceId: string; publicKeyB64: string; publicKey: Uint8Array; displayName: string | null; createdAt: string; revokedAt: string | null }>();
 
   async ensureHousehold(id: string, name = id): Promise<Household> {
     let h = this.households.get(id);
@@ -265,6 +338,11 @@ export class MemoryStore implements Store {
   async setMembership(householdId: string, userId: string, role: Role): Promise<void> {
     await this.ensureHousehold(householdId);
     this.memberships.set(`${householdId}|${userId}`, { householdId, userId, role });
+  }
+  async countMemberships(householdId: string): Promise<number> {
+    let n = 0;
+    for (const m of this.memberships.values()) if (m.householdId === householdId) n++;
+    return n;
   }
 
   private toRecipe(r: RecipeRow & { ingredients: Ingredient[]; steps: Step[] }): Recipe {
@@ -297,7 +375,7 @@ export class MemoryStore implements Store {
     const id = meta.id ?? newId();
     const updatedAt = meta.updatedAt ?? nowIso();
     const ings: Ingredient[] = (input.ingredients ?? []).map((g: any, i: number) => ({
-      id: newId(),
+      id: typeof g.id === 'string' && g.id ? g.id : newId(),
       name: g.name,
       quantity: g.quantity ?? null,
       unit: g.unit ?? '',
@@ -306,10 +384,15 @@ export class MemoryStore implements Store {
       recipeId: id,
     }));
     const steps: Step[] = (input.steps ?? []).map((s: any, i: number) => ({
-      id: newId(),
+      id: typeof s.id === 'string' && s.id ? s.id : newId(),
       position: s.position ?? i,
       text: s.text,
-      timers: [],
+      timers: Array.isArray(s.timers)
+        ? s.timers
+          .filter((t: any) => t && Number.isInteger(t.seconds) && (t.seconds as number) >= 1)
+          .map((t: any) => ({ seconds: t.seconds as number, label: typeof t.label === 'string' && t.label ? t.label : 'Timer' }))
+          .slice(0, 20)
+        : [],
       recipeId: id,
     }));
     const row = {
@@ -320,10 +403,16 @@ export class MemoryStore implements Store {
       servings: input.servings ?? 4,
       prepMinutes: input.prepMinutes ?? null,
       cookMinutes: input.cookMinutes ?? null,
+      totalMinutes: input.totalMinutes ?? null,
       rating: input.rating ?? null,
+      isFavorite: input.isFavorite ?? false,
+      difficulty: input.difficulty ?? '',
       source: input.source ?? '',
       sourceUrl: input.sourceUrl ?? '',
       categories: input.categories ?? [],
+      cookbooks: input.cookbooks ?? [],
+      notes: input.notes ?? '',
+      nutritionText: input.nutritionText ?? '',
       photoKeys: {
         original: input.photoKeys?.original ?? '',
         large1024: input.photoKeys?.large1024 ?? '',
@@ -342,7 +431,11 @@ export class MemoryStore implements Store {
   async updateRecipe(id: string, input: any, meta: { deviceId: string }): Promise<Recipe | null> {
     const cur = this.recipes.get(id);
     if (!cur || cur.deleted) return null;
-    const fresh = await this.createRecipe(input, { deviceId: meta.deviceId, id, updatedAt: nowIso() });
+    // isFavorite has no zod default (unlike scalar defaults): old clients
+    // that omit it must not clear a favorite set elsewhere. Preserve the
+    // stored flag when the update omits the field.
+    const merged = { ...input, isFavorite: input.isFavorite ?? (cur as { isFavorite?: boolean }).isFavorite ?? false };
+    const fresh = await this.createRecipe(merged, { deviceId: meta.deviceId, id, updatedAt: nowIso() });
     // preserve nothing else; createRecipe overwrote — keep household if input omitted? input always has householdId default.
     void cur;
     return fresh;
@@ -371,7 +464,7 @@ export class MemoryStore implements Store {
       householdId: input.householdId ?? 'hh-demo',
       name: input.name,
       items: (input.items ?? []).map((it: any) => ({
-        id: newId(),
+        id: typeof it.id === 'string' && it.id ? it.id : newId(),
         name: it.name,
         quantity: it.quantity ?? '',
         aisle: it.aisle ?? '',
@@ -568,6 +661,58 @@ export class MemoryStore implements Store {
 
   e2eBlobs = new Map<string, Map<string, EncryptedEnvelope>>();
 
+  // ---------- key-only agent enrollments (#26) ----------
+  // byHash is authoritative; byVerifier is a secondary index. Re-enrolling
+  // a hash replaces the verifier (token rotation without data-key rotation).
+  private agentByHash = new Map<string, AgentEnrollment>();
+  private agentByVerifier = new Map<string, string>(); // verifier -> householdHash
+  private agentByLabel = new Map<string, string>(); // householdId label -> householdHash
+
+  async agentEnroll(e: AgentEnrollment): Promise<AgentEnrollment> {
+    // A verifier already bound to a different hash must never be silently
+    // re-pointed: D1 rejects the same upsert through its unique verifier
+    // index, so memory must reject too (else one token resolves to different
+    // households depending on the isolate). Check before mutating anything.
+    const clash = this.agentByVerifier.get(e.verifier);
+    if (clash && clash !== e.householdHash) {
+      const err = new Error('verifier is already bound to a different household hash') as Error & { status?: number };
+      err.status = 409;
+      throw err;
+    }
+    const prev = this.agentByHash.get(e.householdHash);
+    if (prev && prev.verifier !== e.verifier) this.agentByVerifier.delete(prev.verifier);
+    if (prev && prev.householdId !== e.householdId && this.agentByLabel.get(prev.householdId) === e.householdHash) {
+      this.agentByLabel.delete(prev.householdId);
+    }
+    this.agentByHash.set(e.householdHash, e);
+    this.agentByVerifier.set(e.verifier, e.householdHash);
+    this.agentByLabel.set(e.householdId, e.householdHash);
+    return e;
+  }
+
+  async agentGetByVerifier(verifier: string): Promise<AgentEnrollment | null> {
+    const hash = this.agentByVerifier.get(verifier);
+    if (!hash) return null;
+    return this.agentByHash.get(hash) ?? null;
+  }
+
+  async agentGetByLabel(label: string): Promise<AgentEnrollment | null> {
+    const hash = this.agentByLabel.get(label);
+    if (!hash) return null;
+    return this.agentByHash.get(hash) ?? null;
+  }
+
+  async agentRevokeByHash(householdHash: string): Promise<boolean> {
+    const prev = this.agentByHash.get(householdHash);
+    if (!prev) return false;
+    this.agentByHash.delete(householdHash);
+    // Clear secondary indexes only when they still point at this hash (a
+    // newer enrollment may already have re-pointed them).
+    if (this.agentByVerifier.get(prev.verifier) === householdHash) this.agentByVerifier.delete(prev.verifier);
+    if (this.agentByLabel.get(prev.householdId) === householdHash) this.agentByLabel.delete(prev.householdId);
+    return true;
+  }
+
   async e2ePut(hash: string, env: EncryptedEnvelope): Promise<boolean> {
     let bucket = this.e2eBlobs.get(hash);
     if (!bucket) {
@@ -598,6 +743,49 @@ export class MemoryStore implements Store {
     const n = bucket.size;
     this.e2eBlobs.delete(hash);
     return n;
+  }
+
+  async getDevice(deviceId: string): Promise<DeviceKey | null> {
+    const d = this.devices.get(deviceId);
+    if (!d) return null;
+    return { deviceId: d.deviceId, publicKey: d.publicKey.slice(), revokedAt: d.revokedAt };
+  }
+
+  async enrollDevice(input: { deviceId: string; publicKeyB64: string; displayName?: string }): Promise<{ deviceId: string; enrolledAt: string }> {
+    if (!input.deviceId || typeof input.deviceId !== 'string') throw httpError(400, 'deviceId is required');
+    if (input.displayName !== undefined && (typeof input.displayName !== 'string' || input.displayName.length > 64)) {
+      throw httpError(400, 'displayName must be a string of at most 64 chars');
+    }
+    const bytes = decodePublicKeyB64(input.publicKeyB64);
+    if (bytes.length !== 32) throw httpError(400, 'publicKey must decode to exactly 32 bytes');
+    const existing = this.devices.get(input.deviceId);
+    if (existing) {
+      if (existing.revokedAt) {
+        throw httpError(410, 'device revoked; enroll a fresh deviceId');
+      }
+      if (!deviceKeysEqual(existing.publicKey, bytes)) {
+        throw httpError(409, 'device already enrolled with different key');
+      }
+      return { deviceId: existing.deviceId, enrolledAt: existing.createdAt };
+    }
+    const createdAt = nowIso();
+    this.devices.set(input.deviceId, {
+      deviceId: input.deviceId,
+      publicKeyB64: input.publicKeyB64,
+      publicKey: bytes,
+      displayName: input.displayName ?? null,
+      createdAt,
+      revokedAt: null,
+    });
+    return { deviceId: input.deviceId, enrolledAt: createdAt };
+  }
+
+  async revokeDevice(deviceId: string): Promise<{ deviceId: string; revokedAt: string } | null> {
+    const d = this.devices.get(deviceId);
+    if (!d) return null;
+    const revokedAt = d.revokedAt ?? nowIso();
+    d.revokedAt = revokedAt;
+    return { deviceId: d.deviceId, revokedAt };
   }
 
   async pullSince(since: string): Promise<SyncEnvelopeWire[]> {
@@ -664,10 +852,16 @@ export class MemoryStore implements Store {
         servings: p.servings ?? 4,
         prepMinutes: p.prepMinutes ?? null,
         cookMinutes: p.cookMinutes ?? null,
+        totalMinutes: p.totalMinutes ?? existing?.totalMinutes ?? null,
         rating: p.rating ?? null,
+        isFavorite: p.isFavorite ?? existing?.isFavorite ?? false,
+        difficulty: p.difficulty ?? existing?.difficulty ?? '',
         source: p.source ?? '',
         sourceUrl: p.sourceUrl ?? '',
         categories: p.categories ?? [],
+        cookbooks: p.cookbooks ?? existing?.cookbooks ?? [],
+        notes: p.notes ?? existing?.notes ?? '',
+        nutritionText: p.nutritionText ?? existing?.nutritionText ?? '',
         photoKeys: p.photoKeys ?? { original: '', large1024: '', thumb: '' },
         updatedAt: env.updatedAt,
         deviceId: env.deviceId,

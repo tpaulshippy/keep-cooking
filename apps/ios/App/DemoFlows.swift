@@ -11,7 +11,7 @@
 // Accessibility identifiers (used by KeepCookingUITests):
 //   recipe-list, recipe-detail-title, cook-button, add-to-list-button,
 //   added-confirm, plan-view, week-to-list-confirm, lists-view,
-//   more-clip, more-caption, more-ocr (+ ocr-* ids in OCRScanView).
+//   more-clip, more-caption, more-paste, more-ocr (+ ocr-* ids in OCRScanView).
 
 import SwiftUI
 import SwiftData
@@ -115,7 +115,7 @@ enum LibrarySort: String, CaseIterable, Hashable {
 
 /// Add-menu navigation targets (Menu buttons can't host NavigationLinks).
 enum LibraryAddDestination: Hashable {
-    case clip, ocr, caption, duplicates
+    case clip, ocr, caption, paste, duplicates
 }
 
 struct RecipeLibraryView: View {
@@ -333,6 +333,7 @@ struct RecipeLibraryView: View {
                 case .clip: ClipView()
                 case .ocr: OCRScanView()
                 case .caption: CaptionsImportView()
+                case .paste: PasteImportView()
                 case .duplicates: DuplicateReviewView(recipes: Array(recipes))
                 }
             }
@@ -908,6 +909,8 @@ private struct ActionsCTA: View {
         VStack(spacing: 8) {
             NavigationLink("Clip a recipe URL") { ClipView() }
                 .buttonStyle(.borderedProminent)
+            NavigationLink("Paste recipe text") { PasteImportView() }
+                .buttonStyle(.bordered)
             NavigationLink("Scan a cookbook") { OCRScanView() }
                 .buttonStyle(.bordered)
         }
@@ -917,11 +920,15 @@ private struct ActionsCTA: View {
 
 struct RecipeDetailView: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
     let recipe: Recipe
     @State private var addedMessage: String?
     @State private var checked: Set<String> = []
     @State private var servings: Double
     @State private var pane: DetailPane = .ingredients
+    @State private var showEditor = false
+    @State private var showDeleteConfirm = false
+    @State private var nutritionExpanded = true
 
     /// Paprika-style segmented pane (custom capsule toggle, no copy).
     private enum DetailPane: String, CaseIterable {
@@ -988,8 +995,21 @@ struct RecipeDetailView: View {
         .navigationTitle(recipe.title)
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("recipe-detail-title")
+        .sheet(isPresented: $showEditor, onDismiss: {
+            // The editor may save a different serving count; resync the
+            // detail's scaling target so the meta row and ingredient
+            // scaling reflect the saved value instead of the stale one.
+            servings = recipe.servings
+        }) {
+            RecipeEditorView(recipe: recipe)
+        }
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { showEditor = true } label: {
+                    Image(systemName: "pencil")
+                }
+                .accessibilityIdentifier("edit-recipe-button")
+                .accessibilityLabel("Edit recipe")
                 Button { addToList() } label: {
                     Image(systemName: "cart.badge.plus")
                 }
@@ -1008,7 +1028,21 @@ struct RecipeDetailView: View {
                     Image(systemName: "square.and.arrow.up")
                 }
                 .accessibilityLabel("Share recipe")
+                Button(role: .destructive) { showDeleteConfirm = true } label: {
+                    Image(systemName: "trash")
+                }
+                .accessibilityIdentifier("delete-recipe-button")
+                .accessibilityLabel("Delete recipe")
             }
+        }
+        .confirmationDialog("Delete this recipe?", isPresented: $showDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Recipe", role: .destructive) { deleteRecipe() }
+                .accessibilityIdentifier("confirm-delete-recipe-button")
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This moves \(recipe.title) to Trash and removes its planned meals. You can restore it from Trash.")
         }
     }
 
@@ -1089,25 +1123,21 @@ struct RecipeDetailView: View {
             initialServings: servings)
     }
 
-    /// Title + tappable 1–5 star rating + source link + breadcrumb.
+    /// Title + static 1–5 star rating display + source link + breadcrumb.
+    /// View-only: all metadata edits live in RecipeEditorView (Edit button).
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(recipe.title)
                 .font(.title2.weight(.bold))
-            HStack(spacing: 0) {
+            HStack(spacing: 2) {
                 ForEach(1...5, id: \.self) { star in
                     let filled = Double(star) <= (recipe.rating ?? 0)
-                    Button { setRating(star) } label: {
-                        Image(systemName: filled ? "star.fill" : "star")
-                            .font(.title3)
-                            .foregroundStyle(filled ? .yellow : .secondary)
-                            .frame(width: 44, height: 44)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Rate \(star) star\(star == 1 ? "" : "s")")
+                    Image(systemName: filled ? "star.fill" : "star")
+                        .font(.title3)
+                        .foregroundStyle(filled ? .yellow : .secondary)
                 }
             }
-            .padding(.leading, -12)
+            .accessibilityLabel(recipe.rating.map { "Rated \($0) out of 5" } ?? "Not rated")
             if !recipe.sourceUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                let url = URL(string: recipe.sourceUrl),
                url.scheme != nil {
@@ -1205,6 +1235,17 @@ struct RecipeDetailView: View {
                 .buttonStyle(.plain)
                 Divider()
             }
+            DisclosureGroup(isExpanded: $nutritionExpanded) {
+                let trimmed = (recipe.nutritionText ?? "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                Text(trimmed.isEmpty ? "No nutrition info yet." : trimmed)
+                    .font(.body)
+                    .foregroundStyle(trimmed.isEmpty ? .secondary : .primary)
+            } label: {
+                Text("Nutrition")
+                    .font(.headline)
+            }
+            .accessibilityIdentifier("nutrition-panel")
         }
     }
 
@@ -1296,20 +1337,28 @@ struct RecipeDetailView: View {
         return "~\(num) \(short)"
     }
 
-    private func setRating(_ stars: Int) {
-        if recipe.rating == Double(stars) {
-            recipe.rating = nil
-        } else {
-            recipe.rating = Double(stars)
-        }
-        recipe.updatedAt = Date()
-        try? context.save()
-    }
-
     private func toggleFavorite() {
         recipe.isFavorite.toggle()
         recipe.updatedAt = Date()
         try? context.save()
+    }
+
+    /// Sync-safe delete: tombstone + updatedAt bump (last-write-wins), then
+    /// pop back to the list. Mirrors the library swipe-to-delete path.
+    /// Linked plans are tombstoned too so Plan keeps no dangling schedule
+    /// that could leak the recipe's ingredients into the weekly shop.
+    private func deleteRecipe() {
+        recipe.tombstoned = true
+        recipe.updatedAt = Date()
+        let linked = (try? context.fetch(FetchDescriptor<Plan>()))?.filter {
+            $0.recipeId == recipe.id && !$0.tombstoned
+        } ?? []
+        for plan in linked {
+            plan.tombstoned = true
+            plan.updatedAt = Date()
+        }
+        try? context.save()
+        dismiss()
     }
 
     /// Real SwiftData insert: this recipe planned for tonight's dinner.
@@ -1410,9 +1459,17 @@ struct PlanTabView: View {
         Dictionary(uniqueKeysWithValues: recipes.map { ($0.id, $0) })
     }
 
+    /// Live (non-tombstoned) recipe lookup. Tombstoned recipes are treated
+    /// as missing so deleted recipes never surface in the plan, the picker
+    /// confirm copy, or the weekly grocery aggregation.
+    private func liveRecipe(id: String?) -> Recipe? {
+        guard let id, let recipe = recipesById[id], !recipe.tombstoned else { return nil }
+        return recipe
+    }
+
     private var entries: [PlanEntrySnapshot] {
         plans.filter { !$0.tombstoned }.map { plan in
-            let recipe = plan.recipeId.flatMap { recipesById[$0] }
+            let recipe = liveRecipe(id: plan.recipeId)
             return PlanEntrySnapshot(id: plan.id, date: plan.date,
                 meal: plan.mealRaw, recipeId: plan.recipeId,
                 recipeTitle: recipe?.title ?? (plan.note.isEmpty ? nil : plan.note),
@@ -1471,7 +1528,7 @@ struct PlanTabView: View {
         }()
         if dup { return }
         let title: String
-        if let recipeId, let recipe = recipesById[recipeId] {
+        if let recipeId, let recipe = liveRecipe(id: recipeId) {
             title = recipe.title
         } else {
             let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1519,7 +1576,7 @@ struct PlanTabView: View {
     /// `onSelectEntry`.
     private func selectEntry(id: String) {
         guard let plan = plans.first(where: { $0.id == id && !$0.tombstoned }) else { return }
-        if let recipeId = plan.recipeId, let recipe = recipesById[recipeId] {
+        if plan.recipeId != nil, let recipe = liveRecipe(id: plan.recipeId) {
             selectedRecipe = recipe
         } else {
             let label = plan.note.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1551,7 +1608,7 @@ struct PlanTabView: View {
         let weekPlans = plans.filter { !$0.tombstoned && $0.date >= weekStart && $0.date < weekEnd }
         var inputs: [PlanGroceryInput] = []
         for plan in weekPlans {
-            guard let rid = plan.recipeId, let recipe = recipesById[rid] else { continue }
+            guard let rid = plan.recipeId, let recipe = liveRecipe(id: rid) else { continue }
             for ing in recipe.ingredients {
                 inputs.append(PlanGroceryInput(name: ing.name, quantity: ing.quantity,
                     unit: ing.unit, baseServings: recipe.servings,
@@ -1650,10 +1707,16 @@ struct MoreTabView: View {
                         .accessibilityIdentifier("more-clip")
                     NavigationLink("Import caption") { CaptionsImportView() }
                         .accessibilityIdentifier("more-caption")
+                    NavigationLink("Paste text") { PasteImportView() }
+                        .accessibilityIdentifier("more-paste")
                     NavigationLink("Scan cookbook (OCR)") { OCRScanView() }
                         .accessibilityIdentifier("more-ocr")
+                    NavigationLink("Import file") { ImportView() }
+                        .accessibilityIdentifier("more-import-file")
                 }
                 Section("Library") {
+                    NavigationLink("Export") { RecipeExportView() }
+                        .accessibilityIdentifier("more-export")
                     NavigationLink {
                         PantryTabView()
                     } label: {
@@ -1740,94 +1803,143 @@ struct PantryTabView: View {
     }
 }
 
-// MARK: - Menus tab (live SwiftData menus + apply to current week)
+// MARK: - Menus tab (live SwiftData menus + editor + apply to week)
 
+/// Reusable menu templates (Paprika-style). The list supports create (alert
+/// via the + button), rename (long-press menu), duplicate ("name copy"),
+/// and sync-safe tombstone delete, plus quick "Apply to week" from the
+/// row context menu. Tapping a row pushes PaprikaMenuDetailView
+/// (MenusPaprikaViews.swift): DAY sections, Add Meal flow, and the "..."
+/// sheet with days stepper, slot renames, and Apply (week start +
+/// skip-filled). Apply copies entries into the chosen week with skip-filled
+/// (default) or overwrite (tombstone conflicts first) semantics.
 struct MenusTabView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: [SortDescriptor(\Menu.name)]) private var menus: [Menu]
-    @State private var name = ""
+    @Query private var plans: [Plan]
+    @Query private var recipes: [Recipe]
     @State private var confirm: String?
+    @State private var weekStart = DemoSeeds.weekStart(containing: Date())
+    @State private var skipFilled = true
+    @State private var sort = MenusPaprikaSort.name
+    @State private var editMode: EditMode = .inactive
+    /// Opens the drawer when hosted in the drawer shell (the Paprika
+    /// header is the sole top bar there — the shell hides its own).
+    /// Defaults to no-op for the More-tab push context.
+    var onOpenDrawer: () -> Void = {}
 
     var body: some View {
-        List {
-            if let confirm {
-                Section {
-                    HStack {
-                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                        Text(confirm)
-                    }
-                }
-            }
-            Section("New menu") {
-                HStack {
-                    TextField("Menu name", text: $name)
-                        .submitLabel(.done)
-                        .onSubmit(createMenu)
-                    Button("Create", action: createMenu)
-                        .buttonStyle(.bordered)
-                        .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            }
-            Section("Menus (\(liveMenus.count))") {
-                if liveMenus.isEmpty {
-                    Text("No menus yet — name one above. Apply copies its entries into this week's plan.")
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(liveMenus, id: \.id) { menu in
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text(menu.name).font(.headline)
-                            Spacer()
-                            Text("\(menu.entries.count) entries")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        HStack {
-                            Button("Apply to this week") { apply(menu) }
-                                .buttonStyle(.bordered)
-                            Spacer()
-                            Button(role: .destructive) { tombstone(menu) } label: {
-                                Image(systemName: "trash")
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
+        NavigationStack {
+            PaprikaMenusScreen(
+                menus: liveMenus,
+                confirm: confirm,
+                sort: $sort,
+                editMode: $editMode,
+                onCreate: createMenu,
+                onRename: rename,
+                onDuplicate: duplicate,
+                onDelete: tombstone,
+                onApply: apply,
+                onOpenDrawer: onOpenDrawer
+            ) { menu in
+                PaprikaMenuDetailView(
+                    menu: menu,
+                    recipes: liveRecipes,
+                    weekStart: $weekStart,
+                    skipFilled: $skipFilled,
+                    onApply: apply
+                )
             }
         }
-        .navigationTitle("Menus")
+        .accessibilityIdentifier("menus-view")
     }
 
     private var liveMenus: [Menu] { menus.filter { !$0.tombstoned } }
 
-    private func createMenu() {
-        let text = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    private var liveRecipes: [Recipe] {
+        recipes.filter { !$0.tombstoned }
+            .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
+    private func createMenu(named rawName: String) {
+        let text = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         context.insert(Menu(householdId: "hh-demo", name: text, deviceId: currentDeviceId()))
         try? context.save()
-        name = ""
+        confirm = "Created \(text)"
+    }
+
+    private func rename(_ menu: Menu, to newName: String) {
+        let text = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, text != menu.name else { return }
+        menu.name = text
+        menu.updatedAt = Date()
+        try? context.save()
+    }
+
+    /// Copies entries into a new menu ("<name> copy") with a fresh id.
+    private func duplicate(_ menu: Menu) {
+        let copy = Menu(householdId: menu.householdId, name: menu.name + " copy",
+            entries: menu.entries, deviceId: currentDeviceId())
+        context.insert(copy)
+        try? context.save()
+        confirm = "Duplicated \(menu.name)"
     }
 
     private func tombstone(_ menu: Menu) {
         menu.tombstoned = true
         menu.updatedAt = Date()
         try? context.save()
+        confirm = "Deleted \(menu.name)"
     }
 
+    /// Copies a menu's entries into `weekStart`. Skip-filled (default) leaves
+    /// occupied day+meal slots alone; overwrite tombstones conflicting plans
+    /// on those keys first, then inserts everything. Every written meal goes
+    /// through planMealForMenuSlot (plans allow only the 4 canonical meals);
+    /// empty/out-of-range entries are dropped by expandMenuEntries and
+    /// reported in the confirm banner.
     private func apply(_ menu: Menu) {
-        let start = DemoSeeds.weekStart(containing: Date())
-        let cal = Calendar.current
+        let rawExpanded = expandMenuEntries(entries: menu.entries, weekStart: weekStart,
+            householdId: "hh-demo", deviceId: currentDeviceId())
+        let droppedCount = menu.entries.count - rawExpanded.count
+        let droppedNote = droppedCount > 0 ? " (\(droppedCount) ignored: empty or out of range)" : ""
+        let expanded: [ExpandedMenuEntry] = rawExpanded.map {
+            (dayOffset: $0.dayOffset, date: $0.date, meal: planMealForMenuSlot($0.meal),
+             recipeId: $0.recipeId, servings: $0.servings)
+        }
+        guard !expanded.isEmpty else {
+            confirm = "\(menu.name) has no entries to apply" + droppedNote
+            return
+        }
+        let livePlans = plans.filter { !$0.tombstoned }
+        let occupied = occupiedKeys(plans: livePlans.map { (date: $0.date, meal: planMealForMenuSlot($0.mealRaw)) })
+        if !skipFilled {
+            let keys = Set(expanded.map { OccupiedMealKey(day: $0.date, meal: planMealForMenuSlot($0.meal)) })
+            for plan in livePlans
+                where keys.contains(OccupiedMealKey(day: plan.date, meal: planMealForMenuSlot(plan.mealRaw))) {
+                plan.tombstoned = true
+                plan.updatedAt = Date()
+            }
+        }
+        let result = filterSkipped(expanded: expanded, occupied: occupied, skipFilled: skipFilled)
         var count = 0
-        for entry in menu.entries {
-            guard let day = cal.date(byAdding: .day, value: entry.dayOffset, to: start) else { continue }
-            let meal = MealSlot(rawValue: entry.meal) ?? .dinner
-            context.insert(Plan(householdId: "hh-demo", date: day, meal: meal,
+        for entry in result.toInsert {
+            let plan = Plan(householdId: "hh-demo", date: entry.date,
+                meal: MealSlot(rawValue: planMealForMenuSlot(entry.meal)) ?? .dinner,
                 recipeId: entry.recipeId.isEmpty ? nil : entry.recipeId,
-                servings: entry.servings, deviceId: currentDeviceId()))
+                servings: entry.servings, deviceId: currentDeviceId())
+            context.insert(plan)
             count += 1
         }
         try? context.save()
-        confirm = count > 0 ? "Applied \(menu.name): \(count) meals planned" : "\(menu.name) has no entries to apply"
+        if count > 0 {
+            confirm = "Applied \(menu.name): \(count) meals planned"
+                + (result.skippedCount > 0 ? " (\(result.skippedCount) filled skipped)" : "")
+                + droppedNote
+        } else {
+            confirm = "\(menu.name): all \(result.skippedCount) slots already filled" + droppedNote
+        }
     }
 }
 
@@ -1835,7 +1947,6 @@ struct MenusTabView: View {
 
 struct SettingsView: View {
     @State private var syncing = false
-    @State private var status: String = ""
     // Devices sharing (E2E invite; the syncCode itself
     // lives only in the Keychain and never surfaces here)
     @State private var householdName: String = E2EKeyStore.loadMetadata()?.householdId ?? "hh-demo"
@@ -1876,9 +1987,6 @@ struct SettingsView: View {
                     Task { await syncNow() }
                 }
                 .disabled(syncing)
-                if !status.isEmpty {
-                    Text(status).font(.caption).foregroundStyle(.secondary)
-                }
             } header: {
                 Text("Sync")
             } footer: {
@@ -2009,7 +2117,8 @@ struct SettingsView: View {
         syncing = true
         defer { syncing = false }
         await SyncCoordinator.shared.sync()
-        status = await SyncCoordinator.shared.describe()
+        // The Status row reads the coordinator's lastResult live — nothing
+        // to copy here (a stale copy is what froze "unauthorized" on screen).
     }
 
     /// Persists the Advanced custom-server URL only. Deliberately does NOT
@@ -2275,9 +2384,6 @@ private struct PlanDedupeKey: Hashable {
 }
 
 private func currentDeviceId() -> String {
-    #if os(iOS)
-    return UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
-    #else
-    return UUID().uuidString
-    #endif
+    // Persisted UUIDv4 (DeviceAuth); identifierForVendor is display-only.
+    DeviceAuth.currentDeviceId()
 }

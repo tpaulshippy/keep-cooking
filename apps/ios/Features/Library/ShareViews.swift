@@ -2,8 +2,8 @@
 // apps/ios/Features/Library/ShareViews.swift
 //
 // Share UI: household invites + cookbook share links (Lane 1
-// POST /share/cookbook). Lane 5 owns UI + API call only — no auth/sync
-// changes. Every button performs a real action.
+// POST /share/cookbook, device-signed via DeviceAuth). Lane 5 owns UI +
+// signed API call — no sync-engine changes. Every button performs a real action.
 
 import SwiftUI
 
@@ -137,11 +137,8 @@ public struct CookbookShareView: View {
     }
 
     private var currentDeviceId: String {
-        #if os(iOS)
-        return UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
-        #else
-        return UUID().uuidString
-        #endif
+        // Persisted UUIDv4 (DeviceAuth); identifierForVendor is display-only.
+        DeviceAuth.currentDeviceId()
     }
 
     private func createShare() async {
@@ -153,9 +150,14 @@ public struct CookbookShareView: View {
         isSharing = true
         defer { isSharing = false }
         do {
+            // Enroll before the first signed POST (fresh installs would get
+            // 401 in prod). Re-read the id — 409 recovery rotates it.
+            await DeviceAuth.enrollIfNeeded(baseURL: base, deviceId: currentDeviceId)
+            let did = currentDeviceId
             let client = ShareAPIClient(baseURL: base,
                 betaToken: nil,
-                userId: SyncConfig.userId, deviceId: currentDeviceId)
+                userId: SyncConfig.userId, deviceId: did,
+                signer: DeviceAuth.requestSigner(deviceId: did))
             link = try await client.createCookbookShare(
                 householdId: cookbook.householdId, recipeIds: cookbook.recipeIds)
             error = nil

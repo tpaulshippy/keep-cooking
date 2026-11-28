@@ -4,11 +4,14 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import com.keepcooking.app.sync.DeviceAuthInterceptor
+import com.keepcooking.app.sync.deviceSignedHeaders
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
+import okio.Buffer
 
 /** Transport error for the share API (carries status codes, never content). */
 sealed class ShareApiError(message: String) : IOException(message) {
@@ -26,6 +29,9 @@ private data class CookbookShareRequest(
 /**
  * Minimal client for Lane 1 share routes. Base URL is injected so
  * previews/tests never hit the network. Mirrors iOS ShareAPIClient.
+ * Pass the current [DeviceAuthInterceptor.State] to Ed25519-sign the
+ * mutating POST (see sync/DeviceAuth.kt); without it the POST sends
+ * identity headers only.
  */
 class ShareApiClient(
     private val baseUrl: String,
@@ -33,6 +39,7 @@ class ShareApiClient(
     private val userId: String = "beta-user",
     private val deviceId: String = "app",
     private val http: OkHttpClient = OkHttpClient(),
+    private val deviceState: DeviceAuthInterceptor.State? = null,
 ) {
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
 
@@ -43,13 +50,19 @@ class ShareApiClient(
         expiresInDays: Int = 30,
     ): ShareLink {
         val body = json.encodeToString(CookbookShareRequest(householdId, recipeIds, expiresInDays))
-        val req = Request.Builder()
-            .url(baseUrl.trimEnd('/') + "/share/cookbook")
-            .post(body.toRequestBody("application/json".toMediaType()))
+        val bodyReq = body.toRequestBody("application/json".toMediaType())
+        val shareUrl = baseUrl.trimEnd('/') + "/share/cookbook"
+        val builder = Request.Builder()
+            .url(shareUrl)
+            .post(bodyReq)
             .header("x-user-id", userId)
-            .header("x-device-id", deviceId)
+            .header("x-device-id", deviceState?.deviceId ?: deviceId)
             .apply { if (!betaToken.isNullOrEmpty()) header("Authorization", "Bearer $betaToken") }
-            .build()
+        deviceState?.let { state ->
+            val raw = Buffer().also { bodyReq.writeTo(it) }.readByteArray()
+            for ((k, v) in deviceSignedHeaders("POST", shareUrl, raw, state)) builder.header(k, v)
+        }
+        val req = builder.build()
         http.newCall(req).execute().use { resp ->
             val raw = resp.body?.string().orEmpty()
             if (resp.code != 201) throw ShareApiError.HttpStatus(resp.code)

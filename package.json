@@ -1,5 +1,5 @@
 {
   "name": "keep-cooking",
   "private": true,
-  "workspaces": ["api", "packages/contracts"]
+  "workspaces": ["api", "packages/contracts", "apps/web"]
 }
