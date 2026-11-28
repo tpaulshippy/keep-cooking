@@ -1,0 +1,46 @@
+api/package.json
+  h_6bbd00fe0a456a 13-14
+api/scripts/apply-migration.sh
+  h_6bbd00fe0a456a 1-26
+apps/android/app/src/main/java/com/keepcooking/app/navigation/NavGraph.kt
+  h_6bbd00fe0a456a 53,332-355,373,390-396,457-474,533-535,543,562
+apps/android/app/src/main/java/com/keepcooking/app/network/ApiService.kt
+  h_6bbd00fe0a456a 107-118,121-128
+apps/android/app/src/main/java/com/keepcooking/app/sync/SyncEngine.kt
+  h_6bbd00fe0a456a 25-26,257-287
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/LibraryScreen.kt
+  h_6bbd00fe0a456a 5,7,15,38,631-661
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/PhotoUrls.kt
+  h_6bbd00fe0a456a 3-5,10-11,25-47
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/RecipeEditorScreen.kt
+  h_6bbd00fe0a456a 96-99,131-135,149,152,238,242-259,262,418-423,425,675,718,722-723
+apps/android/app/src/test/java/com/keepcooking/app/RecipeEditPayloadTest.kt
+  h_6bbd00fe0a456a 7,9,51,127-129,133-134,137-139,143-165
+apps/ios/UITests/RecipeEditorScreenshotTests.swift
+  h_6bbd00fe0a456a 5-14,81-90
+apps/web/src/display.test.ts
+  h_6bbd00fe0a456a 120-122
+apps/web/src/display.ts
+  h_6bbd00fe0a456a 72-73,75,80
+apps/web/src/main.ts
+  h_6bbd00fe0a456a 580
+apps/web/src/styles.css
+  h_6bbd00fe0a456a 125,149,155,172,174,188
+packages/contracts/CHANGELOG.md
+  h_6bbd00fe0a456a 2-3
+packages/contracts/schema.sql
+  h_6bbd00fe0a456a 25,29-32
+scripts/deploy-backend.sh
+  h_6bbd00fe0a456a 91-94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "62bfe0163d4a3de70957f9182a54fd566cca336f",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
