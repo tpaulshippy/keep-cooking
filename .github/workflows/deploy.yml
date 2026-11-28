@@ -3,7 +3,7 @@ name: Deploy API + Web
 on:
   push:
     branches: [main]
-    paths: ['api/**', 'packages/contracts/**', 'apps/web/**', '.github/workflows/deploy.yml']
+    paths: ['api/**', 'packages/contracts/**', 'apps/web/**', 'sites/marketing/**', '.github/workflows/deploy.yml']
   workflow_dispatch:
 
 # Only one deploy at a time; extra runs wait their turn (same as bots).
@@ -64,6 +64,35 @@ jobs:
           # No custom domain yet: publishes to the out-of-the-box
           # https://keep-cooking-api.<account>.workers.dev URL.
           npx wrangler deploy
+
+  deploy-marketing:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout deploy commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build + deploy marketing site
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          # No dependencies: the marketing build is Node stdlib only.
+          npm run build --prefix sites/marketing
+          cd sites/marketing
+          # Direct-upload Pages project (no GitHub integration): Actions is
+          # the single deploy path. --branch=main pins this as a production
+          # deployment (a bare deploy lands as preview and the apex would
+          # 404). Apex (keepcooking.app) is a custom domain on this
+          # project; /api/* and /app/* stay on their Workers Routes
+          # (issues #28/#27) and are unaffected by this deploy.
+          npx wrangler pages deploy dist --project-name=keep-cooking --branch=main --commit-hash=${{ github.sha }}
 
   deploy-web:
     runs-on: ubuntu-latest
