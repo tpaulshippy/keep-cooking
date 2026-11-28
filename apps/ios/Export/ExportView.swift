@@ -1,8 +1,8 @@
 // Keep Cooking — Lane 5 Organize
 // apps/ios/Export/ExportView.swift
 //
-// Export UI: pick a recipe, preview JSON/Markdown/HTML, share or save to
-// Files. Recipe conforms to ExportableRecipe here (Lane 5 extension only).
+// Export UI: multi-select recipes, pick a format, share a temp file.
+// Recipe conforms to ExportableRecipe here (Lane 5 extension only).
 
 import SwiftUI
 import SwiftData
@@ -49,7 +49,7 @@ public enum ExportFormat: String, CaseIterable, Identifiable {
     }
 }
 
-/// Recipe picker + format segmented control + live preview + ShareLink.
+/// Multi-select recipe picker + format segmented control + ShareLink.
 /// Export is computed on-device from SwiftData (works offline); the ShareLink
 /// writes a temp file so Messages/Mail/Files all receive a real document.
 public struct RecipeExportView: View {
@@ -57,74 +57,99 @@ public struct RecipeExportView: View {
            sort: [SortDescriptor(\Recipe.title)])
     private var recipes: [Recipe]
 
-    @State private var selectedId: String?
+    @State private var selectedIds: Set<String> = []
+    @State private var didInitSelection = false
     @State private var format: ExportFormat = .md
-    @State private var savedURL: URL?
 
     public init() {}
 
-    private var selected: Recipe? {
-        recipes.first(where: { $0.id == selectedId }) ?? recipes.first
+    private var selected: [Recipe] {
+        recipes.filter { selectedIds.contains($0.id) }
+    }
+
+    private var allSelected: Bool {
+        !recipes.isEmpty && selectedIds.count == recipes.count
     }
 
     private var exportedText: String {
-        guard let r = selected else { return "" }
+        let sel = selected
+        guard !sel.isEmpty else { return "" }
         switch format {
-        case .json: return exportJSON(r)
-        case .md: return exportMarkdown(r)
-        case .html: return exportHTML(r)
-        case .paprikarecipes: return exportPaprikaJSON(r)
-        case .yaml: return exportYaml(r)
+        case .json:
+            if sel.count == 1 { return exportJSON(sel[0]) }
+            return "[" + sel.map { exportJSON($0) }.joined(separator: ",") + "]"
+        case .md:
+            return sel.map { exportMarkdown($0) }.joined(separator: "\n\n---\n\n")
+        case .html:
+            if sel.count == 1 { return exportHTML(sel[0]) }
+            return sel.map { exportHTML($0) }.joined(separator: "\n<hr/>\n")
+        case .paprikarecipes:
+            return exportPaprikaJSON(sel[0])
+        case .yaml:
+            if sel.count == 1 { return exportYaml(sel[0]) }
+            return exportYamlArray(sel)
         }
     }
 
-    /// Binary payload for formats that are not plain text. Paprika single
-    /// export is a real `.paprikarecipes` ZIP (one gzip member), so Files/
-    /// Mail receive an importable document — not a JSON dump in disguise.
+    /// Binary payload for formats that are not plain text. Paprika export
+    /// is a real `.paprikarecipes` ZIP (one gzip member per recipe), so
+    /// Files/Mail receive an importable document — not a JSON dump.
     private var exportedData: Data? {
-        guard let r = selected, format == .paprikarecipes else { return nil }
-        return exportPaprikaArchive([r])
+        guard !selected.isEmpty, format == .paprikarecipes else { return nil }
+        return exportPaprikaArchive(selected)
     }
 
     public var body: some View {
-        NavigationStack {
-            Form {
-                Section("Recipe") {
-                    if recipes.isEmpty {
-                        Text("No recipes to export.").foregroundStyle(.secondary)
-                    } else {
-                        Picker("Recipe", selection: Binding(
-                            get: { selected?.id ?? "" },
-                            set: { selectedId = $0 }
-                        )) {
-                            ForEach(recipes, id: \.id) { r in
-                                Text(r.title).tag(r.id)
-                            }
+        Form {
+            Section {
+                if recipes.isEmpty {
+                    Text("No recipes to export.").foregroundStyle(.secondary)
+                } else {
+                    Button(allSelected ? "Deselect All" : "Select All") {
+                        if allSelected {
+                            selectedIds.removeAll()
+                        } else {
+                            selectedIds = Set(recipes.map(\.id))
                         }
                     }
-                }
-                Section("Format") {
-                    Picker("Format", selection: $format) {
-                        ForEach(ExportFormat.allCases) { f in Text(f.title).tag(f) }
-                    }
-                    .pickerStyle(.segmented)
-                }
-                if selected != nil {
-                    Section("Preview") {
-                        Text(String(exportedText.prefix(1200)))
-                            .font(.system(.caption, design: .monospaced))
-                            .textSelection(.enabled)
-                    }
-                    Section {
-                        if let url = writeTempFile() {
-                            ShareLink(item: url) {
-                                Label("Share \(format.title) file", systemImage: "square.and.arrow.up")
+                    ForEach(recipes, id: \.id) { r in
+                        Toggle(r.title, isOn: Binding(
+                            get: { selectedIds.contains(r.id) },
+                            set: { on in
+                                if on { selectedIds.insert(r.id) }
+                                else { selectedIds.remove(r.id) }
                             }
-                        }
+                        ))
+                    }
+                }
+            } header: {
+                Text("Recipes")
+            } footer: {
+                if !recipes.isEmpty {
+                    Text("\(selectedIds.count) of \(recipes.count) selected")
+                }
+            }
+            Section("Format") {
+                Picker("Format", selection: $format) {
+                    ForEach(ExportFormat.allCases) { f in Text(f.title).tag(f) }
+                }
+                .pickerStyle(.segmented)
+            }
+            Section {
+                if selected.isEmpty {
+                    Text("Select at least one recipe.").foregroundStyle(.secondary)
+                } else if let url = writeTempFile() {
+                    ShareLink(item: url) {
+                        Label("Share \(format.title) file (\(selected.count) recipe\(selected.count == 1 ? "" : "s"))", systemImage: "square.and.arrow.up")
                     }
                 }
             }
-            .navigationTitle("Export")
+        }
+        .onAppear {
+            if !didInitSelection {
+                didInitSelection = true
+                selectedIds = Set(recipes.map(\.id))
+            }
         }
     }
 
@@ -132,10 +157,16 @@ public struct RecipeExportView: View {
     /// (hiding the row) only when there is nothing to export. Binary formats
     /// (Paprika ZIP) write bytes; text formats write UTF-8.
     private func writeTempFile() -> URL? {
-        guard let r = selected else { return nil }
-        let safe = r.title.lowercased().map { $0.isLetter || $0.isNumber ? $0 : "-" }
-        let name = "keep-cooking-\(String(safe).prefix(40)).\(format.fileExtension)"
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(String(name))
+        let sel = selected
+        guard !sel.isEmpty else { return nil }
+        let name: String
+        if sel.count == 1, let r = sel.first {
+            let safe = r.title.lowercased().map { $0.isLetter || $0.isNumber ? $0 : "-" }
+            name = "keep-cooking-\(String(safe).prefix(40)).\(format.fileExtension)"
+        } else {
+            name = "keep-cooking-export-\(sel.count)-recipes.\(format.fileExtension)"
+        }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
         if let data = exportedData {
             try? data.write(to: url, options: .atomic)
         } else {

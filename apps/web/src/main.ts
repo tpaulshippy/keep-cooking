@@ -891,21 +891,25 @@ function viewIngest(): void {
 }
 
 // ---- Settings ----
-function exportJSON(): string {
+function exportJSON(selected?: LocalRecipe[]): string {
+  if (selected) return JSON.stringify(selected, null, 2);
   return JSON.stringify(store.state, null, 2);
 }
 
-function exportMarkdown(): string {
+function exportMarkdownFrom(recipes: LocalRecipe[]): string {
   const lines = ['# Keep Cooking export', ''];
-  for (const r of visible(store.state.recipes)) {
-    const p = r.payload as { title?: string; ingredients?: { name: string; display?: string }[]; steps?: { text: string }[] };
-    lines.push(`## ${p.title ?? r.id}`, '');
-    for (const i of p.ingredients ?? []) lines.push(`- ${i.display ? `${i.display} ` : ''}${i.name}`);
+  for (const r of recipes) {
+    lines.push(`## ${r.title}`, '');
+    for (const i of r.ingredients ?? []) lines.push(`- ${i.display ? `${i.display} ` : ''}${i.name}`);
     lines.push('');
-    (p.steps ?? []).forEach((s, n) => lines.push(`${n + 1}. ${s.text}`));
+    (r.steps ?? []).forEach((s, n) => lines.push(`${n + 1}. ${s.text}`));
     lines.push('');
   }
   return lines.join('\n');
+}
+
+function exportMarkdown(selected?: LocalRecipe[]): string {
+  return exportMarkdownFrom(selected ?? localRecipes());
 }
 
 function download(name: string, text: string, type: string): void {
@@ -977,8 +981,9 @@ interface LocalRecipe {
   updatedAt: string;
 }
 
-function localRecipes(): LocalRecipe[] {
-  return visible(store.state.recipes).map((e) => {
+function localRecipes(ids?: Set<string> | null): LocalRecipe[] {
+  const envs = visible(store.state.recipes).filter((e) => !ids || ids.has(e.id));
+  return envs.map((e) => {
     const p = (e.payload ?? {}) as AnyRec;
     const str = (v: unknown, fb = ''): string => (typeof v === 'string' ? v : fb);
     const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
@@ -1086,8 +1091,8 @@ function toPaprikaYaml(r: LocalRecipe): AnyRec {
   };
 }
 
-function exportHtmlLocal(): string {
-  const recipes = localRecipes();
+function exportHtmlLocal(selected?: LocalRecipe[]): string {
+  const recipes = selected ?? localRecipes();
   const bodies = recipes.map((r) => {
     const ld = {
       '@context': 'https://schema.org',
@@ -1365,6 +1370,7 @@ async function parseOfflineImport(
 
 function viewSettings(): void {
   const override = getApiBaseOverride();
+  const exportRecipes = visible(store.state.recipes);
   shell(`<h1>Settings</h1>
   <p>API base: <code>${esc(resolveApiBase())}</code> ${override ? '(override)' : '(default)'}</p>
   <form id="apibase"><label>API_BASE_URL override <input name="api" type="url" value="${esc(override ?? '')}" placeholder="${esc(resolveApiBase())}" /></label>
@@ -1377,7 +1383,11 @@ function viewSettings(): void {
   <button type="button" id="share">Copy share link</button></p>
   <p id="syncstatus" role="status" aria-live="polite"></p>
   <h2>Export</h2>
-  <p><button type="button" id="expjson">Export JSON</button> <button type="button" id="expmd">Export Markdown</button> <button type="button" id="exchtml">Export HTML</button> <button type="button" id="exppaprika">Export Paprika (.paprikarecipes)</button> <button type="button" id="expyaml">Export YAML</button></p>
+  <p id="exportcount" role="status" aria-live="polite"></p>
+  <p><label><input type="checkbox" id="exportselectall" checked /> Select all</label></p>
+  <div>${exportRecipes.map((r) => `<label><input type="checkbox" data-export-id="${esc(r.id)}" checked /> ${esc((r.payload as { title?: string }).title ?? r.id)}</label>`).join('') || '<p>No recipes to export.</p>'}</div>
+  <p><label>Format <select id="exportformat"><option value="json">JSON</option><option value="md">Markdown</option><option value="html">HTML</option><option value="paprikarecipes">Paprika (.paprikarecipes)</option><option value="yaml">YAML</option></select></label>
+  <button type="button" id="doexport">Export</button></p>
   <p id="exportstatus" role="status" aria-live="polite"></p>
   <h2>Import</h2>
   <form id="importform">
@@ -1473,41 +1483,60 @@ function viewSettings(): void {
       status().textContent = 'Clipboard unavailable.';
     }
   });
-  document.getElementById('expjson')!.addEventListener('click', () => download('keep-cooking.json', exportJSON(), 'application/json'));
-  document.getElementById('expmd')!.addEventListener('click', () => download('keep-cooking.md', exportMarkdown(), 'text/markdown'));
-  const bulkExport = async (
-    format: 'json' | 'md' | 'html' | 'paprikarecipes' | 'yaml',
-    onlineName: string,
-    offline: { name: string; text: string; type: string },
-  ): Promise<void> => {
+  const exportBoxes = (): HTMLInputElement[] => Array.from(document.querySelectorAll<HTMLInputElement>('[data-export-id]'));
+  const selectedExportIds = (): string[] => exportBoxes().filter((b) => b.checked).map((b) => b.dataset.exportId!).filter(Boolean);
+  const updateExportCount = (): void => {
+    const boxes = exportBoxes();
+    const sel = boxes.filter((b) => b.checked).length;
+    document.getElementById('exportcount')!.textContent = `${sel} of ${boxes.length} selected`;
+    const all = document.getElementById('exportselectall') as HTMLInputElement | null;
+    if (all) all.checked = boxes.length > 0 && sel === boxes.length;
+  };
+  exportBoxes().forEach((b) => b.addEventListener('change', updateExportCount));
+  document.getElementById('exportselectall')?.addEventListener('change', (e) => {
+    const checked = (e.target as HTMLInputElement).checked;
+    exportBoxes().forEach((b) => { b.checked = checked; });
+    updateExportCount();
+  });
+  updateExportCount();
+  const exportMime: Record<string, string> = {
+    json: 'application/json',
+    md: 'text/markdown',
+    html: 'text/html',
+    paprikarecipes: 'application/json',
+    yaml: 'text/yaml',
+  };
+  document.getElementById('doexport')!.addEventListener('click', () => void (async () => {
     const st = () => document.getElementById('exportstatus')!;
+    const format = (document.getElementById('exportformat') as HTMLSelectElement).value as 'json' | 'md' | 'html' | 'paprikarecipes' | 'yaml';
+    const ids = selectedExportIds();
+    const total = exportBoxes().length;
+    if (!ids.length) {
+      st().textContent = 'Select at least one recipe to export.';
+      return;
+    }
+    const fileName = `keep-cooking.export.${format}`;
+    const useAll = ids.length === total;
     try {
-      const blob = await api.fetchExportBlob(api.exportBulkUrl({ format, all: true }));
+      const blob = await api.fetchExportBlob(api.exportBulkUrl(useAll ? { format, all: true } : { format, ids }));
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = onlineName;
+      a.download = fileName;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-      st().textContent = `Exported the library via the server (${format}).`;
+      st().textContent = `Exported ${ids.length} recipe(s) via the server (${format}).`;
     } catch {
-      download(offline.name, offline.text, offline.type);
+      const selected = localRecipes(new Set(ids));
+      let text = '';
+      if (format === 'json') text = exportJSON(selected);
+      else if (format === 'md') text = exportMarkdown(selected);
+      else if (format === 'html') text = exportHtmlLocal(selected);
+      else if (format === 'paprikarecipes') text = JSON.stringify(selected.map(toPaprikaJson), null, 2);
+      else text = JSON.stringify(selected.map(toPaprikaYaml), null, 2);
+      download(fileName, text, exportMime[format]);
       st().textContent = 'Server unreachable — saved an offline-generated fallback instead.';
     }
-  };
-  document.getElementById('exchtml')!.addEventListener('click', () =>
-    void bulkExport('html', 'keep-cooking.html', { name: 'keep-cooking.html', text: exportHtmlLocal(), type: 'text/html' }));
-  document.getElementById('exppaprika')!.addEventListener('click', () =>
-    void bulkExport('paprikarecipes', 'keep-cooking.paprikarecipes', {
-      name: 'keep-cooking.paprikarecipes.json',
-      text: JSON.stringify(localRecipes().map(toPaprikaJson), null, 2),
-      type: 'application/json',
-    }));
-  document.getElementById('expyaml')!.addEventListener('click', () =>
-    void bulkExport('yaml', 'keep-cooking.yaml', {
-      name: 'keep-cooking.yaml',
-      text: JSON.stringify(localRecipes().map(toPaprikaYaml), null, 2),
-      type: 'text/yaml',
-    }));
+  })());
   (document.getElementById('importform') as HTMLFormElement).addEventListener('submit', (e) => {
     e.preventDefault();
     const statusEl = () => document.getElementById('importstatus')!;
