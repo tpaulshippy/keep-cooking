@@ -1,0 +1,18 @@
+sites/marketing/public/index.html
+  h_6bbd00fe0a456a 82-85,106-109,114-117,122-125,130-133
+sites/marketing/public/styles.css
+  h_6bbd00fe0a456a 94,121
+sites/marketing/scripts/build.mjs
+  h_6bbd00fe0a456a 51,58-68,70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5724c4e68207d323cbfd9540be541fcf7f83384e",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
