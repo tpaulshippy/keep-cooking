@@ -80,7 +80,9 @@ public struct ParsedRecipe: Sendable {
         self.warnings = []
     }
 
-    /// Normalized Paprika JSON object for `POST /import` (uid upsert key).
+    /// Normalized Paprika JSON object (uid upsert key). Kept for lossless
+    /// export round-trips; the server import takes raw file bytes instead
+    /// (see encodeImportBody), never this object.
     /// Photo bytes ride along as `photo_data` so the server round-trips them.
     public func paprikaJSONObject() -> [String: Any] {
         var obj: [String: Any] = [
@@ -1278,26 +1280,136 @@ public enum PaprikaImportParser {
     }
 }
 
-// MARK: - Import request body + server client (POST /import)
+// MARK: - Import request body + server client (POST /api/import)
 
-/// Encodes the server import envelope. The server owns uid upsert
-/// (re-import of the same uid updates in place); the iOS store has no
-/// paprikaUid column, so on-device-only saves dedupe by title instead.
-public func encodeImportBody(recipes: [ParsedRecipe], cookbook: String?, importCookbooks: Bool) -> Data? {
-    let body: [String: Any] = [
-        "recipes": recipes.map { $0.paprikaJSONObject() },
-        "cookbook": cookbook as Any,
+/// File extension → server `format` (mirrors detectImportFormat in
+/// api/src/import.ts). Binary bundles and text formats alike travel as
+/// base64 `payload`; unknown text-ish extensions return nil and let the
+/// server content-sniff.
+public enum ImportFormatHint {
+    public static func format(forFileName fileName: String) -> String? {
+        let ext = (fileName as NSString).pathExtension.lowercased()
+        switch ext {
+        case "paprikarecipes", "paprikarecipe", "zip":
+            return "paprika-zip"
+        case "json":
+            return "paprika-json"
+        case "yml", "yaml":
+            return "yaml"
+        case "html", "htm":
+            return "html"
+        case "mx2", "mxp", "mz2", "mmf", "fdx", "fdxz":
+            return ext // accepted by the detector; server 415s with re-export guidance until parsers land
+        default:
+            return nil
+        }
+    }
+}
+
+/// Encodes the server import envelope (ImportRequest): the ORIGINAL file
+/// bytes as base64 `payload` plus `filename`/`format` for detection, with
+/// decoded `text` alongside for text formats. The server owns parsing and
+/// uid upsert; the client never sends parsed recipes (the API consumes
+/// `format`/`filename`/`payload`/`text`, not a `recipes` array).
+public func encodeImportBody(fileName: String, data: Data, format: String? = nil,
+                             householdId: String? = nil,
+                             importCookbooks: Bool = true,
+                             dryRun: Bool = false) -> Data? {
+    let resolved = format ?? ImportFormatHint.format(forFileName: fileName)
+    var body: [String: Any] = [
+        "filename": fileName,
         "importCookbooks": importCookbooks,
+        "dryRun": dryRun,
     ]
+    if let resolved { body["format"] = resolved }
+    if let householdId, !householdId.isEmpty { body["householdId"] = householdId }
+    if let resolved, ["yaml", "html", "paprika-json"].contains(resolved),
+       let text = String(data: data, encoding: .utf8) {
+        body["text"] = text
+    }
+    body["payload"] = data.base64EncodedString()
     return try? JSONSerialization.data(withJSONObject: body)
 }
 
+/// Decoded import report. Tolerant of both wire shapes: the live server's
+/// `{"imported": Int, "ids": [String], "warnings": [...]}` (api/src/import.ts
+/// ImportResult) and the contract ImportReport
+/// `{"imported": [Recipe], "updated": Int, "warnings"?, "dryRun"?, "cookbooksCreated"?}`.
 public struct ImportServerResult: Sendable, Codable {
     public var imported: Int
     public var updated: Int
+    public var ids: [String]
     public var warnings: [String]?
-    public init(imported: Int = 0, updated: Int = 0, warnings: [String]? = nil) {
-        self.imported = imported; self.updated = updated; self.warnings = warnings
+    public var dryRun: Bool?
+    public var cookbooksCreated: [String]?
+
+    public init(imported: Int = 0, updated: Int = 0, ids: [String] = [],
+                warnings: [String]? = nil, dryRun: Bool? = nil,
+                cookbooksCreated: [String]? = nil) {
+        self.imported = imported; self.updated = updated; self.ids = ids
+        self.warnings = warnings; self.dryRun = dryRun
+        self.cookbooksCreated = cookbooksCreated
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case imported, updated, ids, warnings, dryRun, cookbooksCreated
+    }
+
+    public init(from decoder: Decoder) throws {
+        let box = try decoder.container(keyedBy: CodingKeys.self)
+        var count = 0
+        var idsFromImported: [String] = []
+        if let n = try? box.decode(Int.self, forKey: .imported) {
+            count = n
+        } else if var list = try? box.nestedUnkeyedContainer(forKey: .imported) {
+            while !list.isAtEnd {
+                if let recipe = try? list.decode(ImportedRecipeRef.self) {
+                    count += 1
+                    if let id = recipe.id { idsFromImported.append(id) }
+                } else if (try? list.decode(JSONSkipped.self)) != nil {
+                    count += 1
+                } else {
+                    break // unconsumable element: stop rather than loop forever
+                }
+            }
+        }
+        imported = count
+        updated = (try? box.decode(Int.self, forKey: .updated)) ?? 0
+        let ids = (try? box.decode([String].self, forKey: .ids)) ?? []
+        self.ids = ids.isEmpty ? idsFromImported : ids
+        warnings = try? box.decode([String].self, forKey: .warnings)
+        dryRun = try? box.decode(Bool.self, forKey: .dryRun)
+        cookbooksCreated = try? box.decode([String].self, forKey: .cookbooksCreated)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var box = encoder.container(keyedBy: CodingKeys.self)
+        try box.encode(imported, forKey: .imported)
+        try box.encode(updated, forKey: .updated)
+        try box.encode(ids, forKey: .ids)
+        try box.encodeIfPresent(warnings, forKey: .warnings)
+        try box.encodeIfPresent(dryRun, forKey: .dryRun)
+        try box.encodeIfPresent(cookbooksCreated, forKey: .cookbooksCreated)
+    }
+}
+
+/// Minimal `id` view over an ImportReport `imported[]` recipe element
+/// (unknown keys ignored).
+private struct ImportedRecipeRef: Decodable {
+    var id: String?
+}
+
+/// Value skipper so a tolerant `imported[]` walk never stalls on an
+/// unexpected element shape.
+private struct JSONSkipped: Decodable {
+    init(from decoder: Decoder) throws {
+        let box = try decoder.singleValueContainer()
+        if box.decodeNil() { return }
+        if (try? box.decode(Bool.self)) != nil { return }
+        if (try? box.decode(Double.self)) != nil { return }
+        if (try? box.decode(String.self)) != nil { return }
+        if (try? box.decode([JSONSkipped].self)) != nil { return }
+        _ = try box.decode([String: JSONSkipped].self)
     }
 }
 
@@ -1339,7 +1451,7 @@ public struct ImportAPIClient: Sendable {
         req.setValue(deviceId, forHTTPHeaderField: "x-device-id")
         if let signer { req = signer.signedRequest(req) }
         let (data, resp) = try await session.data(for: req)
-        guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
+        guard let status = (resp as? HTTPURLResponse)?.statusCode, (200..<300).contains(status) else {
             throw ImportClientError.httpStatus((resp as? HTTPURLResponse)?.statusCode ?? -1)
         }
         do { return try JSONDecoder().decode(ImportServerResult.self, from: data) }

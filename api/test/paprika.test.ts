@@ -309,6 +309,77 @@ describe('POST /api/import + GET /export round-trip', () => {
     }
   });
 
+  it('dryRun parses and reports without persisting anything', async () => {
+    const { app } = await makeApp({ seed: false });
+    const payload = JSON.stringify(SAMPLE);
+    const dry = await req(app, 'POST', '/api/import', {
+      body: { format: 'paprika-json', text: payload, householdId: 'hh-demo', dryRun: true },
+    });
+    expect(dry.status).toBe(200);
+    const d = (await dry.json()) as { imported: number; updated: number; ids: string[]; warnings: string[]; dryRun: boolean; cookbooksCreated: string[] };
+    expect(d.imported).toBe(1);
+    expect(d.updated).toBe(0);
+    expect(d.dryRun).toBe(true);
+    expect(d.ids).toContain(SAMPLE.uid);
+    expect(d.cookbooksCreated).toEqual([]);
+    // Nothing persisted.
+    const list = (await (await req(app, 'GET', '/api/recipes?householdId=hh-demo')).json()) as { id: string }[];
+    expect(list).toHaveLength(0);
+
+    // The real import still lands exactly once afterwards.
+    const live = await req(app, 'POST', '/api/import', {
+      body: { format: 'paprika-json', text: payload, householdId: 'hh-demo' },
+    });
+    expect(live.status).toBe(200);
+    expect(((await live.json()) as { updated: number }).updated).toBe(0);
+
+    // A second dryRun sees the would-be update but still persists nothing new.
+    const dry2 = await req(app, 'POST', '/api/import', {
+      body: { format: 'paprika-json', text: payload, householdId: 'hh-demo', dryRun: true },
+    });
+    expect(dry2.status).toBe(200);
+    const d2 = (await dry2.json()) as { imported: number; updated: number; dryRun: boolean };
+    expect(d2.imported).toBe(1);
+    expect(d2.updated).toBe(1);
+    expect(d2.dryRun).toBe(true);
+    const list2 = (await (await req(app, 'GET', '/api/recipes?householdId=hh-demo')).json()) as { id: string }[];
+    expect(list2.filter((r) => r.id === SAMPLE.uid)).toHaveLength(1);
+  });
+
+  it('rejects an explicit unknown format with 400 instead of sniffing YAML', async () => {
+    const { app } = await makeApp({ seed: false });
+    const yml = 'name: Soup\nservings: 2\ningredients: |\n  water\ndirections: |\n  Boil.\n';
+    for (const format of ['pepperplate-db', 'pepperplate_db', 'yum-xml', 'bogus-format']) {
+      const res = await req(app, 'POST', '/api/import', {
+        body: { format, text: yml, householdId: 'hh-demo' },
+      });
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { error: string }).error).toMatch(/unsupported import format/);
+    }
+    // Nothing persisted by the rejected imports.
+    const list = (await (await req(app, 'GET', '/api/recipes?householdId=hh-demo')).json()) as { id: string }[];
+    expect(list).toHaveLength(0);
+  });
+
+  it('still sniffs the format when it is omitted', async () => {
+    const { app } = await makeApp({ seed: false });
+    // YAML default (no filename, no format).
+    const yml = 'name: Sniffed Soup\nservings: 2\ningredients: |\n  water\ndirections: |\n  Boil.\n';
+    const yRes = await req(app, 'POST', '/api/import', {
+      body: { text: yml, householdId: 'hh-demo' },
+    });
+    expect(yRes.status).toBe(200);
+    expect(((await yRes.json()) as { imported: number }).imported).toBe(1);
+    // JSON content sniffs to paprika-json.
+    const jRes = await req(app, 'POST', '/api/import', {
+      body: { text: JSON.stringify({ ...SAMPLE, uid: 'UID-SNIFF-1', name: 'Sniffed Json' }), householdId: 'hh-demo' },
+    });
+    expect(jRes.status).toBe(200);
+    expect(((await jRes.json()) as { imported: number }).imported).toBe(1);
+    const list = (await (await req(app, 'GET', '/api/recipes?householdId=hh-demo')).json()) as { title: string }[];
+    expect(list.map((r) => r.title).sort()).toEqual(['Sniffed Json', 'Sniffed Soup']);
+  });
+
   it('exportPaprika emits ${UID}.jpg-safe members and exportYaml is valid YAML/JSON', async () => {
     const { app, store } = await makeApp({ seed: false });
     const r = await store.createRecipe(

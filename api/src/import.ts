@@ -52,44 +52,74 @@ export interface ImportRequest {
   /** Decoded text body (alternative to bytes for text formats). */
   text?: string;
   householdId?: string;
+  /** Parse fully and report without persisting anything. */
+  dryRun?: boolean;
 }
 
 export interface ImportResult {
   imported: number;
   ids: string[];
   warnings: string[];
+  /** Re-import uid matches that updated an existing recipe in place. */
+  updated: number;
+  /** Echoes the request dryRun flag. */
+  dryRun: boolean;
+  /** Paprika cookbook names recreated (none yet — folds into categories). */
+  cookbooksCreated: string[];
+}
+
+/** Formats the detector resolves (parsed today + 415-stubbed P1 set). */
+const KNOWN_IMPORT_FORMATS: ImportFormat[] = [
+  'paprika-json',
+  'paprika-zip',
+  'yaml',
+  'html',
+  'mx2',
+  'mxp',
+  'mz2',
+  'mmf',
+  'fdx',
+  'fdxz',
+  'pepperplate',
+  'copymethat',
+  'yum',
+];
+
+// Aliases users actually send.
+const IMPORT_FORMAT_ALIASES: Record<string, ImportFormat> = {
+  paprikarecipes: 'paprika-zip',
+  paprikarecipe: 'paprika-zip',
+  zip: 'paprika-zip',
+  json: 'paprika-json',
+  yml: 'yaml',
+  htm: 'html',
+  pepperplatezip: 'pepperplate',
+  'copy-me-that': 'copymethat',
+};
+
+/** Normalize a caller-supplied explicit format value. */
+export function normalizeImportFormat(raw: string): string {
+  return raw.toLowerCase().trim().replace(/[_.]/g, '-');
+}
+
+/**
+ * Reject an EXPLICIT unknown format with 400 before any sniffing (e.g.
+ * pepperplate-db must not fall through to the YAML default). A format that
+ * is omitted (or blank) still sniffs from filename/content as before.
+ */
+function assertExplicitFormatSupported(req: ImportRequest): void {
+  if (typeof req.format !== 'string' || req.format.trim() === '') return;
+  const explicit = normalizeImportFormat(req.format);
+  if ((KNOWN_IMPORT_FORMATS as string[]).includes(explicit)) return;
+  if (IMPORT_FORMAT_ALIASES[explicit]) return;
+  throw httpError(400, `unsupported import format "${req.format}"`);
 }
 
 /** Detect the import format from filename and/or content sniffing. */
 export function detectImportFormat(req: ImportRequest): ImportFormat {
-  const explicit = (req.format ?? '').toLowerCase().trim().replace(/[_.]/g, '-');
-  const known: ImportFormat[] = [
-    'paprika-json',
-    'paprika-zip',
-    'yaml',
-    'html',
-    'mx2',
-    'mxp',
-    'mz2',
-    'mmf',
-    'fdx',
-    'fdxz',
-    'pepperplate',
-    'copymethat',
-    'yum',
-  ];
-  if ((known as string[]).includes(explicit)) return explicit as ImportFormat;
-  // Aliases users actually send.
-  const alias: Record<string, ImportFormat> = {
-    paprikarecipes: 'paprika-zip',
-    paprikarecipe: 'paprika-zip',
-    zip: 'paprika-zip',
-    json: 'paprika-json',
-    yml: 'yaml',
-    htm: 'html',
-    pepperplatezip: 'pepperplate',
-    'copy-me-that': 'copymethat',
-  };
+  const explicit = normalizeImportFormat(req.format ?? '');
+  if ((KNOWN_IMPORT_FORMATS as string[]).includes(explicit)) return explicit as ImportFormat;
+  const alias = IMPORT_FORMAT_ALIASES;
   if (alias[explicit]) return alias[explicit]!;
   const name = (req.filename ?? '').toLowerCase();
   if (/\.paprikarecipes$/.test(name) || /\.paprikarecipe$/.test(name)) return 'paprika-zip';
@@ -120,6 +150,7 @@ function httpError(status: number, message: string): Error & { status: number } 
 
 /** Parse the request payload into Paprika-mapped recipes (no persistence). */
 export async function parseImportPayload(req: ImportRequest): Promise<ParsedPaprikaRecipe[]> {
+  assertExplicitFormatSupported(req);
   const format = detectImportFormat(req);
   const p1 = P1_REEXPORT_GUIDANCE[format];
   if (p1) throw httpError(415, p1);
@@ -172,17 +203,24 @@ export async function parseImportPayload(req: ImportRequest): Promise<ParsedPapr
  * a stored recipe with the Paprika uid is updated in place, else created
  * with the uid as its id for re-import idempotency). Invalid recipes are
  * skipped with a warning; unparseable payloads throw 4xx.
+ *
+ * dryRun (req.dryRun): parse + validate fully and report what WOULD happen
+ * (imported/updated counts, prospective ids, warnings) without persisting
+ * anything — no createRecipe/updateRecipe calls and no photo staging.
  */
 export async function runImport(
   store: Store,
   req: ImportRequest,
   meta: { deviceId: string; householdId: string },
 ): Promise<ImportResult> {
+  const dryRun = req.dryRun === true;
   const parsed = await parseImportPayload(req);
   const warnings: string[] = [];
   const ids: string[] = [];
   let imported = 0;
-  for (const p of parsed) {
+  let updated = 0;
+  for (let i = 0; i < parsed.length; i++) {
+    const p = parsed[i]!;
     warnings.push(...p.warnings);
     if (!p.input) continue; // already warned (e.g. bad JSON member)
     let input: unknown;
@@ -193,11 +231,21 @@ export async function runImport(
       continue;
     }
     const existing = p.uid ? await store.getRecipe(p.uid).catch(() => null) : null;
+    if (dryRun) {
+      // Read-only preview: never persist. Prospective id is the uid when the
+      // recipe carries one (deterministic upsert key); otherwise a
+      // dry-run placeholder since the live id would be a fresh random id.
+      ids.push(p.uid ?? `dry-run-${i}`);
+      imported++;
+      if (existing) updated++;
+      continue;
+    }
     if (existing) {
-      const updated = await store.updateRecipe(existing.id, input, { deviceId: meta.deviceId });
-      if (updated) {
-        ids.push(updated.id);
+      const updatedRecipe = await store.updateRecipe(existing.id, input, { deviceId: meta.deviceId });
+      if (updatedRecipe) {
+        ids.push(updatedRecipe.id);
         imported++;
+        updated++;
       }
     } else {
       const created = await store.createRecipe(input, {
@@ -208,5 +256,5 @@ export async function runImport(
       imported++;
     }
   }
-  return { imported, ids, warnings };
+  return { imported, ids, warnings, updated, dryRun, cookbooksCreated: [] };
 }

@@ -36,7 +36,8 @@ single-file alias), yaml, html. 415-stubbed with re-export guidance (parsers not
 landed): mx2|mxp|mz2|mmf|fdx|fdxz|pepperplate|copymethat|yum. Remaining contract
 enum values (pepperplate-zip|pepperplate-db|copymethat-zip|yum-xml|ysr|mgourmet|dvo|
 mcb|recipe-manager-txt|hcb|myrecipebook-sqlite|rbox) have no handler yet → 400
-unsupported. `paprikaUid` is the upsert key (re-import updates in place);
+unsupported when passed as an explicit `format` (an omitted `format` still sniffs
+from filename/content as before). `paprikaUid` is the upsert key (re-import updates in place);
 YAML is create-only (no identity). Optional Paprika extension fields on Recipe/RecipeInput
 (all optional, non-breaking): notes, nutritionText, difficulty, servingsText,
 prepTimeText/cookTimeText/totalTimeText, paprikaUid, paprikaRaw, cookbooks[], isFavorite, scaleFactor.

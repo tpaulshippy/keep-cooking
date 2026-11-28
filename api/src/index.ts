@@ -581,7 +581,9 @@ export function createApp(
   // POST /api/import accepts either JSON
   // {format?, filename?, payload(base64)?, text?, householdId?} or
   // multipart form data (file + optional format/householdId fields).
-  // Persists via createRecipe (uid upsert) and returns {imported, warnings}.
+  // Persists via createRecipe (uid upsert) and returns {imported, ids,
+  // warnings, updated, dryRun, cookbooksCreated}; dryRun=true parses fully
+  // and reports without persisting anything.
   api.post('/import', async (c) => {
     const contentType = c.req.header('content-type') ?? '';
     let format: string | undefined;
@@ -589,6 +591,7 @@ export function createApp(
     let bytes: Uint8Array | undefined;
     let text: string | undefined;
     let householdId = 'hh-demo';
+    let dryRun = false;
     if (contentType.includes('multipart/form-data')) {
       const body = await c.req.parseBody();
       const file = body['file'];
@@ -600,11 +603,13 @@ export function createApp(
       if (typeof body['filename'] === 'string') filename ??= body['filename'];
       if (typeof body['householdId'] === 'string' && body['householdId']) householdId = body['householdId'];
       if (typeof body['text'] === 'string') text = body['text'];
+      if (typeof body['dryRun'] === 'string') dryRun = body['dryRun'].toLowerCase() === 'true' || body['dryRun'] === '1';
     } else {
       const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
       if (typeof body['format'] === 'string') format = body['format'];
       if (typeof body['filename'] === 'string') filename = body['filename'];
       if (typeof body['householdId'] === 'string' && body['householdId']) householdId = body['householdId'];
+      if (body['dryRun'] === true || body['dryRun'] === 'true' || body['dryRun'] === 1) dryRun = true;
       if (typeof body['payload'] === 'string' && body['payload'].trim() !== '') {
         try {
           bytes = b64ToBytes(body['payload'].trim());
@@ -619,7 +624,7 @@ export function createApp(
     requireAgentScope(c, householdId);
     await requireWriteRole(c, getStore(), householdId);
     const user = getUser(c);
-    const result = await runImport(getStore(), { format, filename, bytes, text, householdId }, { deviceId: user.deviceId, householdId });
+    const result = await runImport(getStore(), { format, filename, bytes, text, householdId, dryRun }, { deviceId: user.deviceId, householdId });
     return c.json(result);
   });
 

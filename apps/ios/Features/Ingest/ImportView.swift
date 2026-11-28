@@ -350,8 +350,8 @@ public struct ImportView: View {
         let cookbookName = importCookbooks
             ? (file.cookbookHint ?? file.recipes.first?.cookbook)
             : cookbooks.first(where: { $0.id == selectedCookbookId })?.name
-        // 1) Try the server (uid upsert) — any failure falls back to device.
-        if let body = encodeImportBody(recipes: file.recipes, cookbook: importCookbooks ? cookbookName : nil,
+        // 1) Try the server (raw file bytes; the server parses + uid-upserts) — any failure falls back to device.
+        if let body = encodeImportBody(fileName: staged.fileName, data: staged.data,
                                        importCookbooks: importCookbooks) {
             do {
                 let client = makeClient()

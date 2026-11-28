@@ -78,6 +78,10 @@ fun ImportScreen(container: AppContainer) {
     var busy by remember { mutableStateOf(false) }
     var lastResult by remember { mutableStateOf("") }
     var lastWarnings by remember { mutableStateOf(listOf<String>()) }
+    // Finding 1 (P2): server import succeeded but the follow-up sync failed,
+    // so recipes are invisible locally. Kept true until a manual retry sync
+    // succeeds — the result text reports partial success, not success.
+    var syncRetryPending by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         scope.launch {
@@ -98,28 +102,51 @@ fun ImportScreen(container: AppContainer) {
         scope.launch {
             busy = true
             lastWarnings = emptyList()
+            syncRetryPending = false
             try {
-                // 1. Prefer server-side import when the route exists (the server
-                //    persists via uid upsert) — then pull so the rows appear
-                //    locally without a second local upsert (which would create
-                //    duplicate ids, one per side).
-                val serverReport = runCatching {
-                    apiImport(container, name, bytes, importCookbooks)
-                }.getOrNull()
-                if (serverReport != null) {
-                    runCatching { container.syncEngine.sync() }
-                    lastResult = "Imported ${serverReport.imported} from $name."
-                    lastWarnings = serverReport.warnings
-                    val warnSuffix = if (serverReport.warnings.isEmpty()) "" else " (${serverReport.warnings.size} warnings)"
+                val targetCookbook = selectedMenuId?.let { id ->
+                    menus.firstOrNull { (mid, _) -> mid == id }?.second
+                }
+                // SKIP-SERVER RULE (cubic findings 2+3): the live POST /import
+                // has no cookbook/target field (api/src/import.ts ImportRequest
+                // is format/filename/bytes/text/householdId only; the
+                // importCookbooks flag is ignored server-side) and only parses
+                // paprika-json/paprika-zip/yaml/html — P1 format values 415 and
+                // unknown values (yum-xml/mcb/recipe-manager-txt/…) sniff as
+                // YAML with 200 + 0 imported. So skip the server path when a
+                // cookbook destination matters (a cookbook is selected, or
+                // importCookbooks is on) or the format is not server-parseable,
+                // and go straight to the offline parser + local upsert, which
+                // applies the cookbook tag.
+                val ext = name.substringAfterLast('.', "").lowercase()
+                val needsLocalCookbook = targetCookbook != null || importCookbooks
+                val serverReport = if (!needsLocalCookbook && serverImportFormat(ext) != null) {
+                    runCatching {
+                        apiImport(container, name, bytes, importCookbooks)
+                    }.getOrNull()
+                } else null
+                // Finding 3: a zero-imported server report (sniffed-as-YAML 200
+                // with nothing parsed) is a fallback trigger, not success.
+                val usable = serverReport?.takeIf { it.imported > 0 || it.ids.isNotEmpty() }
+                if (usable != null) {
+                    // Finding 1: a failed follow-up sync must NOT report plain
+                    // success — the recipes stay invisible locally. Report
+                    // partial success and keep retryable state instead.
+                    val syncOk = runCatching { container.syncEngine.sync() }.isSuccess
+                    if (syncOk) {
+                        lastResult = "Imported ${usable.imported} from $name."
+                    } else {
+                        syncRetryPending = true
+                        lastResult = "Imported ${usable.imported} on server — sync failed, tap Retry Sync to show them locally."
+                    }
+                    lastWarnings = usable.warnings
+                    val warnSuffix = if (usable.warnings.isEmpty()) "" else " (${usable.warnings.size} warnings)"
                     snackbar.showSnackbar(lastResult + warnSuffix)
                     return@launch
                 }
                 // 2. …otherwise parse fully offline (works without connectivity).
                 val parsed: ParsedFile = withContext(Dispatchers.Default) {
                     RecipeFileParser.parse(name, bytes)
-                }
-                val targetCookbook = selectedMenuId?.let { id ->
-                    menus.firstOrNull { (mid, _) -> mid == id }?.second
                 }
                 val result = importParsed(
                     db = container.db,
@@ -129,9 +156,14 @@ fun ImportScreen(container: AppContainer) {
                     importCookbooks = importCookbooks,
                     enqueue = { container.syncEngine.enqueue(it) },
                 )
+                if (serverReport != null) {
+                    // Server answered 200 but parsed nothing; the offline
+                    // result below is what actually imported.
+                    lastWarnings = listOf("Server import found no recipes; parsed on-device instead.")
+                }
                 lastResult = "Imported ${result.imported}, updated ${result.updated} from $name."
-                lastWarnings = result.warnings
-                val warnSuffix = if (result.warnings.isEmpty()) "" else " (${result.warnings.size} warnings)"
+                lastWarnings = lastWarnings + result.warnings
+                val warnSuffix = if (lastWarnings.isEmpty()) "" else " (${lastWarnings.size} warnings)"
                 snackbar.showSnackbar(lastResult + warnSuffix)
             } catch (e: Exception) {
                 lastResult = "Import failed: ${e.message ?: "unknown error"}."
@@ -224,6 +256,28 @@ fun ImportScreen(container: AppContainer) {
             if (lastResult.isNotBlank()) {
                 Text(lastResult, modifier = Modifier.padding(top = 12.dp))
             }
+            if (syncRetryPending) {
+                Button(
+                    onClick = {
+                        scope.launch {
+                            busy = true
+                            try {
+                                container.syncEngine.sync()
+                                syncRetryPending = false
+                                lastResult = "Sync recovered — imported recipes are now visible."
+                                snackbar.showSnackbar(lastResult)
+                            } catch (e: Exception) {
+                                lastResult = "Sync failed again: ${e.message ?: "unknown error"}. Tap Retry Sync to try again."
+                                snackbar.showSnackbar(lastResult)
+                            } finally {
+                                busy = false
+                            }
+                        }
+                    },
+                    enabled = !busy,
+                    modifier = Modifier.padding(top = 8.dp),
+                ) { Text(if (busy) "Syncing…" else "Retry Sync") }
+            }
             lastWarnings.forEach { w ->
                 Text("• $w", modifier = Modifier.padding(top = 4.dp))
             }
@@ -238,7 +292,12 @@ fun ImportScreen(container: AppContainer) {
  * packages/contracts/openapi.yaml ImportRequest and api/src/import.ts).
  * Returns the server's [ImportReportDto] (`{ imported (count), ids,
  * warnings }`) on success, null on any failure (route missing, offline, bad
- * payload) so the caller falls back to offline parsing.
+ * payload, 415/400) so the caller falls back to offline parsing.
+ *
+ * Conservative gate (cubic finding 3): only formats the live server parses
+ * ([serverImportFormat] non-null) are attempted — anything else returns null
+ * so the caller goes straight to the offline parser. Unknown format values
+ * would otherwise sniff as YAML server-side and return 200 with 0 imported.
  * Exported for tests.
  */
 suspend fun apiImport(
@@ -249,10 +308,13 @@ suspend fun apiImport(
 ): ImportReportDto? {
     return try {
         val ext = filename.substringAfterLast('.', "").lowercase()
+        // Not server-parseable (P1/third-party xml/mcb/txt/…): skip the
+        // server entirely — it would 415 or sniff-as-YAML with 0 imported.
+        val format = serverImportFormat(ext) ?: return null
         val request = ImportRequestDto(
             filename = filename,
             payload = Base64.getEncoder().encodeToString(bytes),
-            format = importFormatForExtension(ext),
+            format = format,
             householdId = "hh-demo",
             importCookbooks = importCookbooks,
         )
@@ -262,22 +324,20 @@ suspend fun apiImport(
     }
 }
 
-/** Map a file extension to the `POST /import` format enum; null lets the
- * server sniff filename/content (api/src/import.ts detectImportFormat). */
-internal fun importFormatForExtension(ext: String): String? = when (ext) {
-    "paprikarecipe" -> "paprika-recipe"
-    "paprikarecipes", "zip" -> "paprika-zip"
+/** Map a file extension to a `POST /import` format value the live server
+ * actually parses (api/src/import.ts: `paprika-json`/`paprika-zip`/`yaml`/
+ * `html` plus its documented aliases). Anything else returns null so the
+ * caller parses offline: P1 values (mx2/mxp/mz2/mmf/fdx/fdxz/…) get a server
+ * 415 with re-export guidance, and unknown values (yum-xml/mcb/
+ * recipe-manager-txt/…) sniff as YAML and return 200 with 0 imported —
+ * neither is a usable server import. */
+internal fun serverImportFormat(ext: String): String? = when (ext) {
+    "paprikarecipe", "paprikarecipes", "zip" -> "paprika-zip"
     "json" -> "paprika-json"
     "yml", "yaml" -> "yaml"
     "html", "htm" -> "html"
-    "mx2" -> "mx2"
-    "mxp" -> "mxp"
-    "mz2" -> "mz2"
-    "mmf" -> "mmf"
-    "fdx" -> "fdx"
-    "fdxz" -> "fdxz"
-    "xml" -> "yum-xml"
-    "mcb" -> "mcb"
-    "txt" -> "recipe-manager-txt"
     else -> null
 }
+
+/** Legacy alias kept for tests: same contract as [serverImportFormat]. */
+internal fun importFormatForExtension(ext: String): String? = serverImportFormat(ext)
