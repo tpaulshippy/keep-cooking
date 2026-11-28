@@ -1,0 +1,30 @@
+api/src/export.ts
+  h_6bbd00fe0a456a 54-77
+api/src/index.ts
+  h_6bbd00fe0a456a 9,512-562
+api/test/recipes.test.ts
+  h_6bbd00fe0a456a 53-100
+apps/android/app/src/main/java/com/keepcooking/app/export/RecipeExporter.kt
+  h_6bbd00fe0a456a 147,155-175
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/ExportScreen.kt
+  h_6bbd00fe0a456a 133-135,153-156
+apps/ios/Export/ExportView.swift
+  h_6bbd00fe0a456a 67-70,74,88,132,157-161
+apps/ios/Export/README.md
+  h_6bbd00fe0a456a 9
+apps/ios/Export/RecipeExporter.swift
+  h_6bbd00fe0a456a 228-231,235-243,389-406,421-427,432,434-448
+apps/web/src/main.ts
+  h_6bbd00fe0a456a 901-902,1119,1495,1532-1537,1542-1547
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9c401a9e94a007504dfcaf4a790a49333dc5fb45",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
