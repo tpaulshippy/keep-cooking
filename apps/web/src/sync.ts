@@ -39,24 +39,35 @@ export function toRecordInput(payload: unknown): Record<string, unknown> {
   return input;
 }
 
-/** Canonical content string for cross-id duplicate detection. Both sides are
- * normalized so server defaults ('' / 4 / regenerated child ids) match.
- * householdId is part of every signature: same content in different
- * households (e.g. personal + shared on one device) must never false-match.
- * More fields = fewer adoptions; a missed match falls back to create, the
- * status-quo risk, never a wrong merge. */
+/** Canonical content string for cross-id duplicate detection. Covers every
+ * schema field (see api/src/zod.ts) so same content in different households
+ * (e.g. personal + shared on one device) — or differing descriptions,
+ * timings, sources, positions, or pantry metadata — can never false-match.
+ * Normalized so server defaults ('' / 4 / null / [] / regenerated child ids)
+ * match: child rows carry server-generated ids, so ids are never included.
+ * householdId is part of every signature. More fields = fewer adoptions; a
+ * missed match falls back to create, the status-quo risk, never a wrong merge. */
 export function contentSignature(entity: EntityKind, input: Record<string, unknown>): string {
   const household = input.householdId ?? '';
   switch (entity) {
     case 'recipe': {
       const ings = (input.ingredients as Array<Record<string, unknown>> | undefined) ?? [];
       const steps = (input.steps as Array<Record<string, unknown> | string> | undefined) ?? [];
+      const photos = (input.photoKeys as Record<string, unknown> | undefined) ?? {};
       return JSON.stringify({
         h: household,
         t: input.title ?? '',
+        d: input.description ?? '',
         s: input.servings ?? 4,
-        i: ings.map((g) => [g.name ?? '', g.quantity ?? null, g.unit ?? '', g.display ?? '']),
-        st: steps.map((s) => (s !== null && typeof s === 'object' ? (s.text ?? '') : s)),
+        prep: input.prepMinutes ?? null,
+        cook: input.cookMinutes ?? null,
+        rating: input.rating ?? null,
+        src: input.source ?? '',
+        srcUrl: input.sourceUrl ?? '',
+        cats: (input.categories as unknown[] | undefined) ?? [],
+        pk: { o: photos.original ?? '', l: photos.large1024 ?? '', t: photos.thumb ?? '' },
+        i: ings.map((g) => [g.name ?? '', g.quantity ?? null, g.unit ?? '', g.display ?? '', g.position ?? 0]),
+        st: steps.map((s) => (s !== null && typeof s === 'object' ? [s.position ?? 0, s.text ?? ''] : [0, s])),
       });
     }
     case 'list': {
@@ -64,11 +75,19 @@ export function contentSignature(entity: EntityKind, input: Record<string, unkno
       return JSON.stringify({
         h: household,
         n: input.name ?? '',
-        i: items.map((it) => [it.name ?? '', it.quantity ?? '', it.aisle ?? '']),
+        i: items.map((it) => [it.name ?? '', it.quantity ?? '', it.aisle ?? '', it.checked ?? false, it.recipeId ?? null]),
       });
     }
     case 'pantryItem':
-      return JSON.stringify({ h: household, n: input.name ?? '', q: input.quantity ?? '', l: input.location ?? '' });
+      return JSON.stringify({
+        h: household,
+        n: input.name ?? '',
+        q: input.quantity ?? '',
+        l: input.location ?? '',
+        exp: input.expiresAt ?? null,
+        low: input.lowThreshold ?? '',
+        bc: input.barcode ?? '',
+      });
     case 'plan':
       return JSON.stringify({
         h: household,

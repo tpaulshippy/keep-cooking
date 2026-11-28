@@ -10,8 +10,11 @@ export function scaleQuantity(
   if (!isFinite(targetServings) || targetServings <= 0) return quantity;
   const out = (quantity * targetServings) / baseServings;
   if (!isFinite(out)) return quantity;
-  // Round to 2 decimals to avoid float dust (1.5 stays 1.5).
-  return Math.round(out * 100) / 100;
+  // Round to 2 decimals to avoid float dust (1.5 stays 1.5). The ×100 itself
+  // can overflow for huge-but-finite quotients — bail out finite instead.
+  const cents = out * 100;
+  if (!isFinite(cents)) return quantity;
+  return Math.round(cents) / 100;
 }
 
 const FRACS: { value: number; label: string }[] = [

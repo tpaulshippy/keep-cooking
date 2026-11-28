@@ -50,6 +50,34 @@ describe('contentSignature', () => {
       expect(contentSignature(entity, { ...input, householdId: 'hh-personal' }), entity).toBe(a);
     }
   });
+
+  it('covers full schema metadata: differing description/timings/source/positions must not match', () => {
+    const base = {
+      title: 'Soup', servings: 4, householdId: 'hh-demo',
+      ingredients: [{ name: 'Salt', quantity: 1, unit: 'tsp', display: '1 tsp Salt', position: 0 }],
+      steps: [{ position: 0, text: 'Stir.' }],
+    };
+    const sig = contentSignature('recipe', base);
+    const variants: Record<string, unknown>[] = [
+      { ...base, description: 'weeknight' },
+      { ...base, prepMinutes: 10 },
+      { ...base, cookMinutes: 20 },
+      { ...base, rating: 5 },
+      { ...base, source: 'book' },
+      { ...base, sourceUrl: 'https://x.test/r' },
+      { ...base, categories: ['Dinner'] },
+      { ...base, photoKeys: { thumb: 'photos/x/thumb.jpg' } },
+      { ...base, ingredients: [{ name: 'Salt', quantity: 1, unit: 'tsp', display: '1 tsp Salt', position: 1 }] },
+      { ...base, steps: [{ position: 1, text: 'Stir.' }] },
+    ];
+    for (const v of variants) expect(contentSignature('recipe', v)).not.toBe(sig);
+    expect(contentSignature('recipe', { ...base })).toBe(sig);
+    // List checked/recipeId + pantry expiry metadata are covered too.
+    expect(contentSignature('list', { name: 'N', householdId: 'h', items: [{ name: 'M', checked: true }] }))
+      .not.toBe(contentSignature('list', { name: 'N', householdId: 'h', items: [{ name: 'M' }] }));
+    expect(contentSignature('pantryItem', { name: 'F', householdId: 'h', expiresAt: '2026-02-01' }))
+      .not.toBe(contentSignature('pantryItem', { name: 'F', householdId: 'h' }));
+  });
 });
 
 describe('pushOutbox', () => {
