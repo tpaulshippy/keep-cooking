@@ -26,8 +26,10 @@ export function recipeToMarkdown(r: Recipe): string {
   return lines.join('\n');
 }
 
-/** Self-contained Schema.org HTML export of a recipe. */
-export function recipeToHtml(r: Recipe): string {
+/** JSON-LD Recipe payload shared by the single- and multi-recipe HTML
+ *  documents so both stay full-fidelity. `<` is escaped so a crafted title
+ *  can never break out of the <script> element. */
+export function recipeJsonLd(r: Recipe): string {
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Recipe',
@@ -42,32 +44,33 @@ export function recipeToHtml(r: Recipe): string {
       .sort((a, b) => a.position - b.position)
       .map((s) => ({ '@type': 'HowToStep', text: s.text })),
   };
+  return JSON.stringify(jsonLd).replace(/</g, '\\u003c');
+}
+
+/** Full-fidelity <article> for one recipe (body + JSON-LD). */
+export function recipeToArticle(r: Recipe): string {
   const ings = r.ingredients.map((g) => `<li>${escHtml(g.display || g.name)}</li>`).join('');
   const steps = r.steps
     .slice()
     .sort((a, b) => a.position - b.position)
     .map((s) => `<li>${escHtml(s.text)}</li>`)
     .join('');
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escHtml(r.title)}</title><script type="application/ld+json">${JSON.stringify(jsonLd)}</script><style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem}</style></head><body><h1>${escHtml(r.title)}</h1>${r.description ? `<p>${escHtml(r.description)}</p>` : ''}<p>Servings: ${escHtml(String(r.servings))}</p><h2>Ingredients</h2><ul>${ings}</ul><h2>Steps</h2><ol>${steps}</ol></body></html>`;
+  return `<article><script type="application/ld+json">${recipeJsonLd(r)}</script>` +
+    `<h2>${escHtml(r.title)}</h2>${r.description ? `<p>${escHtml(r.description)}</p>` : ''}` +
+    `<p>Servings: ${escHtml(String(r.servings))}</p>` +
+    `<h3>Ingredients</h3><ul>${ings}</ul><h3>Steps</h3><ol>${steps}</ol></article>`;
 }
 
-/** Multi-recipe HTML export: one self-contained document, one <article>
- *  per recipe joined by <hr/> (never concatenated full documents). */
+/** Self-contained Schema.org HTML export of a recipe. */
+export function recipeToHtml(r: Recipe): string {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escHtml(r.title)}</title><script type="application/ld+json">${recipeJsonLd(r)}</script><style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem}</style></head><body><h1>${escHtml(r.title)}</h1>${r.description ? `<p>${escHtml(r.description)}</p>` : ''}<p>Servings: ${escHtml(String(r.servings))}</p><h2>Ingredients</h2><ul>${r.ingredients.map((g) => `<li>${escHtml(g.display || g.name)}</li>`).join('')}</ul><h2>Steps</h2><ol>${r.steps.slice().sort((a, b) => a.position - b.position).map((s) => `<li>${escHtml(s.text)}</li>`).join('')}</ol></body></html>`;
+}
+
+/** Multi-recipe HTML export: one self-contained document, one full-fidelity
+ *  <article> per recipe joined by <hr/> (never concatenated full documents). */
 export function recipesToHtml(rs: Recipe[]): string {
-  const bodies = rs.map((r) => {
-    const ings = r.ingredients.map((g) => `<li>${escHtml(g.display || g.name)}</li>`).join('');
-    const steps = r.steps
-      .slice()
-      .sort((a, b) => a.position - b.position)
-      .map((s) => `<li>${escHtml(s.text)}</li>`)
-      .join('');
-    return `<article><h2>${escHtml(r.title)}</h2><script type="application/ld+json">${JSON.stringify({
-      '@context': 'https://schema.org',
-      '@type': 'Recipe',
-      name: r.title,
-    })}</script><h3>Ingredients</h3><ul>${ings}</ul><h3>Steps</h3><ol>${steps}</ol></article>`;
-  });
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Keep Cooking export</title><style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem}</style></head><body><h1>Keep Cooking export</h1>${bodies.join('\n<hr/>\n')}</body></html>`;
+  const bodies = rs.map(recipeToArticle).join('\n<hr/>\n');
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Keep Cooking export</title><style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem}</style></head><body><h1>Keep Cooking export</h1>${bodies}</body></html>`;
 }
 
 /** Multi-recipe Markdown export: per-recipe blocks joined by --- rules. */

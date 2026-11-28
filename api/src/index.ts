@@ -531,7 +531,9 @@ export function createApp(
       return c.json({ error: 'export needs all=true, ids=, id= or cookbook=' }, 400);
     }
     const visible = await getStore().listRecipes(qHousehold ?? scopeHousehold);
-    let recipes = all ? visible : visible.filter((r) => ids.includes(r.id));
+    // cookbook= alone is a base selection like all=true; ids= narrows it.
+    let recipes = (all || (!ids.length && cookbook)) ? visible : visible.filter((r) => ids.includes(r.id));
+    if (ids.length > 0) recipes = recipes.filter((r) => ids.includes(r.id));
     if (cookbook) {
       const want = cookbook.toLowerCase();
       recipes = recipes.filter((r) => (r.categories ?? []).some((cat) => cat.toLowerCase() === want));
@@ -545,7 +547,10 @@ export function createApp(
       });
     }
     if (format === 'html') {
-      return new Response(recipesToHtml(recipes), {
+      // One recipe keeps the canonical single-recipe document; multi
+      // selections use the combined articles document.
+      const body = recipes.length === 1 ? recipeToHtml(recipes[0]!) : recipesToHtml(recipes);
+      return new Response(body, {
         headers: { 'content-type': 'text/html; charset=utf-8', ...dl('export.html') },
       });
     }

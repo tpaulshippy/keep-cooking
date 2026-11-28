@@ -128,9 +128,10 @@ class RecipeExporter(private val context: Context) {
 
     // --- HTML (self-contained Schema.org, offline-safe) ---
 
-    fun toHtml(r: ExportableRecipe): String {
+    /** JSON-LD Recipe snippet shared by single- and multi-recipe HTML docs. */
+    fun jsonLdFor(r: ExportableRecipe): String {
         val steps = r.steps.sortedBy { it.position }
-        val jsonLd = buildString {
+        return buildString {
             append("""{"@context":"https://schema.org","@type":"Recipe","name":${jsonStr(r.title)},""")
             append(""""recipeYield":${r.servings},"recipeIngredient":[${r.ingredients.joinToString(",") { jsonStr(it.text) }}],""")
             append(""""recipeInstructions":[${steps.joinToString(",") { """{"@type":"HowToStep","text":${jsonStr(it.text)}}""" } }]""")
@@ -139,6 +140,10 @@ class RecipeExporter(private val context: Context) {
             r.cookMinutes?.let { append(""","cookTime":"PT${it}M"""") }
             append("}")
         }.replace("<", "\\u003c")
+    }
+
+    fun toHtml(r: ExportableRecipe): String {
+        val jsonLd = jsonLdFor(r)
         return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">" +
             "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" +
             "<title>${escHtml(r.title)}</title>" +
@@ -163,9 +168,13 @@ class RecipeExporter(private val context: Context) {
             "<h2>Ingredients</h2><ul>$ings</ul><h2>Steps</h2><ol>$stepsHtml</ol>"
     }
 
-    /** Multi-recipe → one HTML document, one <article> per recipe joined by <hr/>. */
+    /** Multi-recipe → one HTML document, one <article> per recipe joined by <hr/>.
+     *  Each article carries its own escaped JSON-LD Recipe script so imports
+     *  recover every selected recipe, not just the first. */
     fun toHtmlPage(recipes: List<ExportableRecipe>): String {
-        val bodies = recipes.joinToString("\n<hr/>\n") { "<article>${toHtmlBody(it)}</article>" }
+        val bodies = recipes.joinToString("\n<hr/>\n") {
+            "<article><script type=\"application/ld+json\">${jsonLdFor(it)}</script>${toHtmlBody(it)}</article>"
+        }
         return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">" +
             "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" +
             "<title>Keep Cooking export</title>" +
