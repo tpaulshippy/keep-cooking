@@ -50,7 +50,7 @@ import com.keepcooking.app.ui.screens.RecipesScreen
 import com.keepcooking.app.ui.screens.SettingsScreen
 import com.keepcooking.app.ui.screens.isIngredientHeaderLine
 import com.keepcooking.app.ui.screens.loadLibraryRows
-import com.keepcooking.app.ui.screens.recipeDomainOf
+import com.keepcooking.app.ui.screens.hostOfUrl
 import com.keepcooking.app.ui.screens.saveEditorExtras
 import com.keepcooking.app.ui.screens.EditorExtras
 import com.keepcooking.app.ui.screens.ShareScreen
@@ -329,6 +329,30 @@ internal suspend fun deleteRecipe(container: AppContainer, recipeId: String) {
             ),
         )
     }
+    // Drop orphaned envelope-only extras for the deleted recipe.
+    saveEditorExtras(container, recipeId, EditorExtras())
+}
+
+/**
+ * Effective total for a save: an explicit synced override survives unless the
+ * user changed a time, in which case prep+cook re-derive. No override and no
+ * times means no total key (the server then keeps its stored value). Pure for
+ * unit tests.
+ */
+internal fun effectiveTotalMinutes(
+    draftTotal: Int?,
+    draftPrep: Int?,
+    draftCook: Int?,
+    existingPrep: Int?,
+    existingCook: Int?,
+): Int? {
+    val timesChanged = draftPrep != existingPrep || draftCook != existingCook
+    val derived = if (draftPrep == null && draftCook == null) {
+        null
+    } else {
+        (draftPrep ?: 0) + (draftCook ?: 0)
+    }
+    return if (timesChanged) derived else draftTotal ?: derived
 }
 
 /**
@@ -346,14 +370,10 @@ internal fun buildRecipeEditPayload(
     difficulty: String?,
     notes: String,
     nutritionText: String,
+    totalMinutes: Int?,
     ingredients: List<IngredientEntity>,
     steps: List<StepEntity>,
 ): JsonObject = buildJsonObject {
-    val totalMinutes = if (recipe.prepMinutes != null || recipe.cookMinutes != null) {
-        (recipe.prepMinutes ?: 0) + (recipe.cookMinutes ?: 0)
-    } else {
-        null
-    }
     put("id", recipe.id)
     put("householdId", recipe.householdId)
     put("title", recipe.title)
@@ -367,9 +387,13 @@ internal fun buildRecipeEditPayload(
     put("source", recipe.source)
     put("sourceUrl", recipe.sourceUrl)
     put("categories", JsonArray(categories.map { JsonPrimitive(it) }))
-    difficulty?.let { put("difficulty", it) }
-    if (notes.isNotBlank()) put("notes", notes)
-    if (nutritionText.isNotBlank()) put("nutritionText", nutritionText)
+    // Always emitted: the server keeps the stored value on a missing/null key
+    // (?? falls through) and only clears on an explicit empty string — the
+    // same convention as the web editor. Omitting blanks would silently keep
+    // stale server values after a clear.
+    put("difficulty", difficulty ?: "")
+    put("notes", notes)
+    put("nutritionText", nutritionText)
     put(
         "photoKeys",
         buildJsonObject {
@@ -430,10 +454,24 @@ internal suspend fun saveRecipeEdit(
     val deviceId = container.syncEngine.deviceId()
     val existing = db.recipes().byId(recipeId) ?: return
     val cats = draft.categories.map { it.lowercase() }.toSortedSet().toList()
-    // Derive the source name from the edited URL; keep the existing name when
-    // the URL is blank or has no host (the editor has no source-name field).
-    val resolvedSource = recipeDomainOf(draft.sourceUrl, draft.source)
-        .takeIf { draft.sourceUrl.isNotBlank() } ?: draft.source
+    // Accept a URL-derived source only when it has a real host; otherwise
+    // retain the existing source (the editor has no source-name field, and a
+    // hostless/non-URL string must never become the source name).
+    val resolvedSource = if (draft.sourceUrl.isNotBlank()) {
+        hostOfUrl(draft.sourceUrl) ?: draft.source
+    } else {
+        draft.source
+    }
+    // Total: an explicit synced override survives unless the user changed a
+    // time, in which case prep+cook re-derive. No override and no times means
+    // no total key (the server then keeps its stored value).
+    val effectiveTotal = effectiveTotalMinutes(
+        draft.totalMinutes,
+        draft.prepMinutes,
+        draft.cookMinutes,
+        existing.prepMinutes,
+        existing.cookMinutes,
+    )
     db.recipes().upsert(
         existing.copy(
             title = draft.title.ifBlank { existing.title },
@@ -492,8 +530,9 @@ internal suspend fun saveRecipeEdit(
             )
         },
     )
-    // Persist envelope-only extras per recipe so reopening the editor
-    // hydrates difficulty/notes/nutrition instead of clearing them.
+    // Persist envelope-only extras per recipe (what this save syncs) so
+    // reopening the editor hydrates difficulty/notes/nutrition/total instead
+    // of clearing them.
     saveEditorExtras(
         container,
         recipeId,
@@ -501,6 +540,7 @@ internal suspend fun saveRecipeEdit(
             difficulty = draft.difficulty,
             notes = draft.notes,
             nutritionText = draft.nutritionText,
+            totalMinutes = effectiveTotal,
         ),
     )
     // Re-read children so payload copies match the rows exactly.
@@ -519,6 +559,7 @@ internal suspend fun saveRecipeEdit(
                 difficulty = draft.difficulty,
                 notes = draft.notes,
                 nutritionText = draft.nutritionText,
+                totalMinutes = effectiveTotal,
                 ingredients = finalIngredients,
                 steps = finalSteps,
             ),

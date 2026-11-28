@@ -122,7 +122,7 @@ code { background: #f5f5f4; padding: 0.1em 0.3em; border-radius: 0.25rem; color:
 .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.25rem 0; }
 .sheet-heading { font-size: 1.15rem; margin: 0; flex: 1; text-align: center; font-weight: 650; }
 .sheet-x, .sheet-check { width: 2.75rem; height: 2.75rem; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-size: 1.3rem; line-height: 1; flex: none; }
-.sheet-x { background: transparent; border: 1px solid #57534e; color: #f87171; }
+.sheet-x { background: transparent; border: 1px solid var(--border); color: #f87171; }
 .sheet-check { background: #3b82f6; border: 1px solid #3b82f6; color: #fff; font-size: 1.5rem; }
 .sheet-check:hover { border-color: #93c5fd; filter: brightness(1.08); }
 .sheet-section { width: 100%; background: transparent; border: 0; color: #a8a29e; display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 0.25rem; font-size: 1rem; font-weight: 600; }
@@ -146,13 +146,13 @@ span.sheet-linkicon { opacity: 0.45; }
 .sheet-fav { background: transparent; border: 0; font-size: 1.5rem; line-height: 1; color: #fbbf24; padding: 0.2rem 0.4rem; }
 .sheet-fav[aria-pressed="false"] { color: #57534e; }
 .sheet-sublabel { display: grid; gap: 0.3rem; font-size: 0.85rem; color: #d6d3d1; font-weight: 500; margin-top: 0.6rem; }
-.sheet-sublabel input, .sheet-sublabel textarea, .sheet-sublabel select { background: #1c1917; color: #fafaf9; border: 1px solid #57534e; }
+.sheet-sublabel input, .sheet-sublabel textarea, .sheet-sublabel select { background: #1c1917; color: #fafaf9; border: 1px solid var(--border); }
 .sheet-row input#ed-cats { background: transparent; border: 0; color: inherit; text-align: right; max-width: 55%; padding: 0; }
 .sheet-row input#ed-cookbook { background: transparent; border: 0; color: inherit; text-align: right; max-width: 55%; padding: 0; }
 .sheet-secicon { color: #78716c; margin-right: 0.35rem; }
 .sheet-timeval { display: inline-flex; align-items: center; gap: 0.5rem; }
 .sheet-timefmt { color: #fafaf9; font-size: 1.05rem; }
-.sheet-timeval input[type="number"] { width: 4.25rem; background: transparent; border: 1px solid #57534e; border-radius: 0.5rem; color: inherit; text-align: right; padding: 0.2rem 0.35rem; font-size: 1rem; }
+.sheet-timeval input[type="number"] { width: 4.25rem; background: transparent; border: 1px solid var(--border); border-radius: 0.5rem; color: inherit; text-align: right; padding: 0.2rem 0.35rem; font-size: 1rem; }
 .sheet-area { width: 100%; background: transparent; border: 0; color: inherit; font-size: 1.05rem; line-height: 1.55; padding: 0.9rem 0; resize: vertical; min-height: 4rem; }
 .sheet-area::placeholder { color: #78716c; }
 .seg { display: flex; background: #44403c; border-radius: 0.6rem; padding: 0.2rem; margin: 0.75rem 0 0.25rem; }
@@ -169,9 +169,9 @@ span.sheet-linkicon { opacity: 0.45; }
 .star.on { color: #fbbf24; }
 .stars-ro .star { cursor: default; padding: 0; }
 .stepper { display: inline-flex; align-items: center; gap: 0.5rem; }
-.stepper button { width: 2.25rem; height: 2.25rem; border-radius: 999px; font-size: 1.2rem; line-height: 1; background: #44403c; border-color: #57534e; color: #fafaf9; }
+.stepper button { width: 2.25rem; height: 2.25rem; border-radius: 999px; font-size: 1.2rem; line-height: 1; background: #44403c; border-color: var(--border); color: #fafaf9; }
 .stepper input { width: 4.5rem; text-align: right; background: transparent; border: 0; color: inherit; font-size: 1.15rem; }
-.sheet-row select#ed-difficulty { background: #1c1917; color: #fafaf9; border: 1px solid #57534e; max-width: 55%; }
+.sheet-row select#ed-difficulty { background: #1c1917; color: #fafaf9; border: 1px solid var(--border); max-width: 55%; }
 .sheet-meta2 { gap: 0.5rem; padding-top: 0.75rem; padding-bottom: 0.75rem; }
 .sheet-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
 .sheet-err { color: #fca5a5; min-height: 1.5em; margin: 0.25rem 0 0; }
@@ -185,7 +185,7 @@ span.sheet-linkicon { opacity: 0.45; }
    intended Save/cancel/section/link/star colors. */
 @media (prefers-color-scheme: dark) {
   :root .sheet-check { background: #3b82f6; border-color: #3b82f6; color: #fff; }
-  :root .sheet-x { background: transparent; border-color: #57534e; color: #f87171; }
+  :root .sheet-x { background: transparent; border-color: var(--border); color: #f87171; }
   :root .sheet-section { background: transparent; color: #a8a29e; }
   :root .sheet-linkbtn { background: transparent; color: #60a5fa; }
   :root .sheet-fav { background: transparent; color: #fbbf24; }

@@ -88,16 +88,10 @@ echo "==> 3/6 D1 schema (remote)"
 for migration in "$API_DIR/drizzle/0001_init.sql" "$API_DIR/drizzle/0002_e2e_blobs.sql" "$API_DIR/drizzle/0003_device_keys.sql" "$API_DIR/drizzle/0004_agent_enrollments.sql" "$API_DIR/drizzle/0005_is_favorite.sql" "$API_DIR/drizzle/0006_editor_metadata.sql"; do
   if [ -f "$migration" ]; then
     echo "    applying $migration --remote"
-    # 0005/0006 are one-time ALTER TABLEs (SQLite has no ADD COLUMN IF NOT
-    # EXISTS): re-runs fail with "duplicate column" once applied — benign.
-    if ! wrangler d1 execute keep-cooking --remote --file="$migration"; then
-      if [ "$migration" = "$API_DIR/drizzle/0005_is_favorite.sql" ] || [ "$migration" = "$API_DIR/drizzle/0006_editor_metadata.sql" ]; then
-        echo "    ($(basename "$migration" .sql) already applied — duplicate column tolerated)"
-      else
-        echo "    ERROR applying $migration" >&2
-        exit 1
-      fi
-    fi
+    # One-time ALTER TABLEs (0005/0006, no ADD COLUMN IF NOT EXISTS) fail
+    # with "duplicate column" on re-runs — the ONLY tolerated failure (see
+    # api/scripts/apply-migration.sh). Anything else aborts the deploy.
+    "$API_DIR/scripts/apply-migration.sh" --remote "$migration"
   else
     echo "    skipping $migration (not found)"
   fi

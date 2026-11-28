@@ -69,14 +69,15 @@ export function formatMinutes(n: number): string {
   return `${h} hr ${rest} min`;
 }
 
-/** Clamp minute fields to the API range (nonnegative int, ≤10080);
+/** Clamp minute fields to the API range (nonnegative int). Prep/cook cap at
+ *  10080; total caps at the contract bound 20160 (pass it explicitly) —
  *  blank/invalid -> undefined (field left unset). */
-export function clampMinutes(v: string): number | undefined {
+export function clampMinutes(v: string, max = 10080): number | undefined {
   const s = v.trim();
   if (!s) return undefined;
   const n = Number(s);
   if (!Number.isFinite(n)) return undefined;
-  return Math.min(10080, Math.max(0, Math.round(n)));
+  return Math.min(max, Math.max(0, Math.round(n)));
 }
 
 /** Clamp servings to the API range 0.25–100 (quarter steps);

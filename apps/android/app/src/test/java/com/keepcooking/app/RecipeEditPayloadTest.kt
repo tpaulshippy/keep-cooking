@@ -4,7 +4,9 @@ import com.keepcooking.app.data.IngredientEntity
 import com.keepcooking.app.data.RecipeEntity
 import com.keepcooking.app.data.StepEntity
 import com.keepcooking.app.navigation.buildRecipeEditPayload
+import com.keepcooking.app.navigation.effectiveTotalMinutes
 import com.keepcooking.app.ui.screens.formatMinutes
+import com.keepcooking.app.ui.screens.hostOfUrl
 import com.keepcooking.app.ui.screens.ingredientFullLine
 import com.keepcooking.app.ui.screens.isIngredientHeaderRow
 import com.keepcooking.app.ui.screens.resolvePhotoUrl
@@ -46,6 +48,7 @@ class RecipeEditPayloadTest {
         difficulty = "Easy",
         notes = "Extra salt.",
         nutritionText = "Calories: 100",
+        totalMinutes = 30,
         ingredients = listOf(
             IngredientEntity(
                 id = "i1", recipeId = "r1", name = "white miso",
@@ -121,17 +124,43 @@ class RecipeEditPayloadTest {
     }
 
     @Test
-    fun `blank notes and nutrition are omitted`() {
+    fun `blank notes and nutrition are emitted as explicit clears`() {
+        // Server semantics (api/src/store.ts ??): missing/null keys keep the
+        // stored value, only "" clears — so blanks must be emitted, never omitted.
         val timeless = recipe().copy(prepMinutes = null, cookMinutes = null)
         val p = buildRecipeEditPayload(
             recipe = timeless, categories = emptyList(), difficulty = null,
-            notes = "", nutritionText = "  ",
+            notes = "", nutritionText = "",
+            totalMinutes = null,
             ingredients = emptyList(), steps = emptyList(),
         )
-        assertFalse(p.containsKey("notes"))
-        assertFalse(p.containsKey("nutritionText"))
-        assertFalse(p.containsKey("difficulty"))
+        assertEquals("", p["notes"]!!.jsonPrimitive.content)
+        assertEquals("", p["nutritionText"]!!.jsonPrimitive.content)
+        assertEquals("", p["difficulty"]!!.jsonPrimitive.content)
         assertFalse(p.containsKey("totalMinutes"))
+    }
+
+    @Test
+    fun `effectiveTotalMinutes preserves overrides until times change`() {
+        // Explicit synced total survives an unrelated edit.
+        assertEquals(90, effectiveTotalMinutes(90, 10, 20, 10, 20))
+        // Changing a time re-derives.
+        assertEquals(35, effectiveTotalMinutes(90, 15, 20, 10, 20))
+        assertEquals(20, effectiveTotalMinutes(90, null, 20, 10, 20))
+        // No override: derive, or no key at all without times.
+        assertEquals(30, effectiveTotalMinutes(null, 10, 20, 10, 25))
+        assertNull(effectiveTotalMinutes(null, null, null, null, null))
+    }
+
+    @Test
+    fun `hostOfUrl accepts real hosts including schemeless ones`() {
+        assertEquals("example.com", hostOfUrl("https://example.com/dup"))
+        assertEquals("example.com", hostOfUrl("https://www.example.com/"))
+        assertEquals("example.com", hostOfUrl("example.com/x"))
+        assertNull(hostOfUrl("not a url"))
+        assertNull(hostOfUrl(""))
+        assertNull(hostOfUrl("   "))
+        assertNull(hostOfUrl("/just/a/path"))
     }
 
     @Test

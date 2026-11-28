@@ -2,10 +2,16 @@
 // apps/ios/UITests/RecipeEditorScreenshotTests.swift
 //
 // Opens a known seeded recipe ("Weeknight Miso Salmon", seed recipe-01),
-// presents the Edit Recipe sheet, and writes a host-side screenshot to
-// /tmp/recipe-editor-ios.png. The target is a fixed seed title — not the
-// first sorted row — so the shot is deterministic regardless of other
-// data or sort order. Run with:
+// presents the Edit Recipe sheet, and captures the shot two ways:
+//   1. XCTAttachment (lifetime .keepAlways) — retrieval never depends on
+//      where the test runner's filesystem points; export after the run with:
+//        xcrun xcresulttool export attachments --path <Test-*.xcresult> \
+//          --output-path /tmp/shot-attachments
+//      (the .xcresult path is printed at the end of xcodebuild output).
+//   2. Direct host write to /tmp/recipe-editor-ios.png (the UI test bundle
+//      executes on the host Mac, so this lands host-side in practice).
+// The target is a fixed seed title — not the first sorted row — so the shot
+// is deterministic regardless of other data or sort order. Run with:
 //   xcodebuild test -project Smidgen.xcodeproj -scheme <TestScheme> \
 //     -destination 'platform=iOS Simulator,id=<UDID>' \
 //     -only-testing:KeepCookingUITests/RecipeEditorScreenshotTests/testEditRecipeSheet
@@ -72,6 +78,16 @@ final class RecipeEditorScreenshotTests: XCTestCase {
         sleep(2)
 
         let shot = app.screenshot()
+
+        // Path 1 — result-bundle attachment (runner-filesystem independent,
+        // exportable via `xcresulttool export attachments`).
+        let attachment = XCTAttachment(screenshot: shot)
+        attachment.name = "recipe-editor-ios"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        // Path 2 — direct host-side write (the UI test bundle executes on
+        // the host Mac, so this lands in host /tmp in practice).
         let data = shot.pngRepresentation
         let url = URL(fileURLWithPath: "/tmp/recipe-editor-ios.png")
         try data.write(to: url)

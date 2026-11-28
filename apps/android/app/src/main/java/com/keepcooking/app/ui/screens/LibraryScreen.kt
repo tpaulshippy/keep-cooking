@@ -2,7 +2,9 @@ package com.keepcooking.app.ui.screens
 
 import android.content.Intent
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -32,6 +35,7 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -624,15 +628,37 @@ fun RecipeDetailScreen(
                 TextButton(onClick = onBack) { Text("Back") }
                 return@Column
             }
-            val photoUrl = resolvePhotoUrl(photoThumb)
-            if (photoUrl != null) {
-                AsyncImage(
-                    model = photoUrl,
-                    contentDescription = "Recipe photo",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxWidth().height(200.dp)
-                        .clip(RoundedCornerShape(16.dp)),
-                )
+            // Signed resolution: R2 storage keys are minted into short-lived
+            // download URLs (GET /photos/sign, cached); absolute URIs pass
+            // through. While resolving (or on failure) show the placeholder.
+            var thumbUrl by remember(photoThumb) { mutableStateOf<String?>(null) }
+            LaunchedEffect(photoThumb) {
+                thumbUrl = photoThumb?.let { resolveRecipePhoto(container, it) }
+            }
+            if (!photoThumb.isNullOrBlank()) {
+                if (thumbUrl != null) {
+                    AsyncImage(
+                        model = thumbUrl,
+                        contentDescription = "Recipe photo",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxWidth().height(200.dp)
+                            .clip(RoundedCornerShape(16.dp)),
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().height(200.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        androidx.compose.material3.Icon(
+                            Icons.Filled.Image,
+                            contentDescription = "Loading photo",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(48.dp),
+                        )
+                    }
+                }
                 Spacer(Modifier.height(12.dp))
             }
             if (description.isNotBlank()) Text(description, style = MaterialTheme.typography.bodyMedium)

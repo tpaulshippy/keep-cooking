@@ -117,6 +117,9 @@ describe('formatMinutes/clamps', () => {
     expect(clampMinutes('-1')).toBe(0);
     expect(clampMinutes('1.5')).toBe(2);
     expect(clampMinutes('99999')).toBe(10080);
+    expect(clampMinutes('15000')).toBe(10080);
+    expect(clampMinutes('15000', 20160)).toBe(15000);
+    expect(clampMinutes('99999', 20160)).toBe(20160);
     expect(clampMinutes('')).toBeUndefined();
     expect(clampServings('-2')).toBe(4);
     expect(clampServings('1000')).toBe(100);

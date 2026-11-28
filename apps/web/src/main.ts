@@ -577,7 +577,7 @@ function viewRecipeEditor(editId: string | null): void {
     const cookbook = (document.getElementById('ed-cookbook') as HTMLInputElement).value.trim();
     const prepOut = clampMinutes((document.getElementById('ed-prep') as HTMLInputElement).value);
     const cookOut = clampMinutes((document.getElementById('ed-cook') as HTMLInputElement).value);
-    const totalOut = clampMinutes((document.getElementById('ed-total') as HTMLInputElement).value);
+    const totalOut = clampMinutes((document.getElementById('ed-total') as HTMLInputElement).value, 20160);
     // Servings init may come from unclamped stored data; normalize the field
     // so a re-save without touching it still enqueues an API-valid value.
     if (servingsOut !== servings) setServings(servingsOut);

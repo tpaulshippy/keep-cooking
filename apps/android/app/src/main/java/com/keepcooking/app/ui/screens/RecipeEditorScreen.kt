@@ -23,7 +23,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
@@ -40,7 +39,6 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.TableChart
-import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenuItem
@@ -95,10 +93,10 @@ import kotlinx.serialization.json.jsonPrimitive
  * save check; collapsible sections (all default expanded) in one dark card
  * style: Info (title, Photos count + thumbnail, interactive Rating stars,
  * Servings stepper + number field, source domain + URL field with link icon,
- * Difficulty dropdown, Categories field, display-only Cookbook row), Times
- * (Prep / Cook / Total), Description, Ingredients (free text, group headers
- * preserved), Directions (free text), Notes (free text) and Nutrition
- * (Text/Table segmented + Extract to Table + free text).
+ * Difficulty dropdown and Categories field ("Uncategorized" placeholder).
+ * The reference Cookbook row is omitted: cookbooks are in-memory-only with
+ * no Room/sync store, so there is no membership to show. Times shows Prep /
+ * Cook plus Total (explicit synced override wins, else prep+cook derived).
  *
  * Draft state lives in remember/mutableState; persisting goes through the
  * caller-supplied [onSave] (NavGraph's Room + sync-outbox write, the same
@@ -130,6 +128,11 @@ data class RecipeEditDraft(
     val notes: String = "",
     /** Persisted per recipe in DataStore ([saveEditorExtras]); envelope-only. */
     val nutritionText: String = "",
+    /**
+     * Explicit total override (minutes). Null = no override: the UI derives
+     * prep+cook. Hydrated from [EditorExtras]; see Times section.
+     */
+    val totalMinutes: Int? = null,
 )
 
 /**
@@ -143,9 +146,10 @@ data class EditorExtras(
     val difficulty: String? = null,
     val notes: String = "",
     val nutritionText: String = "",
+    val totalMinutes: Int? = null,
 )
 
-private fun editorExtrasKey(recipeId: String) = stringPreferencesKey("editor_extras:$recipeId")
+internal fun editorExtrasKey(recipeId: String) = stringPreferencesKey("editor_extras:$recipeId")
 
 /** Last-saved envelope-only extras for a recipe (empty defaults when never saved). */
 suspend fun loadEditorExtras(container: AppContainer, recipeId: String): EditorExtras =
@@ -231,13 +235,31 @@ suspend fun loadRecipeEditDraft(container: AppContainer, recipeId: String): Reci
         directionsText = steps.map { it.text }.joinToString("\n\n"),
         notes = extras.notes,
         nutritionText = extras.nutritionText,
+        totalMinutes = extras.totalMinutes,
     )
+}
+
+/**
+ * Real-host extraction for a source URL. Tries the URL as-is, then with an
+ * `https://` prefix (so schemeless `example.com/x` still resolves), and
+ * returns null when there is no host at all. Pure java.net.URI parsing, so it
+ * is JVM-unit-testable with no Android framework.
+ */
+fun hostOfUrl(raw: String): String? {
+    val t = raw.trim()
+    if (t.isEmpty()) return null
+    fun hostOf(s: String): String? = runCatching { java.net.URI(s).host }
+        .getOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+    hostOf(t)?.let { return it.removePrefix("www.") }
+    if (t.none { it.isWhitespace() } && !t.contains("://")) {
+        hostOf("https://$t")?.let { return it.removePrefix("www.") }
+    }
+    return null
 }
 
 /** Display host for a source URL, falling back to the source name. */
 fun recipeDomainOf(sourceUrl: String, source: String): String {
-    val host = runCatching { Uri.parse(sourceUrl.trim()).host }.getOrNull()
-    if (!host.isNullOrBlank()) return host.removePrefix("www.")
+    hostOfUrl(sourceUrl)?.let { return it }
     if (source.isNotBlank()) return source
     if (sourceUrl.isNotBlank()) return sourceUrl
     return ""
@@ -393,12 +415,14 @@ fun RecipeEditorScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        val thumb = resolvePhotoUrl(
-                            d.photoThumb?.takeIf { it.isNotBlank() } ?: d.photoOriginal,
-                        )
-                        if (thumb != null) {
+                        val thumbKey = d.photoThumb?.takeIf { it.isNotBlank() } ?: d.photoOriginal
+                        var thumbUrl by remember(thumbKey) { mutableStateOf<String?>(null) }
+                        LaunchedEffect(thumbKey) {
+                            thumbUrl = thumbKey?.let { resolveRecipePhoto(container, it) }
+                        }
+                        if (thumbUrl != null) {
                             AsyncImage(
-                                model = thumb,
+                                model = thumbUrl,
                                 contentDescription = "Recipe photo",
                                 contentScale = ContentScale.Crop,
                                 placeholder = rememberVectorPainter(Icons.Filled.Image),
@@ -648,37 +672,7 @@ fun RecipeEditorScreen(
                             textAlign = TextAlign.End,
                         ),
                     )
-                    EditorDivider()
-
-                    // Cookbook row (display-only: cookbooks live in memory, no Room column).
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            Icons.Filled.Book,
-                            contentDescription = null,
-                            tint = Color(0xFFE57373),
-                            modifier = Modifier.size(28.dp),
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Text(
-                            "Cookbook",
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Text(
-                            "My Cookbook",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Icon(
-                            Icons.Filled.UnfoldMore,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    Spacer(Modifier.height(8.dp))
                 }
             }
 
@@ -721,10 +715,12 @@ fun RecipeEditorScreen(
                             style = MaterialTheme.typography.titleMedium,
                             modifier = Modifier.weight(1f),
                         )
-                        val total = when {
+                        val derivedTotal = when {
                             d.prepMinutes == null && d.cookMinutes == null -> null
                             else -> (d.prepMinutes ?: 0) + (d.cookMinutes ?: 0)
                         }
+                        // Explicit synced override wins; otherwise derive prep+cook.
+                        val total = d.totalMinutes ?: derivedTotal
                         Text(
                             formatMinutes(total),
                             style = MaterialTheme.typography.titleMedium,

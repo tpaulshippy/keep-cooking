@@ -22,6 +22,8 @@ import com.keepcooking.app.network.createApiService
 import com.keepcooking.app.network.E2EPushResponse
 import com.keepcooking.app.network.EncryptedEnvelopeDto
 import com.keepcooking.app.network.SyncEnvelopeDto
+import com.keepcooking.app.ui.screens.EditorExtras
+import com.keepcooking.app.ui.screens.editorExtrasKey
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -252,6 +254,37 @@ class SyncEngine(
             ),
         )
         val did = env.deviceId
+        // Envelope-only extras (difficulty/notes/nutritionText/totalMinutes)
+        // have no Room columns: merge present keys into the per-recipe
+        // DataStore sidecar so the editor hydrates synced values (including
+        // clears) instead of resurrecting stale local ones. Shells return
+        // early above; tombstones carry no extras keys.
+        if (!env.deleted) {
+            val extrasKeys = listOf("difficulty", "notes", "nutritionText", "totalMinutes")
+            if (extrasKeys.any { p.containsKey(it) }) {
+                runCatching {
+                    dataStore.edit { prefs ->
+                        val storedKey = editorExtrasKey(env.id)
+                        val current = prefs[storedKey]?.let { raw ->
+                            runCatching { Json.decodeFromString<EditorExtras>(raw) }.getOrNull()
+                        } ?: EditorExtras()
+                        fun presentString(key: String): String? =
+                            p[key]?.takeIf { it != JsonNull }?.jsonPrimitive?.content
+                        val total = p["totalMinutes"]?.takeIf { it != JsonNull }
+                            ?.jsonPrimitive?.content?.toIntOrNull()
+                        prefs[storedKey] = Json.encodeToString(
+                            EditorExtras.serializer(),
+                            current.copy(
+                                difficulty = presentString("difficulty") ?: current.difficulty,
+                                notes = presentString("notes") ?: current.notes,
+                                nutritionText = presentString("nutritionText") ?: current.nutritionText,
+                                totalMinutes = total ?: current.totalMinutes,
+                            ),
+                        )
+                    }
+                }
+            }
+        }
         database.ingredients().deleteForRecipe(env.id)
         database.ingredients().upsertAll(
             p["ingredients"]?.jsonArray.orEmpty().mapIndexed { i, el ->
