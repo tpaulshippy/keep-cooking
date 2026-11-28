@@ -74,6 +74,75 @@ describe('update durability (recipes/pantry/lists)', () => {
     expect(got.steps.map((s) => s.id)).toEqual(['step-keep']);
   });
 
+  it('isFavorite persists via CRUD and sync envelopes, independent of rating', async () => {
+    const { app } = await makeApp({ seed: false });
+    const created = await req(app, 'POST', '/api/recipes', {
+      body: { title: 'Fav', householdId: 'hh-demo', rating: 5, isFavorite: true },
+    });
+    expect(created.status).toBe(201);
+    const r0 = (await created.json()) as { id: string };
+    const got0 = (await (await req(app, 'GET', `/api/recipes/${r0.id}`)).json()) as {
+      isFavorite: boolean; rating: number;
+    };
+    expect(got0.isFavorite).toBe(true);
+    expect(got0.rating).toBe(5);
+    // Clearing the flag is durable and does not touch the rating.
+    const upd = await req(app, 'PUT', `/api/recipes/${r0.id}`, {
+      body: { title: 'Fav', householdId: 'hh-demo', rating: 5, isFavorite: false },
+    });
+    expect(upd.status).toBe(200);
+    const got1 = (await upd.json()) as { isFavorite: boolean; rating: number };
+    expect(got1.isFavorite).toBe(false);
+    expect(got1.rating).toBe(5);
+    // iOS sync path: recipe envelope with isFavorite applies and reads back.
+    const id = '33333333-3333-4333-8333-333333333333';
+    const push = await req(app, 'POST', '/api/sync/push', {
+      body: [{
+        id, updatedAt: '2026-11-22T12:00:00Z', deviceId: 'ios-1', deleted: false,
+        entity: 'recipe', payload: { title: 'Synced', householdId: 'hh-demo', isFavorite: true },
+      }],
+    });
+    expect(push.status).toBe(200);
+    const got2 = (await (await req(app, 'GET', `/api/recipes/${id}`)).json()) as { isFavorite: boolean };
+    expect(got2.isFavorite).toBe(true);
+    // Android toggle path: a COMPLETE snapshot envelope flips the flag
+    // without touching any other scalar (protocol: non-shell recipe
+    // envelopes are full snapshots; sparse ones would default absent keys).
+    const full = await req(app, 'POST', '/api/recipes', {
+      body: {
+        title: 'Keep', householdId: 'hh-demo', description: 'Stay', servings: 6,
+        source: 'Bk', sourceUrl: 'https://example.com/k', categories: ['x'],
+        ingredients: [{ id: 'k-ing', name: 'Salt' }],
+      },
+    });
+    expect(full.status).toBe(201);
+    const f0 = (await full.json()) as { id: string };
+    const toggleTs = new Date(Date.now() + 60_000).toISOString();
+    const toggle = await req(app, 'POST', '/api/sync/push', {
+      body: [{
+        id: f0.id, updatedAt: toggleTs, deviceId: 'android-1', deleted: false,
+        entity: 'recipe',
+        payload: {
+          id: f0.id, householdId: 'hh-demo', title: 'Keep', description: 'Stay', servings: 6,
+          isFavorite: true, source: 'Bk', sourceUrl: 'https://example.com/k', categories: ['x'],
+          ingredients: [{ id: 'k-ing', name: 'Salt', unit: '', display: '', position: 0 }],
+          steps: [],
+        },
+      }],
+    });
+    expect(toggle.status).toBe(200);
+    const got3 = (await (await req(app, 'GET', `/api/recipes/${f0.id}`)).json()) as {
+      isFavorite: boolean; description: string; servings: number; source: string; categories: string[];
+      ingredients: { id: string; name: string }[];
+    };
+    expect(got3.isFavorite).toBe(true);
+    expect(got3.description).toBe('Stay');
+    expect(got3.servings).toBe(6);
+    expect(got3.source).toBe('Bk');
+    expect(got3.categories).toEqual(['x']);
+    expect(got3.ingredients.map((g) => g.id)).toEqual(['k-ing']);
+  });
+
   it('step timers validate (seconds >= 1)', async () => {
     const { app } = await makeApp({ seed: false });
     const bad = await req(app, 'POST', '/api/recipes', {

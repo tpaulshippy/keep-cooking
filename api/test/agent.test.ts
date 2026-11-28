@@ -1142,7 +1142,7 @@ describe('0004 migration is wired into every deploy path', () => {
     // CI deploy delegates to the package.json chain (single source).
     const deployYml = readFileSync(join(root, '.github/workflows/deploy.yml'), 'utf8');
     expect(deployYml).toContain('npm run db:apply:remote');
-    // Canonical chain 0001 → 0002 → 0003 (devices) → 0004 (agents), in order.
+    // Canonical chain 0001 → 0002 → 0003 (devices) → 0004 (agents) → 0005 (isFavorite), in order.
     const pkg = JSON.parse(readFileSync(join(root, 'api/package.json'), 'utf8')) as { scripts: Record<string, string> };
     for (const s of ['db:apply:local', 'db:apply:remote']) {
       const script = pkg.scripts[s];
@@ -1150,12 +1150,16 @@ describe('0004 migration is wired into every deploy path', () => {
       const i2 = script.indexOf('0002_e2e_blobs.sql');
       const i3 = script.indexOf('0003_device_keys.sql');
       const i4 = script.indexOf('0004_agent_enrollments.sql');
+      const i5 = script.indexOf('0005_is_favorite.sql');
       expect(i1).toBeGreaterThanOrEqual(0);
       expect(i2).toBeGreaterThan(i1);
       expect(i3).toBeGreaterThan(i2);
       expect(i4).toBeGreaterThan(i3);
+      expect(i5).toBeGreaterThan(i4);
     }
     // Fresh BYO-backend script.
-    expect(readFileSync(join(root, 'scripts/deploy-backend.sh'), 'utf8')).toContain('0004_agent_enrollments.sql');
+    const backendSh = readFileSync(join(root, 'scripts/deploy-backend.sh'), 'utf8');
+    expect(backendSh).toContain('0004_agent_enrollments.sql');
+    expect(backendSh).toContain('0005_is_favorite.sql');
   });
 });

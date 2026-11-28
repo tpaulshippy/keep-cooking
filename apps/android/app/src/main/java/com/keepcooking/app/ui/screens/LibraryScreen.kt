@@ -20,7 +20,12 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -36,12 +41,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.keepcooking.app.AppContainer
+import com.keepcooking.app.network.SyncEnvelopeDto
 import com.keepcooking.app.cook.fractionDisplayString
+import com.keepcooking.app.cook.scaledDisplay
 import com.keepcooking.app.library.AdvancedFilter
 import com.keepcooking.app.library.Cookbook
 import com.keepcooking.app.library.DuplicableRecipe
@@ -52,6 +60,14 @@ import com.keepcooking.app.library.filterRecipes
 import com.keepcooking.app.library.findDuplicateGroups
 import com.keepcooking.app.library.planMerge
 import com.keepcooking.app.library.totalMinutes
+import java.time.Instant
+import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 
 /**
  * Library tab — parity with iOS Features/Library/LibraryViews.swift.
@@ -71,6 +87,7 @@ data class LibraryRecipeRow(
     override val prepMinutes: Int? = null,
     override val cookMinutes: Int? = null,
     override val rating: Double? = null,
+    override val isFavorite: Boolean = false,
     override val source: String = "",
     override val categories: List<String> = emptyList(),
     override val ingredientNames: List<String> = emptyList(),
@@ -258,6 +275,7 @@ private fun summaryLine(r: LibraryRecipeRow): String {
     val bits = mutableListOf<String>()
     r.totalMinutes?.let { bits.add("$it min") }
     r.rating?.let { bits.add("★ %.1f".format(it)) }
+    if (r.isFavorite) bits.add("♥ Favorite")
     if (r.source.isNotEmpty()) bits.add(r.source)
     if (r.categories.isNotEmpty()) bits.add(r.categories.joinToString(", "))
     return bits.joinToString(" · ")
@@ -289,6 +307,11 @@ fun AdvancedFilterForm(filter: AdvancedFilter, onChange: (AdvancedFilter) -> Uni
         )
         TimeCapDropdown(filter.maxTotalMinutes) { onChange(filter.copy(maxTotalMinutes = it)) }
         RatingDropdown(filter.minRating) { onChange(filter.copy(minRating = it)) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = filter.favoritesOnly, onCheckedChange = { onChange(filter.copy(favoritesOnly = it)) })
+            Spacer(Modifier.width(8.dp))
+            Text("Favorites only")
+        }
         OutlinedTextField(
             value = filter.sourceContains ?: "",
             onValueChange = { onChange(filter.copy(sourceContains = it.ifEmpty { null })) },
@@ -298,7 +321,7 @@ fun AdvancedFilterForm(filter: AdvancedFilter, onChange: (AdvancedFilter) -> Uni
         OutlinedButton(
             onClick = { onChange(AdvancedFilter(query = filter.query)) },
             enabled = filter.includeTerms.isNotEmpty() || filter.excludeTerms.isNotEmpty() ||
-                filter.maxTotalMinutes != null || filter.minRating != null ||
+                filter.maxTotalMinutes != null || filter.minRating != null || filter.favoritesOnly ||
                 !(filter.sourceContains ?: "").isEmpty() || filter.categories.isNotEmpty(),
         ) { Text("Clear all filters") }
     }
@@ -489,14 +512,24 @@ fun RecipeDetailScreen(
     var ingredients by remember { mutableStateOf(listOf<String>()) }
     var steps by remember { mutableStateOf(listOf<String>()) }
     var servings by remember { mutableStateOf(4.0) }
+    var isFavorite by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     LaunchedEffect(recipeId) {
         val r = container.db.recipes().byId(recipeId)
         if (r != null) {
             title = r.title
             description = r.recipeDescription
             servings = r.servings
+            isFavorite = r.isFavorite
             ingredients = container.db.ingredients().forRecipe(recipeId).map {
-                it.display.ifBlank { it.name }
+                // Display strings are quantity-only ("12 oz"): the name
+                // always survives (web ingredientLabel parity), but don't
+                // duplicate it when display already ends with the name.
+                val d = it.display.trim().ifBlank { null }
+                val n = it.name.trim()
+                if (d == null) scaledDisplay(it.name, it.quantity, it.unit, 1.0)
+                else if (n.isNotEmpty() && d.endsWith(n, ignoreCase = true)) d
+                else "$d $n".trim()
             }
             steps = container.db.steps().forRecipe(recipeId).map { it.text }
         }
@@ -514,6 +547,80 @@ fun RecipeDetailScreen(
                 style = MaterialTheme.typography.labelMedium,
                 modifier = Modifier.padding(vertical = 8.dp),
             )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = {
+                    scope.launch {
+                        val row = container.db.recipes().byId(recipeId) ?: return@launch
+                        val now = System.currentTimeMillis()
+                        val did = container.syncEngine.deviceId()
+                        val updated = row.copy(isFavorite = !row.isFavorite, updatedAt = now, deviceId = did)
+                        container.db.recipes().upsert(updated)
+                        isFavorite = updated.isFavorite
+                        // Complete snapshot (protocol: a non-shell recipe
+                        // envelope is the sender's full snapshot). A sparse
+                        // envelope would wipe the server's stored scalars,
+                        // which default on absent keys.
+                        val ings = container.db.ingredients().forRecipe(row.id)
+                        val steps = container.db.steps().forRecipe(row.id)
+                        val cats = runCatching {
+                            Json.parseToJsonElement(row.categoriesJson).jsonArray
+                        }.getOrDefault(JsonArray(emptyList()))
+                        container.syncEngine.enqueue(
+                            SyncEnvelopeDto(
+                                id = row.id,
+                                updatedAt = Instant.ofEpochMilli(now).toString(),
+                                deviceId = did,
+                                entity = "recipe",
+                                payload = buildJsonObject {
+                                    put("id", row.id)
+                                    put("householdId", row.householdId)
+                                    put("title", row.title)
+                                    put("description", row.recipeDescription)
+                                    put("servings", row.servings)
+                                    updated.prepMinutes?.let { put("prepMinutes", it) }
+                                    updated.cookMinutes?.let { put("cookMinutes", it) }
+                                    updated.rating?.let { put("rating", it) }
+                                    put("isFavorite", updated.isFavorite)
+                                    put("source", row.source)
+                                    put("sourceUrl", row.sourceUrl)
+                                    put("categories", cats)
+                                    put("photoKeys", buildJsonObject {
+                                        put("original", row.photoOriginal ?: "")
+                                        put("large1024", row.photoLarge1024 ?: "")
+                                        put("thumb", row.photoThumb ?: "")
+                                    })
+                                    put("ingredients", JsonArray(ings.map { ing ->
+                                        buildJsonObject {
+                                            put("id", ing.id)
+                                            put("name", ing.name)
+                                            ing.quantity?.let { put("quantity", it) }
+                                            put("unit", ing.unit)
+                                            put("display", ing.display)
+                                            put("position", ing.position)
+                                        }
+                                    }))
+                                    put("steps", JsonArray(steps.map { st ->
+                                        buildJsonObject {
+                                            put("id", st.id)
+                                            put("position", st.position)
+                                            put("text", st.text)
+                                            put("timers", runCatching {
+                                                Json.parseToJsonElement(st.timersJson).jsonArray
+                                            }.getOrDefault(JsonArray(emptyList())))
+                                        }
+                                    }))
+                                },
+                            ),
+                        )
+                    }
+                }) {
+                    Icon(
+                        imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                        contentDescription = if (isFavorite) "Remove from favorites" else "Mark as favorite",
+                    )
+                }
+                Text(if (isFavorite) "★ Favorite" else "Mark as favorite")
+            }
             Button(onClick = { onCook(recipeId) }, modifier = Modifier.fillMaxWidth()) {
                 Text("Start Cooking")
             }

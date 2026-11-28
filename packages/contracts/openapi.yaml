@@ -919,10 +919,15 @@ components:
         ciphertext: { type: string, description: base64, AES-GCM-256(raw-ciphertext + 16-byte tag) over canonical JSON of the v1 envelope payload }
     ClipRequest:
       type: object
+      description: >-
+        Clip source hint. `text` = generic pasted text, `photo` = photo/OCR
+        transcript; request requires url or caption (caption max 20000);
+        when url is supplied the JSON-LD → reader pipeline runs first
+        with caption as fallback.
       properties:
         url: { type: string, format: uri }
-        caption: { type: string }
-        source: { type: string, enum: [url, tiktok, instagram, youtube, ocr, clipboard] }
+        caption: { type: string, maxLength: 20000 }
+        source: { type: string, enum: [url, tiktok, instagram, youtube, ocr, clipboard, text, photo] }
       anyOf:
         - required: [url]
         - required: [caption]
@@ -974,6 +979,7 @@ components:
             cookMinutes: { type: integer }
             totalMinutes: { type: integer }
             rating: { type: number, minimum: 0, maximum: 5 }
+            isFavorite: { type: boolean }
             source: { type: string }
             sourceUrl: { type: string }
             categories: { type: array, items: { type: string } }
@@ -1004,6 +1010,7 @@ components:
         cookMinutes: { type: integer }
         totalMinutes: { type: integer }
         rating: { type: number, minimum: 0, maximum: 5 }
+        isFavorite: { type: boolean }
         source: { type: string }
         sourceUrl: { type: string }
         categories: { type: array, items: { type: string } }

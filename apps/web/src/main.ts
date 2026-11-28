@@ -18,6 +18,7 @@ import { scaleQuantity, formatQuantity } from './scale';
 import { aggregateWeekToList, collectPlanIngredients, scaleIngredientsForServings } from './aggregate';
 import { sortedRows, toggleItemChecked, shopRowHtml } from './lists';
 import { safeHttpUrl, ingredientLabel } from './display';
+import { firstNonEmptyLine, parsePastedText, previewToRecipeInput, recipeToPreviewFields } from './ingest';
 
 const store = new Store();
 const root = document.getElementById('app')!;
@@ -37,35 +38,6 @@ let editingPantryId: string | null = null;
 
 /** Shopping-list item (original index) with its quantity/aisle editor open. */
 let editingItemIdx: number | null = null;
-
-// ---- Theme (light/dark/auto, persisted as kc.theme) ----
-type ThemePref = 'light' | 'dark' | 'auto';
-const THEME_KEY = 'kc.theme';
-
-function getThemePref(): ThemePref {
-  try {
-    const v = localStorage.getItem(THEME_KEY);
-    if (v === 'light' || v === 'dark' || v === 'auto') return v;
-  } catch { /* no localStorage (SSR/test): fall through to auto */ }
-  return 'auto';
-}
-
-/** Apply the preference: explicit light/dark sets data-theme, auto removes
- *  it so the prefers-color-scheme media query in styles.css decides. */
-function applyTheme(): void {
-  const pref = getThemePref();
-  if (pref === 'auto') document.documentElement.removeAttribute('data-theme');
-  else document.documentElement.setAttribute('data-theme', pref);
-}
-
-function cycleTheme(): void {
-  const next: ThemePref = getThemePref() === 'auto' ? 'light' : getThemePref() === 'light' ? 'dark' : 'auto';
-  try {
-    localStorage.setItem(THEME_KEY, next);
-  } catch { /* ignore */ }
-  applyTheme();
-  render();
-}
 
 /** Live transport: every entity maps to its real contract CRUD endpoint. */
 const webTransport: PushTransport = {
@@ -137,9 +109,7 @@ function shell(view: string): void {
     const active = (p === '/' && route.name === 'home') || href(p) === here;
     return `<a href="${href(p)}"${active ? ' aria-current="page"' : ''}>${label}</a>`;
   }).join('');
-  const pref = getThemePref();
-  root.innerHTML = `<header class="topbar"><a class="brand" href="${href('/')}">Keep Cooking</a><nav aria-label="Primary">${nav}</nav><button id="themebtn" type="button" aria-label="Color theme (current: ${pref})">Theme: ${pref}</button></header><div class="view">${view}</div>`;
-  document.getElementById('themebtn')!.addEventListener('click', cycleTheme);
+  root.innerHTML = `<header class="topbar"><a class="brand" href="${href('/')}">Keep Cooking</a><nav aria-label="Primary">${nav}</nav></header><div class="view">${view}</div>`;
 }
 
 function esc(s: unknown): string {
@@ -227,7 +197,7 @@ function viewLibrary(q: string): void {
 interface RecipeFormPayload {
   title?: string; description?: string; servings?: number;
   prepMinutes?: number | null; cookMinutes?: number | null; rating?: number | null;
-  source?: string; sourceUrl?: string; categories?: string[];
+  isFavorite?: boolean; source?: string; sourceUrl?: string; categories?: string[];
 }
 
 // ---- Recipe new/edit (shared form) ----
@@ -247,6 +217,7 @@ function viewRecipeForm(editId: string | null): void {
   <label>Prep minutes <input name="prepMinutes" type="number" min="0" step="1" value="${esc(p.prepMinutes ?? '')}" /></label>
   <label>Cook minutes <input name="cookMinutes" type="number" min="0" step="1" value="${esc(p.cookMinutes ?? '')}" /></label>
   <label>Rating (0–5) <input name="rating" type="number" min="0" max="5" step="0.5" value="${esc(p.rating ?? '')}" /></label>
+  <label><input name="isFavorite" type="checkbox"${p.isFavorite ? ' checked' : ''} /> Favorite</label>
   <label>Source <input name="source" value="${esc(p.source ?? '')}" /></label>
   <label>Source URL <input name="sourceUrl" type="url" value="${esc(p.sourceUrl ?? '')}" /></label>
   <label>Categories (comma-separated) <input name="categories" value="${esc(cats)}" /></label>
@@ -262,6 +233,7 @@ function viewRecipeForm(editId: string | null): void {
       title,
       description: String(fd.get('description') || ''),
       servings,
+      isFavorite: (e.target as HTMLFormElement).querySelector<HTMLInputElement>('input[name="isFavorite"]')!.checked,
       source: String(fd.get('source') || ''),
       sourceUrl: String(fd.get('sourceUrl') || ''),
       categories: String(fd.get('categories') || '').split(',').map((s) => s.trim()).filter(Boolean),
@@ -292,7 +264,7 @@ function viewRecipeDetail(id: string): void {
   }
   const p = env.payload as {
     title?: string; description?: string; servings?: number;
-    prepMinutes?: number; cookMinutes?: number; rating?: number;
+    prepMinutes?: number; cookMinutes?: number; rating?: number; isFavorite?: boolean;
     source?: string; sourceUrl?: string; categories?: string[];
     ingredients?: RecipeIngredient[]; steps?: RecipeStep[];
   };
@@ -300,6 +272,7 @@ function viewRecipeDetail(id: string): void {
   if (p.prepMinutes != null) meta.push(`prep ${esc(p.prepMinutes)} min`);
   if (p.cookMinutes != null) meta.push(`cook ${esc(p.cookMinutes)} min`);
   if (p.rating != null) meta.push(`rating ${esc(p.rating)}/5`);
+  if (p.isFavorite) meta.push('★ favorite');
   // Non-http(s) source URLs render as plain text, never href (XSS allowlist).
   const srcLink = safeHttpUrl(p.sourceUrl);
   const srcHtml = srcLink
@@ -898,12 +871,66 @@ function viewMenus(): void {
 // ---- Ingest ----
 function viewIngest(): void {
   shell(`<h1>Clip a recipe</h1>
+  <div role="tablist" aria-label="Ingest methods">
+    <button type="button" role="tab" id="tab-link" aria-controls="panel-link" aria-selected="true">Link</button>
+    <button type="button" role="tab" id="tab-text" aria-controls="panel-text" aria-selected="false">Text</button>
+    <button type="button" role="tab" id="tab-photo" aria-controls="panel-photo" aria-selected="false">Photo</button>
+  </div>
+  <section id="panel-link" role="tabpanel" aria-labelledby="tab-link">
   <form id="clip"><label>Source URL <input name="url" type="url" placeholder="https://…" /></label>
   <label>Caption or pasted text <textarea name="caption" rows="4"></textarea></label>
   <label>From clipboard <input name="fromclip" type="checkbox" /></label>
   <button type="submit">Clip</button></form>
   <p id="status" role="status" aria-live="polite"></p>
-  <p class="muted">Offline: saves as a local draft recipe. Online: also sends to the API clip endpoint.</p>`);
+  <p class="muted">Offline: saves as a local draft recipe. Online: also sends to the API clip endpoint.</p>
+  </section>
+  <section id="panel-text" role="tabpanel" aria-labelledby="tab-text" hidden>
+  <form id="clip-text">
+  <label for="pastetext">Paste recipe text</label>
+  <textarea id="pastetext" name="pastetext" rows="8" placeholder="Paste the recipe here — title on the first line"></textarea>
+  <p class="muted">Title defaults to the first line.</p>
+  <button type="submit">Paste &amp; preview</button></form>
+  <p id="textstatus" role="status" aria-live="polite"></p>
+  <form id="text-preview" hidden>
+  <h2>Preview</h2>
+  <label for="text-title">Title</label>
+  <input id="text-title" name="title" />
+  <label for="text-ings">Ingredients (one per line)</label>
+  <textarea id="text-ings" name="ingredients" rows="5"></textarea>
+  <label for="text-steps">Steps (one per line)</label>
+  <textarea id="text-steps" name="steps" rows="5"></textarea>
+  <button type="submit">Save</button></form>
+  </section>
+  <section id="panel-photo" role="tabpanel" aria-labelledby="tab-photo" hidden>
+  <form id="clip-photo">
+  <label for="photo-file">Recipe photo</label>
+  <input id="photo-file" name="photo" type="file" accept="image/*" />
+  <p><img id="photo-img" alt="Attached recipe photo preview" hidden style="max-width:100%" /></p>
+  <label for="photo-ocr">Transcribed / OCR text (paste or type from photo)</label>
+  <textarea id="photo-ocr" name="ocr" rows="8" placeholder="Type or paste the visible text from the photo"></textarea>
+  <p class="muted">Web has no on-device OCR yet — attach photo for reference, paste visible text.</p>
+  <button type="submit">Parse &amp; preview</button></form>
+  <p id="photostatus" role="status" aria-live="polite"></p>
+  <form id="photo-preview" hidden>
+  <h2>Preview</h2>
+  <label for="photo-title">Title</label>
+  <input id="photo-title" name="title" />
+  <label for="photo-ings">Ingredients (one per line)</label>
+  <textarea id="photo-ings" name="ingredients" rows="5"></textarea>
+  <label for="photo-steps">Steps (one per line)</label>
+  <textarea id="photo-steps" name="steps" rows="5"></textarea>
+  <button type="submit">Save</button></form>
+  </section>`);
+  const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+  const selectTab = (id: string) => {
+    for (const t of tabs) {
+      const selected = t.id === id;
+      t.setAttribute('aria-selected', String(selected));
+      document.getElementById(t.getAttribute('aria-controls')!)?.toggleAttribute('hidden', !selected);
+    }
+  };
+  tabs.forEach((t) => t.addEventListener('click', () => selectTab(t.id)));
+  // --- Link (existing flow, unchanged) ---
   (document.getElementById('clip') as HTMLFormElement).addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target as HTMLFormElement);
@@ -942,24 +969,179 @@ function viewIngest(): void {
       navigate('/recipes/' + env.id);
     }
   });
+  // Photo attachment is reference-only: bytes are never uploaded.
+  // Defined before the paste wiring so the photo preview Save handler and
+  // the route-teardown listener can release the object URL.
+  let photoObjectUrl: string | undefined;
+  const revokePhotoObjectUrl = (): void => {
+    if (photoObjectUrl === undefined) return;
+    try {
+      if (typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+        URL.revokeObjectURL(photoObjectUrl);
+      }
+    } catch { /* test/jsdom without revoke: ignore */ }
+    photoObjectUrl = undefined;
+  };
+  // --- Shared paste/OCR preview + save wiring for Text/Photo tabs ---
+  // Extract an HTTP status from the api client error shape. req() throws
+  // `Error("METHOD path failed: STATUS")` with no .status field; signed
+  // transports may attach one. Absent status (TypeError from fetch) means
+  // the request never got a response — a genuine offline/network failure.
+  const clipHttpStatus = (err: unknown): number | undefined => {
+    if (typeof err === 'object' && err !== null && 'status' in err) {
+      const s = (err as { status?: unknown }).status;
+      if (typeof s === 'number' && Number.isFinite(s)) return s;
+      if (typeof s === 'string' && /^\d{3}$/.test(s.trim())) return Number(s.trim());
+    }
+    const msg = err instanceof Error ? err.message : String(err ?? '');
+    const m = msg.match(/\b(\d{3})\b/);
+    return m ? Number(m[1]) : undefined;
+  };
+  const wirePasteTab = (opts: {
+    formId: string; inputId: string; statusId: string; previewId: string;
+    titleId: string; ingsId: string; stepsId: string; source: 'text' | 'photo';
+    emptyMessage: string;
+  }) => {
+    const form = document.getElementById(opts.formId) as HTMLFormElement;
+    const preview = document.getElementById(opts.previewId) as HTMLFormElement;
+    const sourceInput = document.getElementById(opts.inputId) as HTMLTextAreaElement | null;
+    let pendingDescription = '';
+    let pendingReport: RecipeInput | undefined;
+    // Generation guard: editing the source invalidates the visible preview
+    // and any in-flight clip response captured before the edit.
+    let generation = 0;
+    sourceInput?.addEventListener('input', () => {
+      generation++;
+      pendingReport = undefined;
+      pendingDescription = '';
+      preview.hidden = true;
+    });
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const key = opts.source === 'text' ? 'pastetext' : 'ocr';
+      const caption = String(fd.get(key) || '').trim();
+      const status = document.getElementById(opts.statusId)!;
+      if (!caption) {
+        status.textContent = opts.emptyMessage;
+        return;
+      }
+      const gen = ++generation;
+      // Title hint = first line (shown before the server responds).
+      const hint = firstNonEmptyLine(caption);
+      status.textContent = hint ? `Parsing “${hint.slice(0, 60)}”…` : 'Parsing…';
+      try {
+        const report = await api.clip({ caption, source: opts.source });
+        if (gen !== generation) return; // stale: source edited mid-flight
+        const fields = recipeToPreviewFields(report.recipe);
+        (document.getElementById(opts.titleId) as HTMLInputElement).value = fields.title;
+        (document.getElementById(opts.ingsId) as HTMLTextAreaElement).value = fields.ingredientsText;
+        (document.getElementById(opts.stepsId) as HTMLTextAreaElement).value = fields.stepsText;
+        pendingReport = report.recipe;
+        pendingDescription =
+          typeof report.recipe.description === 'string' ? report.recipe.description.slice(0, 8000) : caption.slice(0, 8000);
+        preview.hidden = false;
+        status.textContent = `Preview ready via ${report.strategy}. Review and Save.`;
+      } catch (err) {
+        if (gen !== generation) return; // stale: source edited mid-flight
+        // 4xx (esp. 413/422 validation) is a server verdict on this exact
+        // text — not an offline signal. Surface it; never save the
+        // oversized/invalid draft as if it parsed.
+        const httpStatus = clipHttpStatus(err);
+        if (httpStatus !== undefined && httpStatus >= 400 && httpStatus < 500) {
+          const detail = err instanceof Error ? err.message : String(err);
+          status.textContent = `Could not parse (${httpStatus}): ${detail} — edit the text and retry.`;
+          return;
+        }
+        // Offline fallback: local parse, same RecipeInput shape as Link drafts.
+        // parsePastedText caps description (8000) and step text (8000) to the
+        // recipeInputSchema limits so the draft stays valid.
+        const draft = parsePastedText(caption);
+        draft.source = 'clip';
+        const fields = recipeToPreviewFields(draft);
+        (document.getElementById(opts.titleId) as HTMLInputElement).value = fields.title;
+        (document.getElementById(opts.ingsId) as HTMLTextAreaElement).value = fields.ingredientsText;
+        (document.getElementById(opts.stepsId) as HTMLTextAreaElement).value = fields.stepsText;
+        pendingReport = draft;
+        pendingDescription = typeof draft.description === 'string' ? draft.description : caption.slice(0, 8000);
+        preview.hidden = false;
+        status.textContent = 'Offline — parsed locally. Review and Save.';
+      }
+    });
+    preview.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const status = document.getElementById(opts.statusId)!;
+      // Save requires a fresh preview: editing the source hides it and
+      // clears pendingReport until the next Parse & preview.
+      if (!pendingReport || preview.hidden) {
+        status.textContent = 'Preview is stale — re-run Parse & preview.';
+        return;
+      }
+      if (opts.source === 'photo') revokePhotoObjectUrl();
+      const input = previewToRecipeInput(
+        {
+          title: (document.getElementById(opts.titleId) as HTMLInputElement).value,
+          ingredientsText: (document.getElementById(opts.ingsId) as HTMLTextAreaElement).value,
+          stepsText: (document.getElementById(opts.stepsId) as HTMLTextAreaElement).value,
+        },
+        pendingReport,
+        { description: pendingDescription },
+      );
+      const env = store.upsert('recipe', '', input);
+      navigate('/recipes/' + env.id);
+    });
+  };
+  wirePasteTab({
+    formId: 'clip-text', inputId: 'pastetext', statusId: 'textstatus',
+    previewId: 'text-preview', titleId: 'text-title', ingsId: 'text-ings',
+    stepsId: 'text-steps', source: 'text', emptyMessage: 'Paste recipe text first.',
+  });
+  wirePasteTab({
+    formId: 'clip-photo', inputId: 'photo-ocr', statusId: 'photostatus',
+    previewId: 'photo-preview', titleId: 'photo-title', ingsId: 'photo-ings',
+    stepsId: 'photo-steps', source: 'photo', emptyMessage: 'Paste the visible text from the photo first.',
+  });
+  // Photo attachment is reference-only: bytes are never uploaded.
+  (document.getElementById('photo-file') as HTMLInputElement).addEventListener('change', (e) => {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    const img = document.getElementById('photo-img') as HTMLImageElement;
+    revokePhotoObjectUrl();
+    if (!file) {
+      img.hidden = true;
+      img.removeAttribute('src');
+      return;
+    }
+    photoObjectUrl = URL.createObjectURL(file);
+    img.src = photoObjectUrl;
+    img.hidden = false;
+  });
+  // Release the photo object URL on navigation away (router navigates via
+  // pushState + popstate). Once + guarded so jsdom/tests without
+  // revokeObjectURL stay safe.
+  window.addEventListener('popstate', revokePhotoObjectUrl, { once: true });
 }
 
 // ---- Settings ----
-function exportJSON(): string {
+function exportJSON(selected?: LocalRecipe[]): string {
+  if (selected) return JSON.stringify(selected, null, 2);
   return JSON.stringify(store.state, null, 2);
 }
 
-function exportMarkdown(): string {
+function exportMarkdownFrom(recipes: LocalRecipe[]): string {
   const lines = ['# Keep Cooking export', ''];
-  for (const r of visible(store.state.recipes)) {
-    const p = r.payload as { title?: string; ingredients?: { name: string; display?: string }[]; steps?: { text: string }[] };
-    lines.push(`## ${p.title ?? r.id}`, '');
-    for (const i of p.ingredients ?? []) lines.push(`- ${i.display ? `${i.display} ` : ''}${i.name}`);
+  for (const [n, r] of recipes.entries()) {
+    if (n > 0) lines.push('---', '');
+    lines.push(`## ${r.title}`, '');
+    for (const i of r.ingredients ?? []) lines.push(`- ${i.display ? `${i.display} ` : ''}${i.name}`);
     lines.push('');
-    (p.steps ?? []).forEach((s, n) => lines.push(`${n + 1}. ${s.text}`));
+    (r.steps ?? []).forEach((s, n) => lines.push(`${n + 1}. ${s.text}`));
     lines.push('');
   }
   return lines.join('\n');
+}
+
+function exportMarkdown(selected?: LocalRecipe[]): string {
+  return exportMarkdownFrom(selected ?? localRecipes());
 }
 
 function download(name: string, text: string, type: string): void {
@@ -1031,8 +1213,9 @@ interface LocalRecipe {
   updatedAt: string;
 }
 
-function localRecipes(): LocalRecipe[] {
-  return visible(store.state.recipes).map((e) => {
+function localRecipes(ids?: Set<string> | null): LocalRecipe[] {
+  const envs = visible(store.state.recipes).filter((e) => !ids || ids.has(e.id));
+  return envs.map((e) => {
     const p = (e.payload ?? {}) as AnyRec;
     const str = (v: unknown, fb = ''): string => (typeof v === 'string' ? v : fb);
     const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
@@ -1140,8 +1323,8 @@ function toPaprikaYaml(r: LocalRecipe): AnyRec {
   };
 }
 
-function exportHtmlLocal(): string {
-  const recipes = localRecipes();
+function exportHtmlLocal(selected?: LocalRecipe[]): string {
+  const recipes = selected ?? localRecipes();
   const bodies = recipes.map((r) => {
     const ld = {
       '@context': 'https://schema.org',
@@ -1164,7 +1347,7 @@ function exportHtmlLocal(): string {
 <h3>Directions</h3>
 <ol>${r.steps.map((s) => `<li itemprop="recipeInstructions">${esc(s.text)}</li>`).join('')}</ol>
 </article>`;
-  }).join('\n');
+  }).join('\n<hr/>\n');
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Keep Cooking export</title></head><body><h1>Keep Cooking export</h1>\n${bodies}\n</body></html>`;
 }
 
@@ -1703,6 +1886,7 @@ function viewSettings(): void {
       (healthResult ? `<p role="status" aria-live="polite">${esc(healthResult)}</p>` : '') +
       hintBlock
     : '';
+  const exportRecipes = visible(store.state.recipes);
   shell(`<h1>Settings</h1>
   <h2>Sync</h2>
   <p id="syncstatus" role="status" aria-live="polite">${esc(syncStatus || 'Offline-ready')}</p>
@@ -1721,7 +1905,11 @@ function viewSettings(): void {
   <p><button type="button" id="advancedtoggle" aria-expanded="${advancedOpen ? 'true' : 'false'}">${advancedOpen ? 'Custom server ▾' : 'Custom server ▸'}</button></p>
   ${advancedBlock}
   <h2>Export</h2>
-  <p><button type="button" id="expjson">Export JSON</button> <button type="button" id="expmd">Export Markdown</button> <button type="button" id="exchtml">Export HTML</button> <button type="button" id="exppaprika">Export Paprika (.paprikarecipes)</button> <button type="button" id="expyaml">Export YAML</button></p>
+  <p id="exportcount" role="status" aria-live="polite"></p>
+  <p><label class="checkrow"><input type="checkbox" id="exportselectall" checked /> Select all</label></p>
+  <div>${exportRecipes.map((r) => `<label class="checkrow"><input type="checkbox" data-export-id="${esc(r.id)}" checked /> ${esc((r.payload as { title?: string }).title ?? r.id)}</label>`).join('') || '<p>No recipes to export.</p>'}</div>
+  <p><label>Format <select id="exportformat"><option value="json">JSON</option><option value="md">Markdown</option><option value="html">HTML</option><option value="paprikarecipes">Paprika (.paprikarecipes)</option><option value="yaml">YAML</option></select></label>
+  <button type="button" id="doexport">Export</button></p>
   <p id="exportstatus" role="status" aria-live="polite"></p>
   <h2>Import</h2>
   <form id="importform">
@@ -1746,8 +1934,8 @@ function viewSettings(): void {
   <option value="mcb">My CookBook (.mcb)</option>
   <option value="recipe-manager-txt">Recipe Manager TXT</option>
   </select></label>
-  <label><input id="importcookbooks" type="checkbox" checked /> Import cookbooks from file</label>
-  <label><input id="importdryrun" type="checkbox" /> Dry run (preview only)</label>
+  <label class="checkrow"><input id="importcookbooks" type="checkbox" checked /> Import cookbooks from file</label>
+  <label class="checkrow"><input id="importdryrun" type="checkbox" /> Dry run (preview only)</label>
   <button type="submit">Import</button></form>
   <p id="importstatus" role="status" aria-live="polite"></p>
   <p class="muted">Accepts .paprikarecipes, .paprikarecipe, .yml/.yaml, .html, .zip, .xml and P1 formats (.mx2, .mxp, .mz2, .mmf, .fdx/.fdxz, Pepperplate, Copy Me That, Yum). Offline: text imports (JSON/YAML/HTML) are parsed locally; binary bundles need a server connection.</p>`);
@@ -1780,41 +1968,70 @@ function viewSettings(): void {
     hintHealth = '';
     render();
   });
-  document.getElementById('expjson')!.addEventListener('click', () => download('keep-cooking.json', exportJSON(), 'application/json'));
-  document.getElementById('expmd')!.addEventListener('click', () => download('keep-cooking.md', exportMarkdown(), 'text/markdown'));
-  const bulkExport = async (
-    format: 'json' | 'md' | 'html' | 'paprikarecipes' | 'yaml',
-    onlineName: string,
-    offline: { name: string; text: string; type: string },
-  ): Promise<void> => {
+  const exportBoxes = (): HTMLInputElement[] => Array.from(document.querySelectorAll<HTMLInputElement>('[data-export-id]'));
+  const selectedExportIds = (): string[] => exportBoxes().filter((b) => b.checked).map((b) => b.dataset.exportId!).filter(Boolean);
+  const updateExportCount = (): void => {
+    const boxes = exportBoxes();
+    const sel = boxes.filter((b) => b.checked).length;
+    document.getElementById('exportcount')!.textContent = `${sel} of ${boxes.length} selected`;
+    const all = document.getElementById('exportselectall') as HTMLInputElement | null;
+    if (all) all.checked = boxes.length > 0 && sel === boxes.length;
+    (document.getElementById('doexport') as HTMLButtonElement).disabled = sel === 0;
+  };
+  exportBoxes().forEach((b) => b.addEventListener('change', updateExportCount));
+  document.getElementById('exportselectall')?.addEventListener('change', (e) => {
+    const checked = (e.target as HTMLInputElement).checked;
+    exportBoxes().forEach((b) => { b.checked = checked; });
+    updateExportCount();
+  });
+  updateExportCount();
+  const exportMime: Record<string, string> = {
+    json: 'application/json',
+    md: 'text/markdown',
+    html: 'text/html',
+    paprikarecipes: 'application/json',
+    yaml: 'text/yaml',
+  };
+  document.getElementById('doexport')!.addEventListener('click', () => void (async () => {
     const st = () => document.getElementById('exportstatus')!;
+    const format = (document.getElementById('exportformat') as HTMLSelectElement).value as 'json' | 'md' | 'html' | 'paprikarecipes' | 'yaml';
+    const ids = selectedExportIds();
+    const total = exportBoxes().length;
+    if (!ids.length) {
+      st().textContent = 'Select at least one recipe to export.';
+      return;
+    }
+    const fileName = `keep-cooking.export.${format}`;
+    const useAll = ids.length === total;
     try {
-      const blob = await api.fetchExportBlob(api.exportBulkUrl({ format, all: true }));
+      const blob = await api.fetchExportBlob(api.exportBulkUrl(useAll ? { format, all: true } : { format, ids }));
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = onlineName;
+      a.download = fileName;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-      st().textContent = `Exported the library via the server (${format}).`;
+      st().textContent = `Exported ${ids.length} recipe(s) via the server (${format}).`;
     } catch {
-      download(offline.name, offline.text, offline.type);
+      const selected = localRecipes(new Set(ids));
+      // Offline fallback mirrors the server's per-format bodies. Paprika has
+      // no ZIP writer in the browser, so it falls back to a JSON-named file
+      // (valid Paprika JSON the app can re-import) instead of claiming the
+      // .paprikarecipes ZIP extension.
+      let name = fileName;
+      let type = exportMime[format];
+      let text = '';
+      if (format === 'json') text = exportJSON(selected);
+      else if (format === 'md') text = exportMarkdown(selected);
+      else if (format === 'html') text = exportHtmlLocal(selected);
+      else if (format === 'paprikarecipes') {
+        text = JSON.stringify(selected.map(toPaprikaJson), null, 2);
+        name = `${fileName}.json`;
+        type = 'application/json';
+      } else text = JSON.stringify(selected.map(toPaprikaYaml), null, 2);
+      download(name, text, type);
       st().textContent = 'Server unreachable — saved an offline-generated fallback instead.';
     }
-  };
-  document.getElementById('exchtml')!.addEventListener('click', () =>
-    void bulkExport('html', 'keep-cooking.html', { name: 'keep-cooking.html', text: exportHtmlLocal(), type: 'text/html' }));
-  document.getElementById('exppaprika')!.addEventListener('click', () =>
-    void bulkExport('paprikarecipes', 'keep-cooking.paprikarecipes', {
-      name: 'keep-cooking.paprikarecipes.json',
-      text: JSON.stringify(localRecipes().map(toPaprikaJson), null, 2),
-      type: 'application/json',
-    }));
-  document.getElementById('expyaml')!.addEventListener('click', () =>
-    void bulkExport('yaml', 'keep-cooking.yaml', {
-      name: 'keep-cooking.yaml',
-      text: JSON.stringify(localRecipes().map(toPaprikaYaml), null, 2),
-      type: 'text/yaml',
-    }));
+  })());
   (document.getElementById('importform') as HTMLFormElement).addEventListener('submit', (e) => {
     e.preventDefault();
     const statusEl = () => document.getElementById('importstatus')!;
@@ -1867,6 +2084,5 @@ function viewSettings(): void {
   });
 }
 
-applyTheme();
 initRouter(render);
 render();

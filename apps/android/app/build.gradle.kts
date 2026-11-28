@@ -81,6 +81,9 @@ dependencies {
     // Coil (recipe photos)
     implementation("io.coil-kt:coil-compose:2.6.0")
 
+    // ML Kit text recognition (Scan tab: photo → InputImage → recognized text)
+    implementation("com.google.mlkit:text-recognition:16.0.0")
+
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 

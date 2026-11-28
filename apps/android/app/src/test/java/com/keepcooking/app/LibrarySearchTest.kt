@@ -20,6 +20,7 @@ class LibrarySearchTest {
         override val cookMinutes: Int? = null,
         override val rating: Double? = null,
         override val source: String = "",
+        override val isFavorite: Boolean = false,
     ) : LibraryRecipe
 
     private fun recipes() = listOf(
@@ -73,5 +74,15 @@ class LibrarySearchTest {
         assertTrue(filterRecipes(withTime, AdvancedFilter()).isNotEmpty())
         assertTrue(AdvancedFilter().isEmpty)
         assertFalse(AdvancedFilter(query = "miso").isEmpty)
+    }
+
+    @Test fun `favoritesOnly keeps only favorites`() {
+        val rows = listOf(
+            Stub("a", "Loved Soup", ingredientNames = listOf("miso"), isFavorite = true),
+            Stub("b", "Plain Soup", ingredientNames = listOf("miso")),
+        )
+        assertEquals(listOf("a"), filterRecipes(rows, AdvancedFilter(favoritesOnly = true)).map { it.recipeId })
+        assertEquals(listOf("a", "b"), filterRecipes(rows, AdvancedFilter()).map { it.recipeId }.sorted())
+        assertFalse(AdvancedFilter(favoritesOnly = true).isEmpty)
     }
 }

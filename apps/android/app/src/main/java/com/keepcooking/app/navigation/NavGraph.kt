@@ -116,6 +116,7 @@ private suspend fun saveIngestDraft(container: AppContainer, draft: IngestDraft)
                 put("source", draft.source)
                 put("sourceUrl", draft.sourceUrl)
                 put("servings", 4.0)
+                put("isFavorite", false)
                 put("categories", JsonArray(emptyList()))
                 put(
                     "ingredients",
@@ -259,6 +260,7 @@ private suspend fun applyDuplicateMerge(
                 put("title", updatedSurvivor.title)
                 put("recipeDescription", updatedSurvivor.recipeDescription)
                 put("servings", updatedSurvivor.servings)
+                put("isFavorite", updatedSurvivor.isFavorite)
                 updatedSurvivor.prepMinutes?.let { put("prepMinutes", it) }
                 updatedSurvivor.cookMinutes?.let { put("cookMinutes", it) }
                 updatedSurvivor.rating?.let { put("rating", it) }

@@ -30,6 +30,7 @@ export interface RecipeRow {
   prepMinutes: number | null;
   cookMinutes: number | null;
   rating: number | null;
+  isFavorite: boolean;
   source: string;
   sourceUrl: string;
   categories: string[];
@@ -398,6 +399,7 @@ export class MemoryStore implements Store {
       prepMinutes: input.prepMinutes ?? null,
       cookMinutes: input.cookMinutes ?? null,
       rating: input.rating ?? null,
+      isFavorite: input.isFavorite ?? false,
       source: input.source ?? '',
       sourceUrl: input.sourceUrl ?? '',
       categories: input.categories ?? [],
@@ -419,7 +421,11 @@ export class MemoryStore implements Store {
   async updateRecipe(id: string, input: any, meta: { deviceId: string }): Promise<Recipe | null> {
     const cur = this.recipes.get(id);
     if (!cur || cur.deleted) return null;
-    const fresh = await this.createRecipe(input, { deviceId: meta.deviceId, id, updatedAt: nowIso() });
+    // isFavorite has no zod default (unlike scalar defaults): old clients
+    // that omit it must not clear a favorite set elsewhere. Preserve the
+    // stored flag when the update omits the field.
+    const merged = { ...input, isFavorite: input.isFavorite ?? (cur as { isFavorite?: boolean }).isFavorite ?? false };
+    const fresh = await this.createRecipe(merged, { deviceId: meta.deviceId, id, updatedAt: nowIso() });
     // preserve nothing else; createRecipe overwrote — keep household if input omitted? input always has householdId default.
     void cur;
     return fresh;
@@ -837,6 +843,7 @@ export class MemoryStore implements Store {
         prepMinutes: p.prepMinutes ?? null,
         cookMinutes: p.cookMinutes ?? null,
         rating: p.rating ?? null,
+        isFavorite: p.isFavorite ?? existing?.isFavorite ?? false,
         source: p.source ?? '',
         sourceUrl: p.sourceUrl ?? '',
         categories: p.categories ?? [],

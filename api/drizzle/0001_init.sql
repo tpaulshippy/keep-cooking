@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS recipes (
   prep_minutes INTEGER,
   cook_minutes INTEGER,
   rating REAL CHECK (rating IS NULL OR (rating >= 0 AND rating <= 5)),
+  is_favorite INTEGER NOT NULL DEFAULT 0,
   source TEXT DEFAULT '',
   source_url TEXT DEFAULT '',
   categories TEXT DEFAULT '[]',

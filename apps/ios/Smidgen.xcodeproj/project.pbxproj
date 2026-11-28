@@ -84,6 +84,8 @@
 		DB456C3C8C20874499866A48 /* DemoFlowsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1DA4AD568824F924579D48 /* DemoFlowsUITests.swift */; };
 		E1FE845FA17465C0B4A9D4E1 /* KeepCookingIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1848936A3CC5C47FA2D3B258 /* KeepCookingIntents.swift */; };
 		E22F6B1A7E63A2926DFA1F6E /* CaptionsImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97BCB550D9FF7CD4530BD6D1 /* CaptionsImportView.swift */; };
+		9C3D4E5F60718293A0B1C2D3E /* ImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1B2C3D4E5F6071890A1B2C /* ImportView.swift */; };
+		AD4E5F60718293A0B1C2D3E4F /* PaprikaImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B2C3D4E5F60718290A1B2C3D /* PaprikaImport.swift */; };
 		E3C48E8CF0791DCCD3666AF9 /* StepTimerParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B399F5950B23BA7D5BCE68A9 /* StepTimerParser.swift */; };
 		ED161FD915352262442B6E53 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 081C173788EB54C1887C759B /* PrivacyInfo.xcprivacy */; };
 		EFBA33FAABB8583B8F213106 /* IngredientParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F6210C0ADC1C8C59178469B /* IngredientParser.swift */; };
@@ -184,6 +186,8 @@
 		8EF78B647256803BE6FD1BEB /* KeepCookingWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KeepCookingWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		92B2640C9446D486B82020C3 /* recipe-12.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "recipe-12.json"; sourceTree = "<group>"; };
 		97BCB550D9FF7CD4530BD6D1 /* CaptionsImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptionsImportView.swift; sourceTree = "<group>"; };
+		7A1B2C3D4E5F6071890A1B2C /* ImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportView.swift; sourceTree = "<group>"; };
+		8B2C3D4E5F60718290A1B2C3D /* PaprikaImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaprikaImport.swift; sourceTree = "<group>"; };
 		A5C9C6D250C6D1A9CA3C5206 /* recipe-14-dupe.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "recipe-14-dupe.json"; sourceTree = "<group>"; };
 		A9C3A3E566A0A70144AE964C /* SyncEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncEngineTests.swift; sourceTree = "<group>"; };
 		AB13E4BF125192FE69877AD1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -402,6 +406,8 @@
 				7F6210C0ADC1C8C59178469B /* IngredientParser.swift */,
 				ACD36CEE15F0BF13B0F9EF70 /* IngredientParserTests.swift */,
 				E2A8C22786FA68F1E6CC4BC9 /* OCRScanView.swift */,
+				7A1B2C3D4E5F6071890A1B2C /* ImportView.swift */,
+				8B2C3D4E5F60718290A1B2C3D /* PaprikaImport.swift */,
 			);
 			path = Ingest;
 			sourceTree = "<group>";
@@ -740,6 +746,8 @@
 				82F6F80696416C2829C7B9C2 /* LibraryViews.swift in Sources */,
 				723BC5F8FED26ECCD3C508AA /* Models.swift in Sources */,
 				D69B64F308EF648A7093EFA9 /* OCRScanView.swift in Sources */,
+				9C3D4E5F60718293A0B1C2D3E /* ImportView.swift in Sources */,
+				AD4E5F60718293A0B1C2D3E4F /* PaprikaImport.swift in Sources */,
 				8F6BC75DE7F90D499F8E5978 /* PlanAggregation.swift in Sources */,
 				68A9075E61B2A5DBC2A7CF7A /* MenuPlanning.swift in Sources */,
 				B8E4DA2E3C5F59A1B2D6E8F33 /* MenusPaprikaViews.swift in Sources */,

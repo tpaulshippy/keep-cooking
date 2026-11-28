@@ -18,6 +18,8 @@ public enum ClipSource: String, Sendable, Codable {
     case youtube
     case ocr
     case clipboard
+    case text
+    case photo
 }
 
 public struct ClipRequest: Sendable, Codable {

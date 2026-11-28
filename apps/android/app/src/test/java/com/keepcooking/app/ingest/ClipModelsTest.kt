@@ -7,7 +7,7 @@ import org.junit.Test
 
 /**
  * Wire-value tests for the clip contract (packages/contracts/openapi.yaml:
- * ClipRequest.source in [url, tiktok, instagram, youtube, ocr, clipboard],
+ * ClipRequest.source in [url, tiktok, instagram, youtube, ocr, clipboard, text, photo],
  * ClipReport.strategy in [jsonld, reader, caption, ocr]).
  * Without @SerialName the Kotlin entries serialize as "URL"/"TIKTOK"/... and
  * the server (zod enum) rejects the request while lowercase responses fail
@@ -34,6 +34,14 @@ class ClipModelsTest {
             """{"url":"https://example.com/r","source":"url"}""",
         )
         assertEquals(ClipSource.URL, req.source)
+        assertEquals(
+            ClipSource.TEXT,
+            json.decodeFromString(ClipRequest.serializer(), """{"source":"text"}""").source,
+        )
+        assertEquals(
+            ClipSource.PHOTO,
+            json.decodeFromString(ClipRequest.serializer(), """{"source":"photo"}""").source,
+        )
     }
 
     @Test fun `clip strategy decodes lowercase`() {
