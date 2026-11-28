@@ -1,5 +1,6 @@
 package com.keepcooking.app.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import kotlinx.serialization.Serializable
@@ -77,6 +78,8 @@ data class RecipeEntity(
     val photoOriginal: String? = null,
     val photoLarge1024: String? = null,
     val photoThumb: String? = null,
+    @ColumnInfo(defaultValue = "''")
+    val nutritionText: String = "",
     val updatedAt: Long = System.currentTimeMillis(),
     val deviceId: String = "",
     val deleted: Boolean = false,

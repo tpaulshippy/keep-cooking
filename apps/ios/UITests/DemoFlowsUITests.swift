@@ -14,6 +14,14 @@ final class DemoFlowsUITests: XCTestCase {
 
     // MARK: - Helpers
 
+    /// Waits until the element no longer exists (DisclosureGroup collapse, sheet dismiss).
+    private func waitGone(_ element: XCUIElement, _ message: String, timeout: TimeInterval = 5) {
+        let exp = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: element)
+        let result = XCTWaiter().wait(for: [exp], timeout: timeout)
+        XCTAssertEqual(result, .completed, message)
+    }
+
     /// Any element carrying the given accessibility identifier.
     private func id(_ app: XCUIApplication, _ identifier: String) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: identifier).firstMatch
@@ -153,5 +161,101 @@ final class DemoFlowsUITests: XCTestCase {
         let next = app.buttons["Next"]
         if next.waitForExistence(timeout: 5) { next.tap() }
         sleep(2)
+    }
+
+    // MARK: 4 — nutrition-panel: edit nutrition text, save, collapse/expand.
+
+    func testNutritionPanel() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        wait(id(app, "recipe-list"), "seeded recipe list missing")
+        let firstRecipe = id(app, "recipe-list").descendants(matching: .button).firstMatch
+        wait(firstRecipe, "no recipe row")
+        firstRecipe.tap()
+
+        // Open the editor and fill the Nutrition TextEditor.
+        let edit = id(app, "edit-recipe-button")
+        wait(edit, "Edit button missing")
+        edit.tap()
+        let editor = id(app, "recipe-editor")
+        wait(editor, "recipe editor sheet missing")
+
+        // The editor's Nutrition section starts collapsed: expand it.
+        let nutritionSection = id(app, "recipe-editor-section-nutrition")
+        let nutritionField = app.textViews["recipe-editor-nutrition-text"]
+        if !nutritionField.waitForExistence(timeout: 5) {
+            wait(nutritionSection, "editor nutrition section missing")
+            nutritionSection.tap()
+        }
+        for _ in 0..<6 where !nutritionField.isHittable {
+            app.swipeUp()
+            sleep(1)
+        }
+        wait(nutritionField, "editor nutrition TextEditor missing")
+        nutritionField.tap()
+        // Replace any seeded text so reruns stay deterministic.
+        if let current = nutritionField.value as? String, !current.isEmpty {
+            nutritionField.press(forDuration: 1.1)
+            let selectAll = app.menuItems["Select All"]
+            if selectAll.waitForExistence(timeout: 3) {
+                selectAll.tap()
+            }
+        }
+        nutritionField.typeText("220 kcal test nutrition")
+        sleep(1)
+
+        // Dismiss the keyboard (nav-bar tap, ocr-test pattern) so Save is tappable.
+        if app.keyboards.count > 0 {
+            app.navigationBars.staticTexts["Edit Recipe"].tap()
+            sleep(1)
+        }
+        let save = app.buttons["recipe-editor-save"]
+        wait(save, "editor Save button missing")
+        save.tap()
+
+        // Editor dismisses back to detail; the panel shows the saved text.
+        let panel = id(app, "nutrition-panel")
+        wait(panel, "nutrition panel missing after editor dismiss")
+        for _ in 0..<6
+            where !app.staticTexts.containing(
+                NSPredicate(format: "label CONTAINS '220 kcal test nutrition'")).firstMatch.isHittable {
+            app.swipeUp()
+            sleep(1)
+        }
+        let nutritionText = app.staticTexts.containing(
+            NSPredicate(format: "label CONTAINS '220 kcal test nutrition'")).firstMatch
+        wait(nutritionText, "saved nutrition text missing from panel")
+
+        // Collapse the DisclosureGroup: the text disappears.
+        let headerButton = panel.descendants(matching: .button).firstMatch
+        let header: XCUIElement =
+            headerButton.waitForExistence(timeout: 5) ? headerButton : app.staticTexts["Nutrition"]
+        wait(header, "Nutrition DisclosureGroup header missing")
+        if !header.isHittable { app.swipeUp(); sleep(1) }
+        header.tap()
+        waitGone(
+            app.staticTexts.containing(
+                NSPredicate(format: "label CONTAINS '220 kcal test nutrition'")).firstMatch,
+            "nutrition text still visible after collapse")
+
+        // Expand again: the text reappears.
+        let headerAgain = panel.descendants(matching: .button).firstMatch
+        let header2: XCUIElement =
+            headerAgain.waitForExistence(timeout: 5) ? headerAgain : app.staticTexts["Nutrition"]
+        wait(header2, "Nutrition DisclosureGroup header missing on re-expand")
+        header2.tap()
+        let nutritionTextAgain = app.staticTexts.containing(
+            NSPredicate(format: "label CONTAINS '220 kcal test nutrition'")).firstMatch
+        wait(nutritionTextAgain, "nutrition text missing after re-expand")
+
+        app.swipeUp()
+        sleep(1)
+        app.swipeUp()
+        sleep(1)
+        let shot = app.screenshot()
+        let url = URL(fileURLWithPath: "/tmp/kc-nutrition-ios.png")
+        try? shot.pngRepresentation.write(to: url)
+        add(XCTAttachment(screenshot: shot))
     }
 }

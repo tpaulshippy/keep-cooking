@@ -40,6 +40,10 @@ let editingPantryId: string | null = null;
 /** Shopping-list item (original index) with its quantity/aisle editor open. */
 let editingItemIdx: number | null = null;
 
+/** Nutrition panel open state; viewRecipeDetail re-renders on every ingredient
+ *  or step edit, so the user's collapse choice lives here (default expanded). */
+let nutritionOpen = true;
+
 /** Live transport: every entity maps to its real contract CRUD endpoint. */
 const webTransport: PushTransport = {
   update: (entity, id, input) => {
@@ -675,10 +679,13 @@ function viewRecipeDetail(id: string): void {
   <h2>Steps</h2>
   <ol>${steps.map((s) => `<li>${esc(s.text)}</li>`).join('') || '<li>No steps yet.</li>'}</ol>
   ${typeof p.notes === 'string' && p.notes ? `<h2>Notes</h2><p>${esc(p.notes)}</p>` : ''}
-  ${typeof p.nutritionText === 'string' && p.nutritionText ? `<h2>Nutrition</h2><p>${esc(p.nutritionText)}</p>` : ''}
+  <details id="nutrition"${nutritionOpen ? ' open' : ''}><summary>Nutrition</summary>${typeof p.nutritionText === 'string' && p.nutritionText.trim() ? `<p>${esc(p.nutritionText)}</p>` : `<p class="muted">No nutrition info yet.</p>`}</details>
   <p><a href="${href('/cook/' + id)}">Start cook mode</a> · <a href="${href('/recipes/' + id + '/edit')}">Edit recipe</a> · <a href="${href('/recipes')}">Back</a></p>
   <button id="del" type="button">Delete recipe</button>`);
   hydrateRecipePhotos();
+  document.getElementById('nutrition')?.addEventListener('toggle', (e) => {
+    nutritionOpen = (e.target as HTMLDetailsElement).open;
+  });
   document.getElementById('del')!.addEventListener('click', () => {
     store.remove('recipe', id);
     navigate('/recipes');

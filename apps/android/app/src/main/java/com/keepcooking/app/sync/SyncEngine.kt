@@ -231,6 +231,7 @@ class SyncEngine(
             // a later full recipe envelope converges via normal header LWW.
         }
         val photos = p["photoKeys"]?.takeIf { it != JsonNull }?.jsonObject
+        val existingRow = database.recipes().byId(env.id)
         database.recipes().upsert(
             RecipeEntity(
                 id = env.id,
@@ -241,21 +242,23 @@ class SyncEngine(
                 prepMinutes = p.int("prepMinutes"),
                 cookMinutes = p.int("cookMinutes"),
                 rating = p.dbl("rating"),
-                isFavorite = p.bool("isFavorite") ?: false,
+                isFavorite = p["isFavorite"]?.takeIf { it != JsonNull }?.jsonPrimitive?.booleanOrNull ?: existingRow?.isFavorite ?: false,
                 source = p.str("source") ?: "",
                 sourceUrl = p.str("sourceUrl") ?: "",
                 categoriesJson = categoriesJsonOf(p),
                 photoOriginal = photos?.str("original"),
                 photoLarge1024 = photos?.str("large1024"),
                 photoThumb = photos?.str("thumb"),
+                nutritionText = if (p.containsKey("nutritionText")) p.str("nutritionText") ?: "" else existingRow?.nutritionText ?: "",
                 updatedAt = remoteTs,
                 deviceId = env.deviceId,
                 deleted = env.deleted,
             ),
         )
         val did = env.deviceId
-        // Envelope-only extras (difficulty/notes/nutritionText/totalMinutes)
-        // have no Room columns: merge present keys into the per-recipe
+        // Envelope-only extras (difficulty/notes/totalMinutes, plus
+        // nutritionText which additionally has a Room column for the
+        // detail panel): merge present keys into the per-recipe
         // DataStore sidecar so the editor hydrates synced values (including
         // clears) instead of resurrecting stale local ones. Shells return
         // early above. A winning deleted envelope drops the sidecar so a

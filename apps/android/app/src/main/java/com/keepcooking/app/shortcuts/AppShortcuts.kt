@@ -249,6 +249,7 @@ object AppShortcuts {
                 if (recipe.prepMinutes != null) if (recipe.prepMinutes != null) put("prepMinutes", JsonPrimitive(recipe.prepMinutes))
                 if (recipe.cookMinutes != null) if (recipe.cookMinutes != null) put("cookMinutes", JsonPrimitive(recipe.cookMinutes))
                 if (recipe.rating != null) if (recipe.rating != null) put("rating", JsonPrimitive(recipe.rating))
+                put("nutritionText", JsonPrimitive(recipe.nutritionText))
                 put("ingredients", JsonArray(ingredients.map { ing ->
                     buildJsonObject {
                         put("id", JsonPrimitive(ing.id))

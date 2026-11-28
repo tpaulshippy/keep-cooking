@@ -21,6 +21,7 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 
 /**
  * File import — Paprika native (`.paprikarecipe`/`.paprikarecipes`), Paprika
@@ -734,9 +735,14 @@ suspend fun importParsed(
                 prepMinutes = r.prepMinutes ?: existing?.prepMinutes,
                 cookMinutes = r.cookMinutes ?: existing?.cookMinutes,
                 rating = r.rating ?: existing?.rating,
+                isFavorite = existing?.isFavorite ?: false,
                 source = r.source.ifBlank { existing?.source.orEmpty() },
                 sourceUrl = r.sourceUrl.ifBlank { existing?.sourceUrl.orEmpty() },
                 categoriesJson = JsonArray(tags.map { JsonPrimitive(it) }).toString(),
+                photoOriginal = existing?.photoOriginal,
+                photoLarge1024 = existing?.photoLarge1024,
+                photoThumb = existing?.photoThumb,
+                nutritionText = r.nutritionalInfo.ifBlank { existing?.nutritionText.orEmpty() },
                 updatedAt = now,
                 deviceId = deviceId,
             ),
@@ -765,6 +771,14 @@ suspend fun importParsed(
         )
         enqueue?.let { send ->
             runCatching {
+                // Full envelope re-read from Room so payload copies match the
+                // rows exactly (merge-survivor pattern in NavGraph).
+                val saved = db.recipes().byId(recipeId)
+                val finalIngredients = db.ingredients().forRecipe(recipeId)
+                val finalSteps = db.steps().forRecipe(recipeId)
+                val cats = runCatching {
+                    Json.parseToJsonElement(saved?.categoriesJson ?: "[]").jsonArray
+                }.getOrDefault(JsonArray(emptyList()))
                 send(
                     SyncEnvelopeDto(
                         id = recipeId,
@@ -773,9 +787,51 @@ suspend fun importParsed(
                         entity = "recipe",
                         payload = kotlinx.serialization.json.buildJsonObject {
                             put("id", JsonPrimitive(recipeId))
-                            put("householdId", JsonPrimitive("hh-demo"))
-                            put("title", JsonPrimitive(r.title))
-                            put("servings", JsonPrimitive(r.servings))
+                            put("householdId", JsonPrimitive(saved?.householdId ?: "hh-demo"))
+                            put("title", JsonPrimitive(saved?.title ?: r.title))
+                            put("description", JsonPrimitive(saved?.recipeDescription.orEmpty()))
+                            put("servings", JsonPrimitive(saved?.servings ?: r.servings))
+                            saved?.prepMinutes?.let { put("prepMinutes", JsonPrimitive(it)) }
+                            saved?.cookMinutes?.let { put("cookMinutes", JsonPrimitive(it)) }
+                            saved?.rating?.let { put("rating", JsonPrimitive(it)) }
+                            put("source", JsonPrimitive(saved?.source.orEmpty()))
+                            put("sourceUrl", JsonPrimitive(saved?.sourceUrl.orEmpty()))
+                            put("categories", cats)
+                            put("isFavorite", JsonPrimitive(saved?.isFavorite ?: false))
+                            put(
+                                "photoKeys",
+                                kotlinx.serialization.json.buildJsonObject {
+                                    put("original", JsonPrimitive(saved?.photoOriginal ?: ""))
+                                    put("large1024", JsonPrimitive(saved?.photoLarge1024 ?: ""))
+                                    put("thumb", JsonPrimitive(saved?.photoThumb ?: ""))
+                                },
+                            )
+                            put("nutritionText", JsonPrimitive(saved?.nutritionText.orEmpty()))
+                            put(
+                                "ingredients",
+                                JsonArray(
+                                    finalIngredients.map { ing ->
+                                        kotlinx.serialization.json.buildJsonObject {
+                                            put("id", JsonPrimitive(ing.id))
+                                            put("name", JsonPrimitive(ing.name))
+                                            put("display", JsonPrimitive(ing.display))
+                                            put("position", JsonPrimitive(ing.position))
+                                        }
+                                    },
+                                ),
+                            )
+                            put(
+                                "steps",
+                                JsonArray(
+                                    finalSteps.map { step ->
+                                        kotlinx.serialization.json.buildJsonObject {
+                                            put("id", JsonPrimitive(step.id))
+                                            put("position", JsonPrimitive(step.position))
+                                            put("text", JsonPrimitive(step.text))
+                                        }
+                                    },
+                                ),
+                            )
                         },
                     ),
                 )
