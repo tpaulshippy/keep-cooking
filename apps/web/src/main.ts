@@ -196,16 +196,13 @@ function dropRecipePhoto(img: HTMLImageElement): void {
   img.remove();
 }
 
-/** Styled initial tile rendered under list-row photos: always visible, so
- *  rows look designed even when the photo bytes are missing. Removed once
- *  the real image loads. */
-function fallbackThumb(title: string): string {
-  const ch = (title.trim()[0] ?? '•').toUpperCase();
-  const hues = [16, 36, 96, 160, 200, 262, 300];
-  let h = 0;
-  for (const c of title) h = (h * 31 + (c.codePointAt(0) ?? 0)) % 997;
-  const hue = hues[h % hues.length];
-  return `<span class="recipe-thumb recipe-thumb--fallback" style="background:hsl(${hue} 45% 85%)" aria-hidden="true">${esc(ch)}</span>`;
+/** Default recipe tile (parity with the iOS list placeholder): a fork-and-knife
+ *  glyph in accent orange on a light-orange rounded tile. Rendered under
+ *  list-row photos and kept when the photo bytes are missing; removed once
+ *  the real image loads. Inline SVG (lucide-style utensils strokes) since
+ *  the web has no SF Symbols. */
+function fallbackThumb(): string {
+  return `<span class="recipe-thumb recipe-thumb--fallback" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg></span>`;
 }
 
 /** Number field helper: blank/invalid -> undefined (field left unset). */
@@ -252,7 +249,7 @@ function viewHome(): void {
     const title = p.title ?? r.id;
     const key = recipePhotoKey(p, 'thumb');
     const thumb = key ? `<img class="recipe-thumb" data-photo-key="${esc(key)}" alt="" loading="lazy" hidden />` : '';
-    return `<li class="recipe-card">${fallbackThumb(title)}${thumb}<a href="${href('/recipes/' + r.id)}">${esc(title)}</a></li>`;
+    return `<li class="recipe-card">${fallbackThumb()}${thumb}<a href="${href('/recipes/' + r.id)}">${esc(title)}</a></li>`;
   }).join('') || '<li>No recipes yet.</li>'}</ul>
   <p><a href="${href('/ingest')}">Clip a recipe</a> · <a href="${href('/plan')}">Plan the week</a></p>`);
   hydrateRecipePhotos();
@@ -271,7 +268,7 @@ function libraryResultsHtml(query: string): string {
     const title = p.title ?? r.id;
     const key = recipePhotoKey(p, 'thumb');
     const thumb = key ? `<img class="recipe-thumb" data-photo-key="${esc(key)}" alt="" loading="lazy" hidden />` : '';
-    return `<li class="recipe-card">${fallbackThumb(title)}${thumb}<span><a href="${href('/recipes/' + r.id)}">${esc(title)}</a> <span class="muted">serves ${esc(p.servings ?? 4)}</span> <a href="${href('/cook/' + r.id)}">Cook</a></span></li>`;
+    return `<li class="recipe-card">${fallbackThumb()}${thumb}<span><a href="${href('/recipes/' + r.id)}">${esc(title)}</a> <span class="muted">serves ${esc(p.servings ?? 4)}</span> <a href="${href('/cook/' + r.id)}">Cook</a></span></li>`;
   }).join('') || '<li>No matches.</li>';
 }
 
