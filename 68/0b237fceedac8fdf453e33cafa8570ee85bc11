@@ -1,0 +1,14 @@
+apps/ios/Core/Models.swift
+  h_6bbd00fe0a456a 104-112,139-141,162-164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "680b237fceedac8fdf453e33cafa8570ee85bc11",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
