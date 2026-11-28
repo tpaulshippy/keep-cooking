@@ -142,3 +142,25 @@ describe('reconcileLocalId', () => {
     expect(local.id).toBe('local-id'); // original envelope untouched
   });
 });
+
+describe('serverKnown provenance', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('marks ids seen via applyRemote, never purely local upserts', () => {
+    const store = new Store();
+    store.clearAll();
+    store.upsert('recipe', 'local-1', { title: 'Local' });
+    expect(store.isServerKnown('recipe', 'local-1')).toBe(false);
+    store.applyRemote(env('srv-1', '2026-04-01T00:00:00.000Z', 'Shared', false, 'other-device'));
+    expect(store.isServerKnown('recipe', 'srv-1')).toBe(true);
+    // Entity-scoped: the same id under another entity is a different record.
+    expect(store.isServerKnown('plan', 'srv-1')).toBe(false);
+  });
+
+  it('survives reload via localStorage', () => {
+    const store = new Store();
+    store.clearAll();
+    store.applyRemote(env('srv-9', '2026-04-01T00:00:00.000Z', 'Shared', false, 'other-device'));
+    expect(new Store().isServerKnown('recipe', 'srv-9')).toBe(true);
+  });
+});

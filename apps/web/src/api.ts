@@ -87,6 +87,11 @@ const PUB_KEY = 'kc.devicePub';
 const DEVICE_ID_KEY = 'kc.deviceId';
 const ENROLLED_KEY = 'kc.deviceEnrolled';
 
+/** Enrollment belongs to the selected backend: flag is keyed by normalized base. */
+function enrolledKeyFor(base: string): string {
+  return `${ENROLLED_KEY}:${base.replace(/\/+$/, '')}`;
+}
+
 export function getDeviceId(): string | null {
   try {
     return localStorage.getItem(DEVICE_ID_KEY);
@@ -95,10 +100,10 @@ export function getDeviceId(): string | null {
   }
 }
 
-/** True only after a successful POST /v2/devices (persisted flag). */
-export function isEnrolled(): boolean {
+/** True only after a successful POST /v2/devices against that base (persisted per-base flag). */
+export function isEnrolled(base = resolveApiBase()): boolean {
   try {
-    return localStorage.getItem(ENROLLED_KEY) === '1' && !!localStorage.getItem(DEVICE_ID_KEY);
+    return localStorage.getItem(enrolledKeyFor(base)) === '1' && !!localStorage.getItem(DEVICE_ID_KEY);
   } catch {
     return false;
   }
@@ -117,7 +122,13 @@ async function ensureKeypair(): Promise<{ deviceId: string; privateKey: CryptoKe
     );
     return { deviceId, privateKey };
   }
-  deviceId = crypto.randomUUID();
+  // Reuse the stored device id when present so pre-enrollment offline
+  // envelopes stamped with it stay attributable; only mint a fresh id when
+  // none is stored. (The 409-conflict rotation in enrollDevice is the sole
+  // rotation trigger.)
+  if (!deviceId) {
+    deviceId = crypto.randomUUID();
+  }
   const kp = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']) as CryptoKeyPair;
   const [rawPriv, rawPub] = await Promise.all([
     crypto.subtle.exportKey('pkcs8', kp.privateKey),
@@ -132,39 +143,59 @@ async function ensureKeypair(): Promise<{ deviceId: string; privateKey: CryptoKe
 }
 
 /** Enroll this device (POST /v2/devices stays open per contract). Tracks
- * enrollment with a persisted flag: a locally-known device id alone does NOT
- * count as enrolled, so a fresh browser always POSTs its public key. */
+ * enrollment per backend with a persisted flag: a locally-known device id
+ * alone does NOT count as enrolled, so a fresh browser — or a switch of the
+ * API-base override — always POSTs its public key to that server. */
 export async function enrollDevice(displayName?: string, base = resolveApiBase()): Promise<string> {
-  if (isEnrolled()) {
+  const normalizedBase = base.replace(/\/+$/, '');
+  const enrolledKey = enrolledKeyFor(normalizedBase);
+  if (isEnrolled(normalizedBase)) {
     return getDeviceId() as string;
   }
+  const postEnrollment = (id: string, pubB64: string) =>
+    fetch(`${normalizedBase}/v2/devices`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ deviceId: id, publicKey: pubB64 ?? '', displayName: displayName ?? 'web' }),
+    });
+  const readPubKey = (): string | null => {
+    try {
+      return localStorage.getItem(PUB_KEY);
+    } catch {
+      return null;
+    }
+  };
   let { deviceId, privateKey } = await ensureKeypair();
   void privateKey;
-  let pubB64: string | null = null;
-  try {
-    pubB64 = localStorage.getItem(PUB_KEY);
-  } catch { /* ignore */ }
+  let pubB64 = readPubKey();
   if (!pubB64) {
-    // Key material is incomplete (pre-flag install): rotate to a fresh
-    // keypair so the enrolled public key matches the signing key.
+    // Key material is incomplete: regenerate keys for the STORED device id
+    // (never rotate the id here — offline envelopes may already reference it).
+    try {
+      localStorage.removeItem(PRIV_KEY);
+    } catch { /* ignore */ }
+    const repaired = await ensureKeypair();
+    deviceId = repaired.deviceId;
+    pubB64 = readPubKey();
+  }
+  let res = await postEnrollment(deviceId, pubB64 ?? '');
+  if (res.status === 409) {
+    // deviceId is bound to a different key server-side: drop this identity
+    // (id + keypair + this base's enrolled flag), mint a fresh one, retry once.
     try {
       localStorage.removeItem(DEVICE_ID_KEY);
       localStorage.removeItem(PRIV_KEY);
+      localStorage.removeItem(PUB_KEY);
+      localStorage.removeItem(enrolledKey);
     } catch { /* ignore */ }
     const fresh = await ensureKeypair();
     deviceId = fresh.deviceId;
-    try {
-      pubB64 = localStorage.getItem(PUB_KEY);
-    } catch { /* ignore */ }
+    pubB64 = readPubKey();
+    res = await postEnrollment(deviceId, pubB64 ?? '');
   }
-  const res = await fetch(`${base}/v2/devices`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ deviceId, publicKey: pubB64 ?? '', displayName: displayName ?? 'web' }),
-  });
   if (!res.ok) throw new Error(`enroll failed: ${res.status}`);
   try {
-    localStorage.setItem(ENROLLED_KEY, '1');
+    localStorage.setItem(enrolledKey, '1');
   } catch { /* ignore */ }
   return deviceId;
 }

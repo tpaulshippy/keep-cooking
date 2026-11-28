@@ -11,6 +11,13 @@ import { pushOutbox, type PushTransport } from './sync';
 const store = new Store();
 const root = document.getElementById('app')!;
 
+/** Active cook-mode countdown; cleared before starting another timer so two
+ *  timers never write to the same #timer element. */
+let activeTimer: number | undefined;
+
+/** Selected shopping list; defaults to the most recent list. */
+let selectedListId: string | null = null;
+
 /** Live transport: every entity maps to its real contract CRUD endpoint. */
 const webTransport: PushTransport = {
   update: (entity, id, input) => {
@@ -190,12 +197,17 @@ function viewCook(id: string): void {
       const label = btn.dataset.label ?? 'Timer';
       const status = document.getElementById('timer')!;
       const end = Date.now() + secs * 1000;
+      if (activeTimer !== undefined) window.clearInterval(activeTimer);
       status.textContent = `${label}: ${secs}s remaining`;
       const tick = window.setInterval(() => {
         const left = Math.max(0, Math.round((end - Date.now()) / 1000));
         status.textContent = left > 0 ? `${label}: ${left}s remaining` : `${label} done.`;
-        if (left <= 0) window.clearInterval(tick);
+        if (left <= 0) {
+          window.clearInterval(tick);
+          if (activeTimer === tick) activeTimer = undefined;
+        }
       }, 500);
+      activeTimer = tick;
     });
   });
 }
@@ -275,11 +287,14 @@ function viewPlan(): void {
 // ---- Shop / Pantry ----
 function viewLists(): void {
   const lists = visible(store.state.lists);
-  const current = lists[lists.length - 1];
+  if (selectedListId && !lists.some((l) => l.id === selectedListId)) selectedListId = null;
+  const current = lists.find((l) => l.id === selectedListId) ?? lists[lists.length - 1];
+  if (current) selectedListId = current.id;
   const cp = current?.payload as { name?: string; items?: { name: string; quantity?: string; aisle?: string; checked?: boolean }[] } | undefined;
   const rows = sortedRows(cp?.items ?? []);
   shell(`<h1>Shopping lists</h1>
   <form id="newlist"><label>Name <input name="name" required value="Weekly shop" /></label><button type="submit">New list</button></form>
+  <ul>${lists.map((l) => `<li><button type="button" data-list="${l.id}"${l.id === current?.id ? ' aria-current="true"' : ''}>${esc((l.payload as { name?: string }).name ?? l.id)}</button></li>`).join('') || '<li>No lists yet.</li>'}</ul>
   <h2>Aisle-sorted pantry</h2>
   <form id="addpantry"><label>Item <input name="name" required /></label><label>Qty <input name="quantity" /></label><button type="submit">Add to pantry</button></form>
   <ul>${visible(store.state.pantry).map((pi) => `<li>${esc((pi.payload as { name?: string }).name)} <span class="muted">${esc((pi.payload as { quantity?: string }).quantity ?? '')}</span></li>`).join('') || '<li>Pantry empty.</li>'}</ul>
@@ -288,8 +303,15 @@ function viewLists(): void {
   (document.getElementById('newlist') as HTMLFormElement).addEventListener('submit', (e) => {
     e.preventDefault();
     const name = String(new FormData(e.target as HTMLFormElement).get('name'));
-    store.upsert('list', '', { name, items: [] });
+    const env = store.upsert('list', '', { name, items: [] });
+    selectedListId = env.id;
     render();
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-list]').forEach((b) => {
+    b.addEventListener('click', () => {
+      selectedListId = b.dataset.list!;
+      render();
+    });
   });
   (document.getElementById('addpantry') as HTMLFormElement).addEventListener('submit', (e) => {
     e.preventDefault();
@@ -345,6 +367,9 @@ function viewMenus(): void {
     const days = weekDates();
     if (toList) {
       const ings = entries.flatMap((en) => {
+        // This-week entries only, mirroring the apply-to-plan branch.
+        const off = en.dayOffset ?? 0;
+        if (!Number.isInteger(off) || off < 0 || off > 6) return [];
         const r = recipes.find((x) => x.id === en.recipeId);
         const payload = r?.payload as { servings?: number; ingredients?: { name: string; quantity?: number; unit?: string; display?: string }[] } | undefined;
         if (!payload) return [];
@@ -357,6 +382,7 @@ function viewMenus(): void {
       return;
     }
     let skipped = 0;
+    const validMeals = new Set(['breakfast', 'lunch', 'dinner', 'snack']);
     for (const en of entries) {
       const off = en.dayOffset ?? 0;
       // Never collapse out-of-week entries onto Sunday: skip visibly.
@@ -364,14 +390,20 @@ function viewMenus(): void {
         skipped++;
         continue;
       }
+      // Only the plan meal enum is displayable and API-accepted: skip visibly.
+      const meal = en.meal ?? 'dinner';
+      if (!validMeals.has(meal)) {
+        skipped++;
+        continue;
+      }
       store.upsert('plan', '', {
-        date: days[off], meal: en.meal ?? 'dinner', recipeId: en.recipeId ?? null,
+        date: days[off], meal, recipeId: en.recipeId ?? null,
         servings: en.servings ?? 4, ...(en.note ? { note: en.note } : {}),
       });
     }
     if (skipped > 0) {
       document.getElementById('menustatus')!.textContent =
-        `Applied ${entries.length - skipped} of ${entries.length} entries — ${skipped} outside this week skipped.`;
+        `Applied ${entries.length - skipped} of ${entries.length} entries — ${skipped} outside this week or with unknown meal skipped.`;
       return; // stay: the skip count must remain visible
     }
     navigate('/plan');
@@ -492,21 +524,38 @@ function viewSettings(): void {
   document.getElementById('push')!.addEventListener('click', async () => {
     const result = await pushOutbox(store, webTransport);
     const remaining = store.state.outbox.length;
+    // render() rebuilds the view (and its empty status), so set status after.
+    render();
     status().textContent = result.failed
       ? `Pushed ${result.pushed} envelope(s); ${remaining} retained offline — will retry.`
       : result.pushed
         ? `Pushed ${result.pushed} envelope(s).`
         : 'Outbox empty — nothing to push.';
-    render();
   });
   document.getElementById('pull')!.addEventListener('click', async () => {
     try {
-      const recipes = await api.listRecipes();
+      const [recipes, lists, pantry, plans, menus] = await Promise.all([
+        api.listRecipes(), api.listLists(), api.listPantry(), api.listPlans(), api.listMenus(),
+      ]);
+      const now = new Date().toISOString();
       for (const r of recipes) {
-        store.applyRemote({ id: r.id, updatedAt: r.updatedAt ?? new Date().toISOString(), deviceId: r.deviceId ?? 'server', entity: 'recipe', payload: r } as SyncEnvelope);
+        store.applyRemote({ id: r.id, updatedAt: r.updatedAt ?? now, deviceId: r.deviceId ?? 'server', entity: 'recipe', payload: r } as SyncEnvelope);
       }
-      status().textContent = `Pulled ${recipes.length} recipe(s).`;
+      for (const l of lists) {
+        store.applyRemote({ id: l.id, updatedAt: l.updatedAt ?? now, deviceId: (l.deviceId as string | undefined) ?? 'server', entity: 'list', payload: l } as SyncEnvelope);
+      }
+      for (const pi of pantry) {
+        store.applyRemote({ id: pi.id, updatedAt: pi.updatedAt ?? now, deviceId: (pi.deviceId as string | undefined) ?? 'server', entity: 'pantryItem', payload: pi } as SyncEnvelope);
+      }
+      for (const pl of plans) {
+        store.applyRemote({ id: pl.id, updatedAt: pl.updatedAt ?? now, deviceId: (pl.deviceId as string | undefined) ?? 'server', entity: 'plan', payload: pl } as SyncEnvelope);
+      }
+      for (const m of menus) {
+        store.applyRemote({ id: m.id, updatedAt: m.updatedAt ?? now, deviceId: (m.deviceId as string | undefined) ?? 'server', entity: 'menu', payload: m } as SyncEnvelope);
+      }
+      // render() rebuilds the view (and its empty status), so set status after.
       render();
+      status().textContent = `Pulled ${recipes.length} recipe(s), ${lists.length} list(s), ${pantry.length} pantry item(s), ${plans.length} plan(s), ${menus.length} menu(s).`;
     } catch (err) {
       status().textContent = `Pull failed (offline?): ${err instanceof Error ? err.message : err}`;
     }

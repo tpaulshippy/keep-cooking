@@ -136,7 +136,9 @@ the same flow on iOS + Android against Room/SwiftData offline-first:
   in front of the same single Worker + D1 + R2 — no new infra). One-time
   prerequisite: a Cloudflare Worker Route `keepcooking.app/api/*` → the
   `keep-cooking-api` Worker (plus DNS for `keepcooking.app`) must exist
-  before this base URL works — until then keep using the workers.dev URL.
+  before this base URL works — until then keep using the workers.dev origin
+  with the same `/api` prefix (`https://keep-cooking-api.<account>.workers.dev/api`,
+  not the bare origin: this Worker serves `/api/…` only, so root paths 404).
 - The Worker serves `/api/…` only (no root-path fallback). Old
   `https://keep-cooking-api.<account>.workers.dev` root-path clients 404 —
   expected: pre-launch, single tester, just update the base URL.

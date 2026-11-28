@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { Store } from './store';
-import { pushOutbox, toRecordInput, type PushTransport, type ServerRecord } from './sync';
+import type { EntityKind } from './store';
+import { pushOutbox, toRecordInput, contentSignature, type PushTransport, type ServerRecord } from './sync';
 
 if (typeof localStorage === 'undefined') {
   const mem = new Map<string, string>();
@@ -33,8 +34,51 @@ describe('toRecordInput', () => {
   });
 });
 
+describe('contentSignature', () => {
+  it('scopes every entity to householdId: same content in another household must not match', () => {
+    const cases: [EntityKind, Record<string, unknown>][] = [
+      ['recipe', { title: 'T', servings: 4, ingredients: [{ name: 'Egg' }], steps: ['stir'] }],
+      ['list', { name: 'N', items: [{ name: 'Milk' }] }],
+      ['pantryItem', { name: 'Flour', quantity: '1', location: 'Shelf' }],
+      ['plan', { date: '2026-01-01', meal: 'dinner', recipeId: 'r' }],
+      ['menu', { name: 'M', entries: [{ dayOffset: 0, meal: 'dinner', recipeId: 'r' }] }],
+    ];
+    for (const [entity, input] of cases) {
+      const a = contentSignature(entity, { ...input, householdId: 'hh-personal' });
+      const b = contentSignature(entity, { ...input, householdId: 'hh-shared' });
+      expect(a, entity).not.toBe(b);
+      expect(contentSignature(entity, { ...input, householdId: 'hh-personal' }), entity).toBe(a);
+    }
+  });
+});
+
 describe('pushOutbox', () => {
   beforeEach(() => localStorage.clear());
+
+  it('does not adopt a same-content record from a different household', async () => {
+    const store = new Store();
+    store.clearAll();
+    const local = store.upsert('recipe', 'local-draft', { title: 'Shared', servings: 4, householdId: 'hh-personal' });
+    let creates = 0;
+    const transport = scripted({
+      update: async () => { throw notFound('recipes/local-draft'); },
+      // Same device, byte-identical content — but it belongs to the shared
+      // household, so it must not be adopted for the personal-household draft.
+      list: async () => [{
+        id: 'srv-shared', updatedAt: '2026-05-02T00:00:00.000Z', deviceId: local.deviceId,
+        title: 'Shared', servings: 4, householdId: 'hh-shared',
+      }],
+      create: async (_e, input): Promise<ServerRecord> => {
+        creates++;
+        return { id: 'srv-new', updatedAt: '2026-05-03T00:00:00.000Z', ...(input as object) };
+      },
+    });
+    const result = await pushOutbox(store, transport);
+    expect(result).toEqual({ pushed: 1, failed: false });
+    expect(creates).toBe(1); // an adoption would create nothing
+    expect(store.state.recipes.map((e) => e.id)).toEqual(['srv-new']);
+    expect(store.state.outbox).toHaveLength(0);
+  });
 
   it('only drains envelopes whose mutation succeeded (mixed outbox)', async () => {
     const store = new Store();
@@ -229,5 +273,89 @@ describe('pushOutbox', () => {
     expect(store.state.recipes).toHaveLength(1);
     expect(store.state.recipes[0].deleted).toBe(true); // tombstone preserved
     expect(store.state.outbox).toHaveLength(0);
+  });
+
+  it('preserves a newer queued revision when an earlier update echo arrives', async () => {
+    const store = new Store();
+    store.clearAll();
+    store.upsert('recipe', 'r1', { title: 'v1' });
+    store.upsert('recipe', 'r1', { title: 'v2' });
+    store.state.outbox[0] = { ...store.state.outbox[0], updatedAt: '2026-05-01T00:00:00.000Z' };
+    store.state.outbox[1] = { ...store.state.outbox[1], updatedAt: '2026-05-02T00:00:00.000Z' };
+    store.state.recipes = [{ ...store.state.recipes[0], updatedAt: '2026-05-02T00:00:00.000Z' }];
+    const sent: unknown[] = [];
+    const transport = scripted({
+      update: async (_e, _id, input) => {
+        sent.push((input as Record<string, unknown>).title);
+        if (sent.length === 1) {
+          // Fresh server timestamp: merging this echo via LWW would clobber
+          // the still-queued v2 content in the collection.
+          return { id: 'r1', updatedAt: '2026-05-03T00:00:00.000Z', ...(input as object) };
+        }
+        throw offline();
+      },
+    });
+    const result = await pushOutbox(store, transport);
+    expect(result).toEqual({ pushed: 1, failed: true });
+    expect(sent).toEqual(['v1', 'v2']); // the retry sends v2's content, not the v1 echo
+    // v1 acked, v2 retained — and the collection still shows the v2 edit,
+    // not the v1 echo.
+    expect(store.state.outbox.map((e) => e.updatedAt)).toEqual(['2026-05-02T00:00:00.000Z']);
+    expect((store.state.recipes[0].payload as { title: string }).title).toBe('v2');
+  });
+
+  it('honors a remote deletion instead of recreating an offline edit', async () => {
+    const store = new Store();
+    store.clearAll();
+    // Record previously pulled from the server, then edited offline.
+    store.applyRemote({
+      id: 'srv-1', updatedAt: '2026-04-01T00:00:00.000Z', deviceId: 'other-device',
+      entity: 'recipe', payload: { title: 'Shared' },
+    });
+    store.upsert('recipe', 'srv-1', { title: 'My offline edit' });
+    let creates = 0;
+    const transport = scripted({
+      update: async () => { throw notFound('recipes/srv-1'); },
+      list: async () => [], // server no longer has it: deleted on another device
+      create: async (): Promise<ServerRecord> => {
+        creates++;
+        return { id: 'srv-resurrected' };
+      },
+    });
+    const result = await pushOutbox(store, transport);
+    expect(result).toEqual({ pushed: 1, failed: false });
+    expect(creates).toBe(0); // must not resurrect the remote deletion
+    expect(store.state.outbox).toHaveLength(0);
+    // Tombstone: filtered from views, but the envelope still LWW-merges.
+    expect(store.state.recipes).toHaveLength(1);
+    expect(store.state.recipes[0].deleted).toBe(true);
+  });
+
+  it('joins an in-flight push instead of processing the queue twice', async () => {
+    const store = new Store();
+    store.clearAll();
+    store.upsert('recipe', 'r1', { title: 'Hi' });
+    let calls = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const transport = scripted({
+      update: async (_e, id, input) => {
+        calls++;
+        await gate; // hold the first push open so the second call overlaps it
+        return { id, updatedAt: '2026-05-03T00:00:00.000Z', ...(input as object) };
+      },
+    });
+    const first = pushOutbox(store, transport);
+    const second = pushOutbox(store, transport);
+    release();
+    const [r1, r2] = await Promise.all([first, second]);
+    expect(calls).toBe(1); // no double-processing, so no duplicate records
+    expect(r1).toEqual({ pushed: 1, failed: false });
+    expect(r2).toEqual(r1);
+    expect(store.state.outbox).toHaveLength(0);
+    // Guard released: a later push runs fresh.
+    store.upsert('recipe', 'r1', { title: 'Hi again' });
+    await expect(pushOutbox(store, transport)).resolves.toEqual({ pushed: 1, failed: false });
+    expect(calls).toBe(2);
   });
 });

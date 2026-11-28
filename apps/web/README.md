@@ -71,7 +71,9 @@ First paint is useful offline: the store ships with 3 seeded demo recipes.
 Push (`src/sync.ts`) attempts each queued envelope and acks only envelopes
 whose mutation actually succeeded, by `(id, updatedAt)` identity — failures
 stop the run and stay queued; update-404 falls back to create + reconcile
-with the server record so offline drafts never duplicate on pull; pull
+with the server record (an exact-single uncertain match is adopted, so
+routine offline drafts avoid duplicating on pull — ambiguous or unmatched
+drafts still create, and may duplicate); pull
 applies remote envelopes via LWW without re-queueing.
 
 ## Budget note

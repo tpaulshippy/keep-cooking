@@ -28,6 +28,15 @@ export interface StoreState {
   lists: SyncEnvelope[];
   pantry: SyncEnvelope[];
   outbox: SyncEnvelope[];
+  /**
+   * Local-create provenance: `${entity}:${id}` for every id ever observed
+   * from the server (pull or push echo). Persisted so an app reload can't
+   * mistake a previously-pulled record for a purely local create. Local
+   * upserts/removes never add entries. Used by the push path to tell "the
+   * server never had this id" (safe to create) from "the server had it and
+   * no longer does" (remote deletion — honor it, don't recreate).
+   */
+  serverKnown: Record<string, true>;
 }
 
 function load<T>(key: string, fallback: T): T {
@@ -140,6 +149,7 @@ export class Store {
       lists: load<SyncEnvelope[]>('lists', []),
       pantry: load<SyncEnvelope[]>('pantry', []),
       outbox: load<SyncEnvelope[]>('outbox', []),
+      serverKnown: load<Record<string, true>>('serverKnown', {}),
     };
     if (!recipes.length) save('recipes', this.state.recipes);
   }
@@ -151,6 +161,7 @@ export class Store {
     save('lists', this.state.lists);
     save('pantry', this.state.pantry);
     save('outbox', this.state.outbox);
+    save('serverKnown', this.state.serverKnown);
   }
 
   collectionKey(entity: EntityKind): CollectionKey {
@@ -197,6 +208,11 @@ export class Store {
     this.state[key] = (idx === -1 ? [...col, env] : col.map((e, i) => (i === idx ? env : e))) as never;
   }
 
+  /** True if this id was ever observed from the server (pull or push echo). */
+  isServerKnown(entity: EntityKind, id: string): boolean {
+    return this.state.serverKnown[`${entity}:${id}`] === true;
+  }
+
   /** Apply a remote envelope (pull): LWW merge, no outbox enqueue. When the
    * remote wins, queued local revisions of the same record at-or-before its
    * timestamp are superseded — drop them so the next push can't overwrite the
@@ -209,6 +225,11 @@ export class Store {
     const col = this.state[key] as SyncEnvelope[];
     const merged = mergeInto(col, env);
     this.state[key] = merged as never;
+    // Provenance regardless of the merge outcome: the server had this id at
+    // some point, so a later update-404 for it means remote deletion, not a
+    // never-pushed local create. (Push echoes also land here; they trivially
+    // describe server-held ids.)
+    this.state.serverKnown[`${env.entity}:${env.id}`] = true;
     if (opts?.pruneSuperseded === false) {
       this.persist();
       return;
@@ -253,7 +274,7 @@ export class Store {
   }
 
   clearAll(): void {
-    this.state = { recipes: [], plans: [], menus: [], lists: [], pantry: [], outbox: [] };
+    this.state = { recipes: [], plans: [], menus: [], lists: [], pantry: [], outbox: [], serverKnown: {} };
     this.persist();
   }
 }

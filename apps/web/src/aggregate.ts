@@ -7,8 +7,8 @@ export interface AggItem { name: string; quantity: string; aisle: string; recipe
 
 const AISLE_RULES: [RegExp, string][] = [
   [/frozen|ice cream|peas\b/i, 'Frozen'],
-  [/milk|cheese|yogurt|butter|cream|egg/i, 'Dairy'],
-  [/apple|banana|onion|garlic|tomato|lettuce|spinach|potato|carrot|lemon|herb|parsley|cilantro|basil/i, 'Produce'],
+  [/milk|cheese|yogurt|butter|cream|\beggs?\b/i, 'Dairy'],
+  [/apple|banana|onion|garlic|tomato|lettuce|spinach|potato|carrot|lemon|herb|parsley|cilantro|basil|eggplant/i, 'Produce'],
   [/chicken|beef|pork|fish|salmon|turkey|bacon|sausage/i, 'Meat'],
   [/bread|tortilla|bun|roll|bagel/i, 'Bakery'],
   [/flour|sugar|rice|pasta|spaghetti|noodle|oil|vinegar|spice|salt|pepper|bean|lentil|oat|cereal|honey/i, 'Dry Goods'],
@@ -19,6 +19,20 @@ export function guessAisle(name: string): string {
     if (re.test(name)) return aisle;
   }
   return 'Other';
+}
+
+/** Caption-ingested recipes store the whole ingredient line in `display`
+ * (e.g. display "200 g oats" alongside name "oats"). Strip a trailing
+ * ingredient name so the shopping quantity shows the amount, not
+ * "amount + name". Returns the stripped text (may be ''). */
+export function stripTrailingName(display: string, name: string): string {
+  const d = display.trim();
+  const n = name.trim();
+  if (!d || !n) return d;
+  if (d.toLowerCase().endsWith(n.toLowerCase())) {
+    return d.slice(0, d.length - n.length).trim();
+  }
+  return d;
 }
 
 /** Merge ingredients with the same normalized name+unit; quantities sum.
@@ -37,9 +51,15 @@ export function aggregateWeekToList(ingredients: AggIngredient[]): AggItem[] {
       : `${name.toLowerCase()}|${unit.toLowerCase()}`;
     const existing = byKey.get(key);
     if (!existing) {
+      const numericFallback = isNaN(qty) ? '' : unit ? `${trimNum(qty)} ${unit}`.trim() : `${trimNum(qty)}`;
+      let qtyText = numericFallback;
+      if (display) {
+        const stripped = stripTrailingName(display, name);
+        qtyText = stripped ? stripped : numericFallback;
+      }
       byKey.set(key, {
         name,
-        quantity: display ?? (isNaN(qty) ? '' : unit ? `${trimNum(qty)} ${unit}`.trim() : `${trimNum(qty)}`),
+        quantity: qtyText,
         aisle: guessAisle(name),
         recipeId: ing.recipeId ?? null,
         qtyNum: isNaN(qty) ? 0 : qty,

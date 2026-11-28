@@ -2,14 +2,16 @@
 // envelopes whose mutation actually succeeded, by (id, updatedAt) identity.
 // A failed envelope stops the run; it and everything behind it stay queued.
 // Update-404 falls back to create + reconcile (the server assigns its own
-// id), so offline-created records never duplicate on a later pull. Delete-404
-// counts as success (nothing left to delete).
+// id), but only for ids never observed from the server: a 404 for a
+// server-known id with no uncertain match means another device deleted it,
+// so the local record collapses to a tombstone (deleted, drained, never
+// recreated). Delete-404 counts as success (nothing left to delete).
 //
 // Retry-safety (no contract changes available — RecipeInput carries no client
 // idempotency key and the server stamps its own id/updatedAt): before
 // creating, a 404-envelope first lists server records and adopts an
-// EXACT-SINGLE match (same deviceId, byte-identical content signature, and
-// exactly one local peer with that content). That covers the committed-create-
+// EXACT-SINGLE match (same deviceId, byte-identical household-scoped content
+// signature, and exactly one local peer with that content). That covers the committed-create-
 // lost-response case. Zero or 2+ matches, or an already-ambiguous local state
 // (e.g. two intentional same-content drafts), fall back to create — the
 // status-quo duplicate risk, never a wrong merge.
@@ -38,13 +40,19 @@ export function toRecordInput(payload: unknown): Record<string, unknown> {
 }
 
 /** Canonical content string for cross-id duplicate detection. Both sides are
- * normalized so server defaults ('' / 4 / regenerated child ids) match. */
+ * normalized so server defaults ('' / 4 / regenerated child ids) match.
+ * householdId is part of every signature: same content in different
+ * households (e.g. personal + shared on one device) must never false-match.
+ * More fields = fewer adoptions; a missed match falls back to create, the
+ * status-quo risk, never a wrong merge. */
 export function contentSignature(entity: EntityKind, input: Record<string, unknown>): string {
+  const household = input.householdId ?? '';
   switch (entity) {
     case 'recipe': {
       const ings = (input.ingredients as Array<Record<string, unknown>> | undefined) ?? [];
       const steps = (input.steps as Array<Record<string, unknown> | string> | undefined) ?? [];
       return JSON.stringify({
+        h: household,
         t: input.title ?? '',
         s: input.servings ?? 4,
         i: ings.map((g) => [g.name ?? '', g.quantity ?? null, g.unit ?? '', g.display ?? '']),
@@ -54,20 +62,23 @@ export function contentSignature(entity: EntityKind, input: Record<string, unkno
     case 'list': {
       const items = (input.items as Array<Record<string, unknown>> | undefined) ?? [];
       return JSON.stringify({
+        h: household,
         n: input.name ?? '',
         i: items.map((it) => [it.name ?? '', it.quantity ?? '', it.aisle ?? '']),
       });
     }
     case 'pantryItem':
-      return JSON.stringify({ n: input.name ?? '', q: input.quantity ?? '', l: input.location ?? '' });
+      return JSON.stringify({ h: household, n: input.name ?? '', q: input.quantity ?? '', l: input.location ?? '' });
     case 'plan':
       return JSON.stringify({
+        h: household,
         d: input.date ?? '', m: input.meal ?? '', r: input.recipeId ?? null,
         n: input.note ?? '', s: input.servings ?? null,
       });
     case 'menu': {
       const entries = (input.entries as Array<Record<string, unknown>> | undefined) ?? [];
       return JSON.stringify({
+        h: household,
         n: input.name ?? '',
         e: entries.map((e) => [e.dayOffset ?? 0, e.meal ?? '', e.recipeId ?? '', e.servings ?? null]),
       });
@@ -140,7 +151,18 @@ async function pushOne(
   }
   try {
     const record = await transport.update(env.entity, env.id, input);
-    store.applyRemote(toEnvelope(env, record), { pruneSuperseded: false });
+    // The echo carries a fresh server timestamp: merging it blindly would
+    // LWW-clobber a newer local revision of the same record still queued
+    // behind this envelope (and that revision's follow-up push would then
+    // look stale). The collection already holds the newer local content, so
+    // when siblings remain queued, acknowledge this envelope without merging
+    // its echo; the sibling's own push applies its echo in turn.
+    const hasQueuedNewer = store.state.outbox.some(
+      (e) => e !== env && e.entity === env.entity && e.id === env.id,
+    );
+    if (!hasQueuedNewer) {
+      store.applyRemote(toEnvelope(env, record), { pruneSuperseded: false });
+    }
     store.drainOutbox([envIdentity(env)]);
     return true;
   } catch (err) {
@@ -168,6 +190,29 @@ async function pushOne(
       store.drainOutbox([{ id: server.id, updatedAt: env.updatedAt }]);
       return true;
     }
+    // No uncertain match. If this id was previously observed from the server
+    // (pulled or echoed — not a purely local create), the 404 means another
+    // device deleted it after this device's offline edit. Recreating under a
+    // new id would resurrect the deletion, so honor the remote delete: collapse
+    // the local record to a tombstone and drain without creating. deleted=true
+    // filters the record from views while the envelope still LWW-merges like
+    // any tombstone; pruneSuperseded:false leaves any newer queued revisions
+    // to 404-and-drain explicitly on their own turn rather than vanishing.
+    if (store.isServerKnown(env.entity, env.id)) {
+      store.applyRemote(
+        {
+          id: env.id,
+          updatedAt: new Date().toISOString(),
+          deviceId: env.deviceId,
+          deleted: true,
+          entity: env.entity,
+          payload: {},
+        },
+        { pruneSuperseded: false },
+      );
+      store.drainOutbox([envIdentity(env)]);
+      return true;
+    }
     const record = await transport.create(env.entity, input);
     const server = toEnvelope(env, record);
     store.reconcileLocalId(env.id, server, { pruneSuperseded: false });
@@ -180,17 +225,33 @@ async function pushOne(
 
 export interface PushResult { pushed: number; failed: boolean; }
 
-export async function pushOutbox(store: Store, transport: PushTransport): Promise<PushResult> {
-  const listed = new Map<EntityKind, ServerRecord[] | null>();
-  let pushed = 0;
-  // Always take the live head: an earlier reconcile in this run rewrites
-  // pending ids, and rewritten revisions must be pushed in the same run.
-  // Every success path drains its envelope, so this always terminates.
-  for (;;) {
-    const env = store.state.outbox[0];
-    if (!env) break;
-    if (await pushOne(store, transport, listed, env)) pushed++;
-    else return { pushed, failed: true }; // stop: this envelope and the rest stay queued
-  }
-  return { pushed, failed: false };
+// In-flight push per store: a second concurrent pushOutbox (e.g.
+// double-clicking Push) joins the running one instead of draining the queue
+// twice and duplicating 404-to-create records. Released in finally so a
+// throw can never wedge later pushes.
+const inFlight = new WeakMap<Store, Promise<PushResult>>();
+
+export function pushOutbox(store: Store, transport: PushTransport): Promise<PushResult> {
+  const running = inFlight.get(store);
+  if (running) return running;
+  const run = (async (): Promise<PushResult> => {
+    try {
+      const listed = new Map<EntityKind, ServerRecord[] | null>();
+      let pushed = 0;
+      // Always take the live head: an earlier reconcile in this run rewrites
+      // pending ids, and rewritten revisions must be pushed in the same run.
+      // Every success path drains its envelope, so this always terminates.
+      for (;;) {
+        const env = store.state.outbox[0];
+        if (!env) break;
+        if (await pushOne(store, transport, listed, env)) pushed++;
+        else return { pushed, failed: true }; // stop: this envelope and the rest stay queued
+      }
+      return { pushed, failed: false };
+    } finally {
+      inFlight.delete(store);
+    }
+  })();
+  inFlight.set(store, run);
+  return run;
 }

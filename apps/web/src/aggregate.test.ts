@@ -15,6 +15,13 @@ describe('guessAisle', () => {
   it('checks Frozen before Dairy', () => {
     expect(guessAisle('ice cream')).toBe('Frozen');
   });
+
+  it('bounds the egg token so eggplant is Produce', () => {
+    expect(guessAisle('egg')).toBe('Dairy');
+    expect(guessAisle('eggs')).toBe('Dairy');
+    expect(guessAisle('2 large eggs')).toBe('Dairy');
+    expect(guessAisle('eggplant')).toBe('Produce');
+  });
 });
 
 describe('aggregateWeekToList', () => {
@@ -55,6 +62,20 @@ describe('aggregateWeekToList', () => {
   it('ignores empty displays instead of blanking quantities', () => {
     const out = aggregateWeekToList([{ name: 'Pepper', quantity: 2, unit: 'tsp', display: '  ' }]);
     expect(out[0].quantity).toBe('2 tsp');
+  });
+
+  it('strips a trailing ingredient name from caption displays', () => {
+    const out = aggregateWeekToList([
+      { name: 'oats', quantity: 200, unit: 'g', display: '200 g oats' },
+    ]);
+    expect(out[0].quantity).toBe('200 g');
+  });
+
+  it('falls back to the numeric quantity when only the name remains', () => {
+    const out = aggregateWeekToList([
+      { name: 'oats', quantity: 200, unit: 'g', display: 'oats' },
+    ]);
+    expect(out[0].quantity).toBe('200 g');
   });
 });
 
