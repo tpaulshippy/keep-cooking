@@ -30,6 +30,7 @@ object Routes {
     /** Ingest is launched from Recipes/More + the share sheet, not a tab. */
     const val Ingest = "ingest"
     const val Export = "export"
+    const val Import = "import"
     const val Share = "share"
     const val NowCooking = "now_cooking"
     const val Settings = "settings"

@@ -7,6 +7,8 @@ import { clipRecipe } from './clip';
 import { scaleRecipe } from './scale';
 import { signKey, variantKeys, verifySignature, DEFAULT_SIGNED_URL_TTL_SECONDS } from './photos';
 import { recipeToHtml, recipeToMarkdown, plansToIcs } from './export';
+import { exportPaprika, exportSinglePaprikaRecipe, exportYaml, b64ToBytes } from './paprika';
+import { runImport } from './import';
 import {
   parseOrThrow,
   clipRequestSchema,
@@ -510,19 +512,120 @@ export function createApp(
   // ---------- export ----------
   // Note: hono does not reliably match `:id.json`-style suffix patterns, so a
   // single `:file` param is split into id + extension here. Behavior matches
-  // openapi.yaml /export/{id}.(json|md|html) exactly.
+  // openapi.yaml /export/{id}.(json|md|html) exactly, plus Paprika parity:
+  // .paprikarecipes (single recipe as one-member ZIP), .paprikarecipe
+  // (single gzip JSON), .yaml/.yml (JSON-as-YAML). The basename `all`
+  // exports the whole visible cookbook in .paprikarecipes/.yaml.
   api.get('/export/:file', async (c) => {
     const file = c.req.param('file') ?? '';
-    const m = file.match(/^(.+)\.(json|md|html)$/);
+    const m = file.match(/^(.+)\.(json|md|html|paprikarecipes|paprikarecipe|yaml|yml)$/);
     if (!m) return c.json({ error: 'not found' }, 404);
+    const a = getAgent(c);
+    const scopeHousehold = a?.householdId;
+    const ext = m[2]!;
+    if (m[1] === 'all') {
+      if (ext !== 'paprikarecipes' && ext !== 'yaml' && ext !== 'yml') return c.json({ error: 'not found' }, 404);
+      const qHousehold = c.req.query('householdId');
+      if (scopeHousehold && qHousehold && qHousehold !== scopeHousehold) return c.json({ error: 'not found' }, 404);
+      const all = await getStore().listRecipes(qHousehold ?? scopeHousehold);
+      if (ext === 'paprikarecipes') {
+        const zip = await exportPaprika(all);
+        return new Response(zip, {
+          headers: {
+            'content-type': 'application/zip',
+            'content-disposition': 'attachment; filename="cookbook.paprikarecipes"',
+          },
+        });
+      }
+      return new Response(exportYaml(all), {
+        headers: {
+          'content-type': 'text/yaml; charset=utf-8',
+          'content-disposition': 'attachment; filename="cookbook.yaml"',
+        },
+      });
+    }
     const r = await getStore().getRecipe(m[1]!);
     if (!r) return c.json({ error: 'not found' }, 404);
-    const a = getAgent(c);
     if (a && r.householdId !== a.householdId) return c.json({ error: 'not found' }, 404);
-    const ext = m[2]!;
     if (ext === 'json') return c.json(r);
     if (ext === 'md') return new Response(recipeToMarkdown(r), { headers: { 'content-type': 'text/markdown; charset=utf-8' } });
-    return new Response(recipeToHtml(r), { headers: { 'content-type': 'text/html; charset=utf-8' } });
+    if (ext === 'html')
+      return new Response(recipeToHtml(r), { headers: { 'content-type': 'text/html; charset=utf-8' } });
+    if (ext === 'paprikarecipes') {
+      const zip = await exportPaprika([r]);
+      return new Response(zip, {
+        headers: {
+          'content-type': 'application/zip',
+          'content-disposition': `attachment; filename="${r.id}.paprikarecipes"`,
+        },
+      });
+    }
+    if (ext === 'paprikarecipe') {
+      const gz = await exportSinglePaprikaRecipe(r);
+      return new Response(gz, {
+        headers: {
+          'content-type': 'application/gzip',
+          'content-disposition': `attachment; filename="${r.id}.paprikarecipe"`,
+        },
+      });
+    }
+    return new Response(exportYaml([r]), {
+      headers: {
+        'content-type': 'text/yaml; charset=utf-8',
+        'content-disposition': `attachment; filename="${r.id}.yaml"`,
+      },
+    });
+  });
+
+  // ---------- import (Paprika parity) ----------
+  // POST /api/import accepts either JSON
+  // {format?, filename?, payload(base64)?, text?, householdId?} or
+  // multipart form data (file + optional format/householdId fields).
+  // Persists via createRecipe (uid upsert) and returns {imported, ids,
+  // warnings, updated, dryRun, cookbooksCreated}; dryRun=true parses fully
+  // and reports without persisting anything.
+  api.post('/import', async (c) => {
+    const contentType = c.req.header('content-type') ?? '';
+    let format: string | undefined;
+    let filename: string | undefined;
+    let bytes: Uint8Array | undefined;
+    let text: string | undefined;
+    let householdId = 'hh-demo';
+    let dryRun = false;
+    if (contentType.includes('multipart/form-data')) {
+      const body = await c.req.parseBody();
+      const file = body['file'];
+      if (file instanceof File) {
+        filename = file.name || undefined;
+        bytes = new Uint8Array(await file.arrayBuffer());
+      }
+      if (typeof body['format'] === 'string') format = body['format'];
+      if (typeof body['filename'] === 'string') filename ??= body['filename'];
+      if (typeof body['householdId'] === 'string' && body['householdId']) householdId = body['householdId'];
+      if (typeof body['text'] === 'string') text = body['text'];
+      if (typeof body['dryRun'] === 'string') dryRun = body['dryRun'].toLowerCase() === 'true' || body['dryRun'] === '1';
+    } else {
+      const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+      if (typeof body['format'] === 'string') format = body['format'];
+      if (typeof body['filename'] === 'string') filename = body['filename'];
+      if (typeof body['householdId'] === 'string' && body['householdId']) householdId = body['householdId'];
+      if (body['dryRun'] === true || body['dryRun'] === 'true' || body['dryRun'] === 1) dryRun = true;
+      if (typeof body['payload'] === 'string' && body['payload'].trim() !== '') {
+        try {
+          bytes = b64ToBytes(body['payload'].trim());
+        } catch {
+          const err = new Error('payload is not valid base64') as Error & { status?: number };
+          err.status = 400;
+          throw err;
+        }
+      }
+      if (typeof body['text'] === 'string') text = body['text'];
+    }
+    requireAgentScope(c, householdId);
+    await requireWriteRole(c, getStore(), householdId);
+    const user = getUser(c);
+    const result = await runImport(getStore(), { format, filename, bytes, text, householdId, dryRun }, { deviceId: user.deviceId, householdId });
+    return c.json(result);
   });
 
   // ---------- photos (signed URLs; variants per PHOTO_VARIANTS.md) ----------

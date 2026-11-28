@@ -104,6 +104,42 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ClipReport'
+  /import:
+    post:
+      security:
+        - DeviceId: []
+          DeviceTs: []
+          DeviceSig: []
+        - AgentToken: []
+      operationId: importRecipes
+      description: >-
+        Paprika full-parity import. Accepts native Paprika bundles
+        (paprika-json decoded JSON, paprika-zip .paprikarecipes ZIP of gzipped
+        JSON, paprika-recipe single gzip/JSON) plus YAML (.yml/.yaml, JSON-as-YAML
+        accepted), HTML directory export (JSON-LD → hRecipe → headings), and
+        third-party formats Paprika imports (mx2/mxp/mz2/mmf/fdx/fdxz/
+        pepperplate-zip/pepperplate-db/copymethat-zip/yum-xml/ysr/mgourmet/dvo/
+        mcb/recipe-manager-txt/hcb/myrecipebook-sqlite/rbox). Binary payloads
+        go in `payload` as base64; already-decoded JSON goes in `payloadJson`.
+        `paprikaUid` is the upsert key (re-import updates in place, trashed
+        match restores); YAML has no identity so it is create-only.
+        `importCookbooks` recreates Paprika cookbooks (else folds into
+        categories). `dryRun` parses and reports without persisting.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportRequest'
+      responses:
+        '200':
+          description: import report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportReport'
+        '400':
+          description: unsupported format or undecodable payload
   /recipes:
     get:
       operationId: listRecipes
@@ -525,6 +561,70 @@ paths:
           content:
             text/html:
               schema: { type: string }
+  /export/{id}.paprikarecipes:
+    get:
+      operationId: exportPaprikaRecipe
+      description: >-
+        Single-recipe native Paprika export: gzipped JSON (.paprikarecipe
+        bytes). Always emits a `photo` filename when `photo_data` is present
+        (synthesized `${UID}.jpg`), reuses stored `paprikaUid`, stringifies
+        servings/times from raw text fields when present.
+      parameters: [{ $ref: '#/components/parameters/IdParam' }]
+      responses:
+        '200':
+          description: gzipped Paprika recipe JSON
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+  /export/{id}.yaml:
+    get:
+      operationId: exportYaml
+      description: >-
+        Single-recipe Paprika YAML export (emitted as JSON-as-YAML, valid YAML).
+        `on_favorites` is accepted on import but unreliable on Paprika iOS —
+        clients should warn.
+      parameters: [{ $ref: '#/components/parameters/IdParam' }]
+      responses:
+        '200':
+          description: YAML export (JSON-as-YAML)
+          content:
+            text/yaml:
+              schema: { type: string }
+  /export:
+    get:
+      operationId: exportBulk
+      description: >-
+        Bulk export. `?format=` selects json|md|html|paprikarecipes|yaml
+        (default json; paprikarecipes returns a .paprikarecipes ZIP of gzipped
+        per-recipe JSON, yaml returns a multi-recipe YAML list as
+        JSON-as-YAML). `?all=true` exports every recipe in the household;
+        otherwise pass `?ids=` (comma-separated) or a single `?id=`.
+        Cookbook-scoped export passes `?cookbook=`. Single-recipe suffix routes
+        (/export/{id}.json|.md|.html|.paprikarecipes|.yaml) remain canonical
+        for one recipe.
+      parameters:
+        - $ref: '#/components/parameters/HouseholdId'
+        - name: format
+          in: query
+          schema: { type: string, enum: [json, md, html, paprikarecipes, yaml], default: json }
+        - name: all
+          in: query
+          description: export every recipe in the household
+          schema: { type: boolean, default: false }
+        - name: ids
+          in: query
+          description: comma-separated recipe ids (ignored when all=true)
+          schema: { type: string }
+        - name: cookbook
+          in: query
+          description: limit bulk export to one cookbook/menu name
+          schema: { type: string }
+      responses:
+        '200':
+          description: bulk export bytes (content-type follows format)
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
   /sync/pull:
     get:
       operationId: syncPull
@@ -835,6 +935,32 @@ components:
         warnings: { type: array, items: { type: string } }
         sourceUrl: { type: string }
         recipe: { $ref: '#/components/schemas/RecipeInput' }
+    ImportRequest:
+      type: object
+      description: Paprika full-parity import request. Mirrors ClipRequest conventions (anyOf payload variants).
+      required: [householdId, format]
+      properties:
+        householdId: { type: string }
+        format:
+          type: string
+          enum: [paprika-json, paprika-zip, paprika-recipe, yaml, html, mx2, mxp, mz2, mmf, fdx, fdxz, pepperplate-zip, pepperplate-db, copymethat-zip, yum-xml, ysr, mgourmet, dvo, mcb, recipe-manager-txt, hcb, myrecipebook-sqlite, rbox]
+        payload: { type: string, description: base64-encoded file bytes (ZIP/gzip/YAML/HTML/SQLite/blob per format) }
+        payloadJson: { type: object, description: already-decoded JSON (alternative to payload; for paprika-json / JSON-as-YAML) }
+        importCookbooks: { type: boolean, default: true, description: recreate Paprika cookbooks; else fold into categories }
+        dryRun: { type: boolean, default: false, description: parse and report without persisting }
+      anyOf:
+        - required: [payload]
+        - required: [payloadJson]
+    ImportReport:
+      type: object
+      description: Paprika import result. Mirrors ClipReport conventions (warnings[] + parsed recipes).
+      required: [imported, updated]
+      properties:
+        imported: { type: array, items: { $ref: '#/components/schemas/Recipe' } }
+        updated: { type: integer, minimum: 0, description: re-import uid matches updated in place }
+        warnings: { type: array, items: { type: string } }
+        dryRun: { type: boolean }
+        cookbooksCreated: { type: array, items: { type: string } }
     Recipe:
       allOf:
         - $ref: '#/components/schemas/SyncEnvelope'
@@ -855,6 +981,18 @@ components:
             ingredients: { type: array, items: { $ref: '#/components/schemas/Ingredient' } }
             steps: { type: array, items: { $ref: '#/components/schemas/Step' } }
             householdId: { type: string }
+            notes: { type: string, description: 'Paprika notes free text (native-only; appended after description, never merged into steps)' }
+            nutritionText: { type: string, description: Paprika nutritional_info blob (free text, no structured nutrients) }
+            difficulty: { type: string, description: 'Paprika difficulty (no enum enforcement, e.g. Easy)' }
+            servingsText: { type: string, description: raw Paprika servings string (e.g. 4-6 servings, 1 pie) }
+            prepTimeText: { type: string, description: raw Paprika prep_time string }
+            cookTimeText: { type: string, description: raw Paprika cook_time string }
+            totalTimeText: { type: string, description: raw Paprika total_time string (native-only) }
+            paprikaUid: { type: string, description: stable Paprika uid (uppercase UUID); upsert key for re-import idempotency }
+            paprikaRaw: { type: object, description: original Paprika JSON sidecar for lossless round-trip }
+            cookbooks: { type: array, items: { type: string }, description: Paprika cookbook(s) (v4 cookbook); created on import when importCookbooks is on }
+            isFavorite: { type: boolean, description: Paprika on_favorites flag }
+            scaleFactor: { type: string, description: Paprika saved serving multiplier (raw string) }
     RecipeInput:
       type: object
       required: [title]
@@ -864,6 +1002,7 @@ components:
         servings: { type: number, default: 4 }
         prepMinutes: { type: integer }
         cookMinutes: { type: integer }
+        totalMinutes: { type: integer }
         rating: { type: number, minimum: 0, maximum: 5 }
         source: { type: string }
         sourceUrl: { type: string }
@@ -872,6 +1011,18 @@ components:
         ingredients: { type: array, items: { $ref: '#/components/schemas/IngredientInput' } }
         steps: { type: array, items: { $ref: '#/components/schemas/StepInput' } }
         householdId: { type: string }
+        notes: { type: string }
+        nutritionText: { type: string }
+        difficulty: { type: string }
+        servingsText: { type: string }
+        prepTimeText: { type: string }
+        cookTimeText: { type: string }
+        totalTimeText: { type: string }
+        paprikaUid: { type: string }
+        paprikaRaw: { type: object }
+        cookbooks: { type: array, items: { type: string } }
+        isFavorite: { type: boolean }
+        scaleFactor: { type: string }
     Ingredient:
       type: object
       required: [id, name]

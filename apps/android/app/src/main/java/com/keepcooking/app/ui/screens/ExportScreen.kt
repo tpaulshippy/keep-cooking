@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -69,6 +70,10 @@ fun ExportScreen(container: AppContainer, initialRecipeId: String = "") {
                 loaded == null -> ""
                 format == ExportFormat.JSON -> container.recipeExporter.toJson(loaded)
                 format == ExportFormat.HTML -> container.recipeExporter.toHtml(loaded)
+                format == ExportFormat.YAML -> container.recipeExporter.toYaml(loaded)
+                format == ExportFormat.PAPRIKA ->
+                    "Paprika ZIP: “${loaded.title}” + ${loaded.ingredients.size} ingredients, " +
+                        "${loaded.steps.size} steps. Binary .paprikarecipes — use Share file below."
                 else -> container.recipeExporter.toMarkdown(loaded)
             }.take(4000)
         }
@@ -109,7 +114,9 @@ fun ExportScreen(container: AppContainer, initialRecipeId: String = "") {
                     }
                 }
             }
-            Row(Modifier.padding(vertical = 12.dp)) {
+            Row(
+                Modifier.padding(vertical = 12.dp).horizontalScroll(rememberScrollState()),
+            ) {
                 ExportFormat.entries.forEach { f ->
                     FilterChip(
                         selected = format == f,
@@ -129,6 +136,10 @@ fun ExportScreen(container: AppContainer, initialRecipeId: String = "") {
                             val full = when (format) {
                                 ExportFormat.JSON -> container.recipeExporter.toJson(loaded)
                                 ExportFormat.HTML -> container.recipeExporter.toHtml(loaded)
+                                ExportFormat.YAML -> container.recipeExporter.toYaml(loaded)
+                                // Paprika is a binary ZIP; the text share carries the
+                                // single-recipe JSON member (the .paprikarecipe body).
+                                ExportFormat.PAPRIKA -> container.recipeExporter.toPaprikaJson(loaded)
                                 ExportFormat.MD -> container.recipeExporter.toMarkdown(loaded)
                             }
                             val send = Intent(Intent.ACTION_SEND).apply {
@@ -146,12 +157,21 @@ fun ExportScreen(container: AppContainer, initialRecipeId: String = "") {
                     onClick = {
                         scope.launch {
                             val loaded = container.recipeExporter.loadRecipe(container.db, selectedId) ?: return@launch
-                            val full = when (format) {
-                                ExportFormat.JSON -> container.recipeExporter.toJson(loaded)
-                                ExportFormat.HTML -> container.recipeExporter.toHtml(loaded)
-                                ExportFormat.MD -> container.recipeExporter.toMarkdown(loaded)
+                            val file = if (format == ExportFormat.PAPRIKA) {
+                                container.recipeExporter.writeCacheBytes(
+                                    format, loaded.title,
+                                    container.recipeExporter.toPaprikaZip(loaded),
+                                )
+                            } else {
+                                val full = when (format) {
+                                    ExportFormat.JSON -> container.recipeExporter.toJson(loaded)
+                                    ExportFormat.HTML -> container.recipeExporter.toHtml(loaded)
+                                    ExportFormat.YAML -> container.recipeExporter.toYaml(loaded)
+                                    ExportFormat.PAPRIKA -> "" // handled above
+                                    ExportFormat.MD -> container.recipeExporter.toMarkdown(loaded)
+                                }
+                                container.recipeExporter.writeCacheFile(format, loaded.title, full)
                             }
-                            val file = container.recipeExporter.writeCacheFile(format, loaded.title, full)
                             val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
                             val send = Intent(Intent.ACTION_SEND).apply {
                                 type = format.mime

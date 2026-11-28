@@ -24,6 +24,29 @@ export interface PantryItem { id: string; updatedAt: string; name: string; quant
 export interface Plan { id: string; updatedAt: string; date: string; meal: string; recipeId?: string | null; note?: string; servings?: number; [k: string]: unknown; }
 export interface Menu { id: string; updatedAt: string; name: string; entries?: { dayOffset?: number; meal?: string; recipeId?: string; servings?: number }[]; [k: string]: unknown; }
 export interface ClipReport { strategy: string; confidence?: number; warnings?: string[]; recipe: RecipeInput; }
+export type ExportFormat = 'json' | 'md' | 'html' | 'paprikarecipes' | 'yaml';
+export type ExportExt = ExportFormat;
+export type ImportFormat =
+  | 'paprika-json' | 'paprika-zip' | 'paprika-recipe' | 'yaml' | 'html'
+  | 'mx2' | 'mxp' | 'mz2' | 'mmf' | 'fdx' | 'fdxz'
+  | 'pepperplate-zip' | 'pepperplate-db' | 'copymethat-zip' | 'yum-xml'
+  | 'ysr' | 'mgourmet' | 'dvo' | 'mcb' | 'recipe-manager-txt'
+  | 'hcb' | 'myrecipebook-sqlite' | 'rbox';
+export interface ImportRequest {
+  householdId?: string;
+  format: ImportFormat;
+  payload?: string;
+  payloadJson?: unknown;
+  importCookbooks?: boolean;
+  dryRun?: boolean;
+}
+export interface ImportReport {
+  imported: Recipe[];
+  updated: number;
+  warnings?: string[];
+  dryRun?: boolean;
+  cookbooksCreated?: string[];
+}
 
 const LS_OVERRIDE_KEY = 'kc.apiBase';
 export const DEFAULT_API_BASE = 'https://keepcooking.app/api';
@@ -235,9 +258,44 @@ async function req<T>(method: string, path: string, body?: unknown, signed = fal
   return (await res.json()) as T;
 }
 
+/** Per-recipe export URL: GET /export/{id}.{json|md|html|paprikarecipes|yaml} (open, unsigned). */
+export function recipeExportUrl(id: string, ext: ExportExt, base = resolveApiBase()): string {
+  return buildUrl(base, `/export/${encodeURIComponent(id)}.${ext}`).toString();
+}
+
+/** Bulk export URL: GET /export?format=&all=true|ids=|cookbook= (open, unsigned). */
+export function bulkExportUrl(
+  opts: { format?: ExportFormat; all?: boolean; ids?: string[]; cookbook?: string },
+  base = resolveApiBase(),
+): string {
+  const url = buildUrl(base, '/export');
+  if (opts.format) url.searchParams.set('format', opts.format);
+  if (opts.all) url.searchParams.set('all', 'true');
+  else if (opts.ids?.length) url.searchParams.set('ids', opts.ids.join(','));
+  if (opts.cookbook) url.searchParams.set('cookbook', opts.cookbook);
+  return url.toString();
+}
+
+/** URL builders for every export route (per-recipe + bulk). */
+export const exportUrls = { recipe: recipeExportUrl, bulk: bulkExportUrl };
+
 export const api = {
   base: resolveApiBase,
   health: (base?: string) => req<{ ok: boolean; version?: string }>('GET', '/health', undefined, false, base ?? resolveApiBase()),
+  importReport: (input: ImportRequest, base?: string) =>
+    req<ImportReport>('POST', '/import', { householdId: 'web', ...input }, true, base ?? resolveApiBase()),
+  /** Per-recipe export URL: GET /export/{id}.{json|md|html|paprikarecipes|yaml} (open, unsigned). */
+  exportRecipeUrl: (id: string, ext: ExportExt, base?: string) =>
+    recipeExportUrl(id, ext, base ?? resolveApiBase()),
+  /** Bulk export URL: GET /export?format=&all=true|ids=|cookbook= (open, unsigned). */
+  exportBulkUrl: (opts: { format?: ExportFormat; all?: boolean; ids?: string[]; cookbook?: string }, base?: string) =>
+    bulkExportUrl(opts, base ?? resolveApiBase()),
+  /** Fetch an (open, unsigned) export URL and return the bytes as a Blob. */
+  fetchExportBlob: async (url: string): Promise<Blob> => {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`export failed: ${res.status}`);
+    return await res.blob();
+  },
   listRecipes: (base?: string) => req<Recipe[]>('GET', '/recipes', undefined, false, base ?? resolveApiBase()),
   getRecipe: (id: string, base?: string) => req<Recipe>('GET', `/recipes/${id}`, undefined, false, base ?? resolveApiBase()),
   createRecipe: (input: RecipeInput, base?: string) => req<Recipe>('POST', '/recipes', input, true, base ?? resolveApiBase()),

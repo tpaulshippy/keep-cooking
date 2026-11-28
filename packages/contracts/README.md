@@ -27,6 +27,21 @@ only. `entity` is `recipe | list | pantryItem | plan | menu` (standalone
 Zero-knowledge scope is the `/v2/sync/:hash` route only — legacy
 `/sync/*` plaintext + R2 photo routes remain outside it.
 
+## ImportReport
+`{ imported: Recipe[], updated: number, warnings[], dryRun?, cookbooksCreated? }`.
+Mirrors ClipReport conventions (parsed recipes + warnings[]). POST /import accepts
+`{ householdId, format, payload (base64) | payloadJson, importCookbooks?, dryRun? }`.
+Actually parsed today: Paprika native (paprika-json, paprika-zip incl. paprika-recipe
+single-file alias), yaml, html. 415-stubbed with re-export guidance (parsers not
+landed): mx2|mxp|mz2|mmf|fdx|fdxz|pepperplate|copymethat|yum. Remaining contract
+enum values (pepperplate-zip|pepperplate-db|copymethat-zip|yum-xml|ysr|mgourmet|dvo|
+mcb|recipe-manager-txt|hcb|myrecipebook-sqlite|rbox) have no handler yet → 400
+unsupported when passed as an explicit `format` (an omitted `format` still sniffs
+from filename/content as before). `paprikaUid` is the upsert key (re-import updates in place);
+YAML is create-only (no identity). Optional Paprika extension fields on Recipe/RecipeInput
+(all optional, non-breaking): notes, nutritionText, difficulty, servingsText,
+prepTimeText/cookTimeText/totalTimeText, paprikaUid, paprikaRaw, cookbooks[], isFavorite, scaleFactor.
+
 ## ClipReport
 `{ strategy: jsonld|reader|caption|ocr, confidence 0-1, warnings[], sourceUrl, recipe: RecipeInput }`.
 Server tries JSON-LD → reader → caption fallback, logs which. All parsing unit-tested client-side too.
@@ -35,7 +50,7 @@ Server tries JSON-LD → reader → caption fallback, logs which. All parsing un
 Single device-key auth (open auth, no login). `householdId` on every entity. Roles: owner/member/viewer. Viewer read-only, member CRUD, owner + invites/deletes.
 
 ## Endpoints (see openapi.yaml)
-POST /clip, CRUD /recipes, POST /recipes/:id/scale, CRUD /lists + /pantry, CRUD /plans + /menus, GET /plans/feed.ics, POST /share/cookbook, GET /export/:id.(json|md|html), GET /sync/pull, POST /sync/push, GET /health, GET /openapi.json (must byte-match openapi.json).
+POST /clip, POST /import, CRUD /recipes, POST /recipes/:id/scale, CRUD /lists + /pantry, CRUD /plans + /menus, GET /plans/feed.ics, POST /share/cookbook, GET /export/:id.(json|md|html|paprikarecipes|yaml) + GET /export bulk (?format=json|md|html|paprikarecipes|yaml, ?all, ?ids, ?cookbook), GET /sync/pull, POST /sync/push, GET /health, GET /openapi.json (must byte-match openapi.json).
 Key-only agent access (#26): POST /agent/enroll, GET /agent/status, POST /mcp (stateless JSON-RPC; schemas in mcp-tools.json). For v1 mutations, `x-agent-token` replaces the device signature (or local dev headers); requests are scoped to the enrolled household.
 
 ## Scale rule

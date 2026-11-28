@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 fun MoreScreen(
     onClip: () -> Unit = {},
     onExport: () -> Unit = {},
+    onImport: () -> Unit = {},
     onShare: () -> Unit = {},
     onNowCooking: () -> Unit = {},
     onSettings: () -> Unit = {},
@@ -34,6 +35,7 @@ fun MoreScreen(
     val rows = listOf(
         "Clip a recipe" to onClip,
         "Export a recipe" to onExport,
+        "Import recipes" to onImport,
         "Share a cookbook" to onShare,
         "Now Cooking (watch)" to onNowCooking,
         "Settings" to onSettings,

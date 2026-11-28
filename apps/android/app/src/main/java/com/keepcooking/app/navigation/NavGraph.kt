@@ -35,6 +35,7 @@ import com.keepcooking.app.sync.DeviceAuth
 import com.keepcooking.app.sync.SyncEngine
 import com.keepcooking.app.ui.screens.CookScreen
 import com.keepcooking.app.ui.screens.ExportScreen
+import com.keepcooking.app.ui.screens.ImportScreen
 import com.keepcooking.app.ui.screens.IngestDraft
 import com.keepcooking.app.ui.screens.IngestScreen
 import com.keepcooking.app.ui.screens.LibraryRecipeRow
@@ -393,6 +394,7 @@ fun KeepCookingNav() {
                 MoreScreen(
                     onClip = { navController.navigate(Routes.Ingest) },
                     onExport = { navController.navigate(Routes.Export) },
+                    onImport = { navController.navigate(Routes.Import) },
                     onShare = { navController.navigate(Routes.Share) },
                     onNowCooking = { navController.navigate(Routes.NowCooking) },
                     onSettings = { navController.navigate(Routes.Settings) },
@@ -455,6 +457,7 @@ fun KeepCookingNav() {
                 )
             }
             composable(Routes.Export) { ExportScreen(container) }
+            composable(Routes.Import) { ImportScreen(container) }
             composable(Routes.Share) { ShareScreen(container) }
             composable(Routes.Settings) {
                 SettingsScreen(container, onBack = { navController.popBackStack() })
