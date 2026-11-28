@@ -33,7 +33,7 @@ jobs:
         with:
           # Default packages ('tools platform-tools') reference the long-removed
           # 'tools' package and fail; install exactly what AGP 8.3 needs.
-          packages: platform-tools "platforms;android-34" "build-tools;34.0.0"
+          packages: platform-tools platforms;android-34 build-tools;34.0.0
 
       # Caches Gradle + dependencies between runs. The repo ships a real
       # wrapper pinning Gradle 8.7 (apps/android/gradlew) — no system Gradle.
