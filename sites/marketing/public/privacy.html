@@ -4,12 +4,22 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Privacy — Keep Cooking</title>
-  <meta name="description" content="Keep Cooking privacy stub: what the marketing site and the app collect (as little as possible).">
+  <meta name="description" content="Keep Cooking's privacy policy: what the marketing site and the apps collect, how sync and photos work, and how to export or delete your data.">
   <link rel="canonical" href="https://keepcooking.app/privacy.html">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Keep Cooking">
   <meta property="og:title" content="Privacy — Keep Cooking">
-  <meta property="og:description" content="What Keep Cooking collects: as little as possible.">
+  <meta property="og:description" content="What Keep Cooking collects, how sync and photos work, and how to export or delete your data.">
   <meta property="og:url" content="https://keepcooking.app/privacy.html">
-  <meta property="og:image" content="https://keepcooking.app/og-image.svg">
+  <meta property="og:image" content="https://keepcooking.app/og-image.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Keep Cooking logo and tagline: own your recipes, no subscriptions.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Privacy — Keep Cooking">
+  <meta name="twitter:description" content="What Keep Cooking collects, how sync and photos work, and how to export or delete your data.">
+  <meta name="twitter:image" content="https://keepcooking.app/og-image.png">
   <meta name="theme-color" content="#1a3c34">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
@@ -29,22 +39,66 @@
   </header>
   <main id="main">
     <section aria-labelledby="privacy-title">
-      <p class="eyebrow">Last updated November 2026 · placeholder stub, not legal advice</p>
+      <p class="eyebrow">Last updated November 28, 2026</p>
       <h1 id="privacy-title">Privacy</h1>
-      <p>This page is a plain-language stub until final legal copy is ready. The short version: we collect as little as possible.</p>
-      <h2>This marketing site</h2>
+      <p>The short version: <strong>your recipes are yours.</strong> No accounts, no ads, no analytics, no data sale, no cross-app tracking. Your library lives on your devices and syncs through your household's backend so your phone, tablet, and computer agree — and you can export or delete it anytime.</p>
+
+      <h2>Who runs this</h2>
+      <p>Keep Cooking is a <a href="https://github.com/tpaulshippy/keep-cooking">MIT-licensed open-source project</a>, not a data business. There is no login, no password, and no advertising profile: devices prove who they are with a per-device signing key created on the device itself.</p>
+
+      <h2>This website</h2>
       <ul>
-        <li><strong>No analytics, no cookies, no trackers.</strong> This site is static files on Cloudflare; we chose to run zero analytics rather than a "privacy-respecting" one, so there is nothing to opt out of.</li>
-        <li>Standard server logs (IP address, pages fetched) exist briefly for operations and abuse prevention, then rotate.</li>
+        <li><strong>No analytics, no cookies, no trackers.</strong> These pages are static files. We run zero analytics — not even a "privacy-respecting" one — so there is nothing to opt out of.</li>
+        <li><strong>No forms, no sign-ups.</strong> The only way to contact us from here is following links to GitHub, which is governed by GitHub's own policies once you leave this site.</li>
+        <li><strong>Hosting.</strong> The site is served by Cloudflare, which necessarily processes standard connection data (such as IP address and pages fetched) to deliver pages and prevent abuse. That operational data is short-lived and rotates; we never see or keep a copy of it ourselves.</li>
       </ul>
-      <h2>The Keep Cooking app</h2>
+
+      <h2>The apps (web, iOS, Android)</h2>
       <ul>
-        <li>Your recipes live on your devices and sync to your household's backend so your phone and iPad agree. We don't sell data, show ads, or share your library with third parties.</li>
-        <li>Photos you add are stored in your household's storage bucket; share links you explicitly create are signed and expire (default under 15 minutes for direct photo URLs).</li>
-        <li>Self-host the backend and your data never touches our servers at all — the code is MIT licensed.</li>
+        <li><strong>On-device first.</strong> Your library is stored on your own devices (for example, local storage in the browser, on-device databases on mobile) and works offline. Edits queue locally and converge when you're back online.</li>
+        <li><strong>Household sync.</strong> To keep your devices — and, if you choose, your household — in agreement, devices sync records (recipes, shopping lists, pantry items, meal plans, menus) to your household's backend, a Cloudflare Worker backed by a database (D1) and a photo bucket (R2). The backend holds what your devices put there, and nothing else.</li>
+        <li><strong>End-to-end encrypted sync.</strong> When you sync with a household sync code, recipe content is encrypted on your devices before upload. The server stores only opaque ciphertext plus the routing header it needs to deliver updates (record id, type, timestamp) — it cannot read your recipes, and your encryption key never leaves your devices.</li>
+        <li><strong>No tracking.</strong> The apps show no ads, run no analytics SDKs, and do no cross-app tracking. The iOS privacy manifest declares no tracking and no collected data types.</li>
       </ul>
-      <h2>Export &amp; deletion</h2>
-      <p>Export your library anytime (JSON, Markdown, HTML). To delete your data, delete it in the app or contact us via <a href="https://github.com/tpaulshippy/keep-cooking">GitHub</a> and we'll help.</p>
+
+      <h2>What the backend stores, and why</h2>
+      <ul>
+        <li><strong>Your synced records</strong> (recipes, lists, pantry, plans, menus) — so your devices agree. Deletions are recorded as tombstones so the delete propagates to your other devices instead of resurrecting.</li>
+        <li><strong>Device keys, not identities</strong> — each enrolled device stores a random device id, its public signing key, and an optional display name you choose. The private key never leaves the device. Revoking a device ("logout") marks its key revoked so it can no longer write.</li>
+        <li><strong>Photos you add</strong> — stored in your household's storage bucket. Photo links the app creates for viewing are signed and expire (about 10 minutes), so a shared link stops working shortly after it's made.</li>
+        <li><strong>Share links you explicitly create</strong> (e.g. a shared cookbook) — stored with the expiry you chose so recipients can open them.</li>
+        <li><strong>Recipe clipping.</strong> When you ask the app to clip a recipe from a link, the backend fetches that page to extract the recipe. Operational logs record only which extraction strategy, host, and confidence were involved — never the full URL, query parameters, or page contents — and access logs record only method, path, status, and timing.</li>
+      </ul>
+
+      <h2>What we never do</h2>
+      <ul>
+        <li>No selling or renting your data, to anyone, for any purpose.</li>
+        <li>No sharing your library with third parties. The only processors are the infrastructure the service runs on (Cloudflare hosting, database, and storage) and GitHub if you choose to contact us there.</li>
+        <li>No ads, no analytics, no cross-app or cross-site tracking, no device fingerprinting for advertising.</li>
+      </ul>
+
+      <h2>Self-hosting</h2>
+      <p>The entire backend is MIT-licensed. If you run it yourself (one Worker, one database, one photo bucket — it fits in Cloudflare's free tier), your data never touches our servers at all.</p>
+
+      <h2>Your controls: export &amp; deletion</h2>
+      <ul>
+        <li><strong>Export anytime</strong> from the app: JSON, Markdown, self-contained HTML, Paprika, and YAML. No lock-in, no export fees.</li>
+        <li><strong>Delete in the app:</strong> deleting a recipe, list, plan, or other record removes it from your devices and propagates the deletion to your household backend and other devices.</li>
+        <li><strong>Remove a device:</strong> revoke its key so it can no longer sync or write.</li>
+        <li><strong>Backend copies:</strong> if you want help confirming deletion of server-held data for your household (for example after leaving the hosted backend for self-hosting), contact us via <a href="https://github.com/tpaulshippy/keep-cooking">GitHub</a> from an enrolled device context and we'll help.</li>
+      </ul>
+
+      <h2>Retention</h2>
+      <p>Your household's synced records and photos are kept until you delete them, so sync keeps working. Operational connection logs rotate automatically and are not kept as a history about you. Signed photo and share links expire by design (minutes for photo URLs; your chosen expiry for cookbook shares).</p>
+
+      <h2>Children</h2>
+      <p>Keep Cooking is a general-audience cooking app with no accounts and no age gate. It is not directed at children under 13, and we do not knowingly collect personal information from children. If you believe a child has provided personal information through self-hosted contact channels, reach out via <a href="https://github.com/tpaulshippy/keep-cooking">GitHub</a> and we will address it.</p>
+
+      <h2>Changes to this policy</h2>
+      <p>If this policy changes in a material way, the "Last updated" date above will change with it, and the change will be visible in the project's public commit history. Continued use of the hosted service after a change means you accept the updated policy.</p>
+
+      <h2>Contact</h2>
+      <p>Questions about this policy or your data? Open an issue on <a href="https://github.com/tpaulshippy/keep-cooking">GitHub</a> — that's where the project lives and where privacy requests are actually handled.</p>
       <p><a href="/">← Back home</a></p>
     </section>
   </main>
