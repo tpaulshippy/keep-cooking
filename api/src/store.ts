@@ -30,6 +30,7 @@ export interface RecipeRow {
   prepMinutes: number | null;
   cookMinutes: number | null;
   rating: number | null;
+  isFavorite: boolean;
   source: string;
   sourceUrl: string;
   categories: string[];
@@ -398,6 +399,7 @@ export class MemoryStore implements Store {
       prepMinutes: input.prepMinutes ?? null,
       cookMinutes: input.cookMinutes ?? null,
       rating: input.rating ?? null,
+      isFavorite: input.isFavorite ?? false,
       source: input.source ?? '',
       sourceUrl: input.sourceUrl ?? '',
       categories: input.categories ?? [],
@@ -837,6 +839,7 @@ export class MemoryStore implements Store {
         prepMinutes: p.prepMinutes ?? null,
         cookMinutes: p.cookMinutes ?? null,
         rating: p.rating ?? null,
+        isFavorite: p.isFavorite ?? existing?.isFavorite ?? false,
         source: p.source ?? '',
         sourceUrl: p.sourceUrl ?? '',
         categories: p.categories ?? [],

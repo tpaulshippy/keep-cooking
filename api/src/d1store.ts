@@ -121,6 +121,7 @@ export class D1Store extends MemoryStore implements Store {
           prepMinutes: r['prep_minutes'] == null ? null : Number(r['prep_minutes']),
           cookMinutes: r['cook_minutes'] == null ? null : Number(r['cook_minutes']),
           rating: r['rating'] == null ? null : Number(r['rating']),
+          isFavorite: Number(r['is_favorite'] ?? 0) === 1,
           source: String(r['source'] ?? ''),
           sourceUrl: String(r['source_url'] ?? ''),
           categories: jparse<string[]>(r['categories'], []),
@@ -555,8 +556,9 @@ export class D1Store extends MemoryStore implements Store {
   override async createRecipe(input: any, meta: { deviceId: string; id?: string; updatedAt?: string }): Promise<Recipe> {
     const r = await super.createRecipe(input, meta);
     await this.persist(
-      'INSERT INTO recipes (id, household_id, title, description, servings, prep_minutes, cook_minutes, rating, source, source_url, categories, photo_original, photo_large1024, photo_thumb, updated_at, device_id, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0) ON CONFLICT(id) DO UPDATE SET title=excluded.title, description=excluded.description, servings=excluded.servings, prep_minutes=excluded.prep_minutes, cook_minutes=excluded.cook_minutes, rating=excluded.rating, source=excluded.source, source_url=excluded.source_url, categories=excluded.categories, photo_original=excluded.photo_original, photo_large1024=excluded.photo_large1024, photo_thumb=excluded.photo_thumb, updated_at=excluded.updated_at, device_id=excluded.device_id',
+      'INSERT INTO recipes (id, household_id, title, description, servings, prep_minutes, cook_minutes, rating, is_favorite, source, source_url, categories, photo_original, photo_large1024, photo_thumb, updated_at, device_id, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0) ON CONFLICT(id) DO UPDATE SET title=excluded.title, description=excluded.description, servings=excluded.servings, prep_minutes=excluded.prep_minutes, cook_minutes=excluded.cook_minutes, rating=excluded.rating, is_favorite=excluded.is_favorite, source=excluded.source, source_url=excluded.source_url, categories=excluded.categories, photo_original=excluded.photo_original, photo_large1024=excluded.photo_large1024, photo_thumb=excluded.photo_thumb, updated_at=excluded.updated_at, device_id=excluded.device_id',
       r.id, r.householdId, r.title, r.description, r.servings, r.prepMinutes, r.cookMinutes, r.rating,
+      r.isFavorite ? 1 : 0,
       r.source, r.sourceUrl, JSON.stringify(r.categories),
       r.photoKeys.original, r.photoKeys.large1024, r.photoKeys.thumb, r.updatedAt, r.deviceId,
     );

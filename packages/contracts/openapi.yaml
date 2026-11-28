@@ -974,6 +974,7 @@ components:
             cookMinutes: { type: integer }
             totalMinutes: { type: integer }
             rating: { type: number, minimum: 0, maximum: 5 }
+            isFavorite: { type: boolean }
             source: { type: string }
             sourceUrl: { type: string }
             categories: { type: array, items: { type: string } }
@@ -1004,6 +1005,7 @@ components:
         cookMinutes: { type: integer }
         totalMinutes: { type: integer }
         rating: { type: number, minimum: 0, maximum: 5 }
+        isFavorite: { type: boolean }
         source: { type: string }
         sourceUrl: { type: string }
         categories: { type: array, items: { type: string } }

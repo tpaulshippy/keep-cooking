@@ -42,7 +42,7 @@ describe('D1Store SQL generation (fake binding)', () => {
     );
     const upsert = stmts.find((s) => s.sql.startsWith('INSERT INTO recipes'));
     expect(upsert).toBeDefined();
-    for (const col of ['prep_minutes', 'cook_minutes', 'rating', 'source', 'source_url', 'categories', 'photo_original']) {
+    for (const col of ['prep_minutes', 'cook_minutes', 'rating', 'is_favorite', 'source', 'source_url', 'categories', 'photo_original']) {
       expect(upsert!.sql).toContain(`${col}=excluded.${col}`);
     }
     // Update omitting all children: DELETEs must cover both child tables.
