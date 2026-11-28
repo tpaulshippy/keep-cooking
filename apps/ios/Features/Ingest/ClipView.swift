@@ -89,6 +89,7 @@ public struct ClipView: View {
                         .buttonStyle(.borderedProminent)
                         .disabled(isLoading || urlText.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(14)
                     .background(Color(.secondarySystemBackground))
                     .clipShape(RoundedRectangle(cornerRadius: 14))
@@ -150,6 +151,7 @@ public struct ClipView: View {
                                 .focused($focused, equals: .steps)
                                 .accessibilityLabel("Steps")
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(14)
                         .background(Color(.secondarySystemBackground))
                         .clipShape(RoundedRectangle(cornerRadius: 14))
@@ -174,6 +176,7 @@ public struct ClipView: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(14)
                         .background(Color(.secondarySystemBackground))
                         .clipShape(RoundedRectangle(cornerRadius: 14))
