@@ -43,30 +43,62 @@ an in-memory store (dev only). `GET /health` proves boot.
 | D1 storage | 5 GB | ~50 MB (15 seeds ≈ 30 KB; 10k recipes ≈ 20 MB) | 100x |
 | R2 storage | 10 GB | ~1 GB (10k photos, 1024px q80 ≈ 100 KB avg) | 10x |
 | R2 Class A/B ops | 1M / 10M / month | ~100k uploads + ~1M signed GETs | 10x |
+| Agent enrollments (D1) | 5 GB (shared) | 1 row/household (~200 B; 10k households ≈ 2 MB) | 1000x+ |
+| Agent + MCP req/day | 100k req/day (shared) | ~10 req/day per active agent household (REST or `POST /mcp`, 1 read + 1 write each) | 1000x+ |
 
 Stay-free rules: signed photo URLs (<15 min TTL) instead of proxied bytes,
 `GET /sync/pull?since=` deltas instead of full dumps, ICS feed cached client-side.
+Agent/MCP fit: same 1 Worker + 1 D1 + 1 R2, no Durable Objects, no extra
+services. `POST /mcp` is one request per tool call (stateless JSON-RPC, no
+polling); agent `sync_pull` loads the household's rows and filters `since`
+in memory (cost grows with the household's total history, not the window —
+not a D1 range read); enrollments
+are one D1 row per household written once (re-enroll only rotates the
+verifier). Blind `/v2` envelopes cost the same rows as the app sync the agent
+replaces — no double sync. Agent pull/push traffic counts against the D1
+rows-read budget above (each `sync_pull` reads the household's full row set,
+and each `sync_push` envelope reloads it again — a batch of N envelopes
+costs N row-set reads on D1, since `e2ePut` merges the latest D1 snapshot
+per envelope before LWW. Batches are capped at 500 envelopes per request
+(413 above that — chunk and retry), so one push costs at most 500 row-set
+reads).
 
 ## Auth / RBAC
 
+- Key-only agent access (#26, see `docs/agents/`): the device encryption key
+  alone authenticates via `x-agent-token` (base64url HKDF-SHA256, domain-separated
+  from the data key) as an alternative to the Ed25519 device signature below
+  (agents hold only the syncCode, never a device signing key).
+  `POST /agent/enroll` binds `{householdHash, householdId, verifier}` (server
+  stores only the verifier hash — no key material); agents are owner-scoped to
+  their enrolled household (out-of-scope reads 404, wrong-household writes 403,
+  unknown tokens 401). `POST /mcp` exposes the same Store through stateless
+  JSON-RPC on this Worker (schemas in `packages/contracts/mcp-tools.json`).
 - Auth: per-device Ed25519 signing keys — the device signing key is the
   credential, there is no password or login (`api/src/auth.ts`). Enroll the
   device once, then sign every write. The household E2E key (see
   `docs/e2e-v1.md`) is a different secret: it encrypts recipe content and
   never leaves the device — it is never sent to, or verified by, the server.
-- Enroll (open — the only unsigned write):
-  `POST /v2/devices { deviceId: UUIDv4, publicKey: base64(32B Ed25519),
-  displayName? }` → `201 { deviceId, enrolledAt }` on first enroll,
-  `200` on idempotent re-enroll with the same key, `410` when the id was
-  revoked (gone — enroll a fresh `deviceId` instead), `409` when the id is
-  already enrolled with a different key.
+- Enroll open writes (no device signature): `POST /v2/devices
+  { deviceId: UUIDv4, publicKey: base64(32B Ed25519), displayName? }` →
+  `201 { deviceId, enrolledAt }` on first enroll, `200` on idempotent
+  re-enroll with the same key, `410` when the id was revoked (gone — enroll
+  a fresh `deviceId` instead), `409` when the id is already enrolled with a
+  different key. Plus the agent exceptions: `POST /agent/enroll` (agent
+  enrollment — how agents join; same trust as the unguessable `/v2` bucket)
+  and `POST /mcp` (per-method auth lives in the JSON-RPC dispatcher —
+  `initialize`/`server/discover`/`notifications` stay usable for handshake,
+  `ping`/`tools/list`/`tools/call` need a valid `x-agent-token`). A valid `x-agent-token` is an alternative
+  credential to the device signature on mutating routes (prod) — see the
+  agent bullet above.
 - Signed writes carry `x-device-id` / `x-device-ts` (millis since epoch) /
   `x-device-sig` (base64 Ed25519 over the canonical string
   `METHOD + "\n" + path+query + "\n" + ts + "\n" + hex(SHA256(bodyBytes))`;
   the empty body hashes as `hex(SHA256(""))`). Reads (`GET`/`HEAD`/`OPTIONS`)
   plus `GET /health`, `GET /openapi.json`, and `POST /v2/devices`
-  (enrollment) stay open; every other `POST`/`PUT`/`DELETE` requires a valid
-  signature (`401` otherwise). Replay window `|now - ts| <= 5 min` is a
+  (enrollment), plus `POST /agent/enroll` and `POST /mcp` (agent exceptions —
+  see above), stay open at the device gate; every other `POST`/`PUT`/`DELETE`
+  requires a valid signature or a valid `x-agent-token` (`401` otherwise). Replay window `|now - ts| <= 5 min` is a
   documented limitation, not a nonce ledger: two identical writes inside the
   window both verify (handlers are idempotent, so this is safe). This has
   nothing to do with the E2E envelope `nonce` (`api/src/e2e.ts`), which is a
@@ -96,7 +128,8 @@ Stay-free rules: signed photo URLs (<15 min TTL) instead of proxied bytes,
 BASE=https://keepcooking.app/api
 DEVICE_ID=$(uuidgen)   # persist one per device; the private half never leaves it
 
-# 1. enroll (open — the only unsigned write):
+# 1. enroll (open unsigned write — agent enroll + MCP handshake are also
+#    open; see agent exceptions above):
 curl -s -X POST $BASE/v2/devices \
   -H 'content-type: application/json' \
   -d "{\"deviceId\":\"$DEVICE_ID\",\"publicKey\":\"<base64-of-32B-Ed25519-pubkey>\"}"
@@ -144,6 +177,8 @@ CRUD `/lists`, CRUD `/pantry`, CRUD `/plans` + `/menus`,
 `POST /v2/devices` (enroll) + `POST /v2/devices/{id}/revoke` (self-revoke = logout),
 `GET /sync/pull?since=`, `POST /sync/push`,
 plus `GET /photos/variants?recipeId=` and `GET /photos/sign?key=` (<15 min TTL).
+Key-only agent surface (#26): `POST /agent/enroll`, `GET /agent/status`,
+`POST /mcp` (all in openapi.yaml + versioned `mcp-tools.json`).
 
 ## Sync
 

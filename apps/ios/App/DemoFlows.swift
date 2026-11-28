@@ -1742,75 +1742,53 @@ struct PantryTabView: View {
 
 // MARK: - Menus tab (live SwiftData menus + editor + apply to week)
 
-/// Reusable menu templates (Paprika-style). List supports create, inline
-/// rename, duplicate ("name copy"), and sync-safe tombstone delete. The
-/// Edit affordance opens MenuEditorSheet (day x meal grid, recipe picker
-/// per cell). Apply copies entries into a chosen week with skip-filled
+/// Reusable menu templates (Paprika-style). The list supports create (alert
+/// via the + button), rename (long-press menu), duplicate ("name copy"),
+/// and sync-safe tombstone delete, plus quick "Apply to week" from the
+/// row context menu. Tapping a row pushes PaprikaMenuDetailView
+/// (MenusPaprikaViews.swift): DAY sections, Add Meal flow, and the "..."
+/// sheet with days stepper, slot renames, and Apply (week start +
+/// skip-filled). Apply copies entries into the chosen week with skip-filled
 /// (default) or overwrite (tombstone conflicts first) semantics.
 struct MenusTabView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: [SortDescriptor(\Menu.name)]) private var menus: [Menu]
     @Query private var plans: [Plan]
     @Query private var recipes: [Recipe]
-    @State private var name = ""
     @State private var confirm: String?
-    @State private var editingMenuId: String?
     @State private var weekStart = DemoSeeds.weekStart(containing: Date())
     @State private var skipFilled = true
+    @State private var sort = MenusPaprikaSort.name
+    @State private var editMode: EditMode = .inactive
+    /// Opens the drawer when hosted in the drawer shell (the Paprika
+    /// header is the sole top bar there — the shell hides its own).
+    /// Defaults to no-op for the More-tab push context.
+    var onOpenDrawer: () -> Void = {}
 
     var body: some View {
-        List {
-            if let confirm {
-                Section {
-                    HStack {
-                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                        Text(confirm)
-                    }
-                }
-            }
-            Section("New menu") {
-                HStack {
-                    TextField("Menu name", text: $name)
-                        .submitLabel(.done)
-                        .onSubmit(createMenu)
-                    Button("Create", action: createMenu)
-                        .buttonStyle(.bordered)
-                        .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        .accessibilityIdentifier("menu-create")
-                }
-            }
-            Section("Apply to week") {
-                DatePicker("Week start", selection: $weekStart, displayedComponents: .date)
-                Toggle("Skip filled slots", isOn: $skipFilled)
-            }
-            Section("Menus (\(liveMenus.count))") {
-                if liveMenus.isEmpty {
-                    Text("No menus yet — name one above. Apply copies its entries into this week's plan.")
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(liveMenus, id: \.id) { menu in
-                    MenuRowView(
-                        menu: menu,
-                        onEdit: { editingMenuId = menu.id },
-                        onApply: { apply(menu) },
-                        onRename: { rename(menu, to: $0) },
-                        onDuplicate: { duplicate(menu) },
-                        onDelete: { tombstone(menu) }
-                    )
-                    .accessibilityIdentifier("menu-row-\(menu.id)")
-                }
+        NavigationStack {
+            PaprikaMenusScreen(
+                menus: liveMenus,
+                confirm: confirm,
+                sort: $sort,
+                editMode: $editMode,
+                onCreate: createMenu,
+                onRename: rename,
+                onDuplicate: duplicate,
+                onDelete: tombstone,
+                onApply: apply,
+                onOpenDrawer: onOpenDrawer
+            ) { menu in
+                PaprikaMenuDetailView(
+                    menu: menu,
+                    recipes: liveRecipes,
+                    weekStart: $weekStart,
+                    skipFilled: $skipFilled,
+                    onApply: apply
+                )
             }
         }
-        .navigationTitle("Menus")
         .accessibilityIdentifier("menus-view")
-        .sheet(isPresented: Binding(
-            get: { editingMenuId != nil },
-            set: { if !$0 { editingMenuId = nil } }
-        )) {
-            if let menu = liveMenus.first(where: { $0.id == editingMenuId }) {
-                MenuEditorSheet(menu: menu, recipes: liveRecipes)
-            }
-        }
     }
 
     private var liveMenus: [Menu] { menus.filter { !$0.tombstoned } }
@@ -1820,12 +1798,12 @@ struct MenusTabView: View {
             .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
 
-    private func createMenu() {
-        let text = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func createMenu(named rawName: String) {
+        let text = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         context.insert(Menu(householdId: "hh-demo", name: text, deviceId: currentDeviceId()))
         try? context.save()
-        name = ""
+        confirm = "Created \(text)"
     }
 
     private func rename(_ menu: Menu, to newName: String) {
@@ -1898,466 +1876,6 @@ struct MenusTabView: View {
                 + droppedNote
         } else {
             confirm = "\(menu.name): all \(result.skippedCount) slots already filled" + droppedNote
-        }
-    }
-}
-
-/// One menu row: inline rename, grid edit, apply, duplicate, delete.
-private struct MenuRowView: View {
-    let menu: Menu
-    var onEdit: () -> Void
-    var onApply: () -> Void
-    var onRename: (String) -> Void
-    var onDuplicate: () -> Void
-    var onDelete: () -> Void
-    @State private var renaming = false
-    @State private var draft = ""
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                if renaming {
-                    TextField("Menu name", text: $draft)
-                        .textFieldStyle(.roundedBorder)
-                    Button("Save") {
-                        onRename(draft)
-                        renaming = false
-                    }
-                    .buttonStyle(.borderedProminent)
-                } else {
-                    Text(menu.name).font(.headline)
-                    Spacer()
-                    Text("\(menu.entries.count) entries")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            HStack {
-                Button("Apply to week", action: onApply)
-                    .buttonStyle(.bordered)
-                    .accessibilityIdentifier("menu-apply-\(menu.id)")
-                Button("Edit", action: onEdit)
-                Spacer()
-                Button {
-                    draft = menu.name
-                    renaming.toggle()
-                } label: {
-                    Label("Rename", systemImage: "pencil")
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("menu-rename-\(menu.id)")
-                Button(action: onDuplicate) label: {
-                    Label("Duplicate", systemImage: "plus.square.on.square")
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("menu-duplicate-\(menu.id)")
-                Button(role: .destructive, action: onDelete) label: {
-                    Label("Delete", systemImage: "trash")
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("menu-delete-\(menu.id)")
-            }
-        }
-        .padding(.vertical, 4)
-    }
-}
-
-/// Day x meal grid editor for one menu. Persists via `menu.entries` +
-/// updatedAt bump (last-write-wins sync). Slots are entry-derived
-/// (menuMealSlots): shrinking the day count drops entries, growing past the
-/// entry-backed max is editor-local until new cells are filled.
-private struct MenuEditorSheet: View {
-    @Environment(\.modelContext) private var context
-    @Environment(\.dismiss) private var dismiss
-    let menu: Menu
-    let recipes: [Recipe]
-    @State private var dayCount: Int
-    @State private var cellSelection: MenuCellKey?
-    @State private var shrinkAlert = false
-    @State private var pendingShrinkTo = 1
-
-    init(menu: Menu, recipes: [Recipe]) {
-        self.menu = menu
-        self.recipes = recipes
-        _dayCount = State(initialValue: menuDayCount(entries: menu.entries))
-    }
-
-    private var recipesById: [String: Recipe] {
-        Dictionary(uniqueKeysWithValues: recipes.map { ($0.id, $0) })
-    }
-
-    /// Entry-backed length: highest saved offset + 1 (unclamped, so foreign
-    /// or sync data past day 28 still counts). Growing the stepper past this
-    /// is editor-local until new cells are filled; shrinking persists by
-    /// dropping entries.
-    private var entryBackedDays: Int {
-        (menu.entries.map(\.dayOffset).max() ?? -1) + 1
-    }
-
-    /// Grid length: stepper clamped to the entry-backed max and day 28.
-    private var gridDays: Int {
-        min(max(dayCount, entryBackedDays), menuMaxDayCount)
-    }
-
-    /// Entries outside days 1–28 (e.g. synced from the 0–365 API range):
-    /// kept on the menu, ignored by Apply.
-    private var beyondRangeCount: Int {
-        menu.entries.filter { $0.dayOffset < 0 || $0.dayOffset > menuMaxDayCount - 1 }.count
-    }
-
-    /// Slots derive from entries — there is deliberately no "add empty slot"
-    /// control: an entry-less slot cannot persist. Slots appear when their
-    /// cells are filled and vanish when emptied; rename rewrites the
-    /// underlying MenuEntry.meal values instead.
-    private var slots: [String] {
-        menuMealSlots(entries: menu.entries)
-    }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section("Length") {
-                    Stepper("Days: \(dayCount)",
-                        value: Binding(get: { dayCount }, set: requestDayCount),
-                        in: 1...28)
-                        .accessibilityIdentifier("menu-daycount-stepper")
-                    if dayCount > entryBackedDays {
-                        Text("Extra days save once filled — days without recipes are editor-local.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    if beyondRangeCount > 0 {
-                        Text("\(beyondRangeCount) entries outside days 1–28 (e.g. synced) are kept but Apply ignores them.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                Section("Meals") {
-                    ForEach(slots, id: \.self) { slot in
-                        SlotRenameRow(slot: slot, onSave: { renameSlot(from: slot, to: $0) })
-                    }
-                    Text("Slots come from saved entries. Rename rewrites every matching entry (collisions deduped, first wins).")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                .accessibilityIdentifier("menu-slots-field")
-                Section("Grid") {
-                    gridContent
-                }
-            }
-            .navigationTitle(menu.name)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-            .alert("Shorten menu?", isPresented: $shrinkAlert) {
-                Button("Remove", role: .destructive) { applyDayCount(pendingShrinkTo) }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Entries on day \(pendingShrinkTo + 1) and later will be removed.")
-            }
-            .sheet(item: $cellSelection) { key in
-                MenuCellSheet(menu: menu, recipes: recipes,
-                    dayOffset: key.dayOffset, meal: key.meal)
-            }
-        }
-        .accessibilityIdentifier("menu-editor-\(menu.id)")
-    }
-
-    private var gridContent: some View {
-        ScrollView(.horizontal, showsIndicators: true) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    Text("").frame(width: 52)
-                    ForEach(slots, id: \.self) { slot in
-                        Text(PlanView.displayName(for: slot))
-                            .font(.caption.bold())
-                            .frame(minWidth: 104, alignment: .center)
-                    }
-                }
-                ForEach(0..<gridDays, id: \.self) { day in
-                    HStack(spacing: 8) {
-                        Text("Day \(day + 1)")
-                            .font(.caption.bold())
-                            .frame(width: 52, alignment: .leading)
-                        ForEach(slots, id: \.self) { slot in
-                            cellButton(day: day, meal: slot)
-                        }
-                    }
-                }
-            }
-            .padding(.vertical, 4)
-        }
-    }
-
-    private func cellButton(day: Int, meal: String) -> some View {
-        let matches = menu.entries.filter {
-            $0.dayOffset == day && normalizeMeal($0.meal) == meal
-        }
-        return Button {
-            cellSelection = MenuCellKey(dayOffset: day, meal: meal)
-        } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                if matches.isEmpty {
-                    Label("Add", systemImage: "plus.circle")
-                        .font(.caption).foregroundStyle(.secondary)
-                } else {
-                    if let first = matches.first, let recipe = recipesById[first.recipeId] {
-                        cellThumb(for: recipe)
-                    }
-                    ForEach(Array(matches.enumerated()), id: \.offset) { _, entry in
-                        Text(cellTitle(for: entry))
-                            .font(.caption).lineLimit(1)
-                        Text("\(fractionDisplayString(for: entry.servings)) servings")
-                            .font(.caption2).foregroundStyle(.secondary)
-                    }
-                }
-            }
-            .frame(minWidth: 104, minHeight: 56, alignment: .leading)
-            .padding(6)
-            .background(Color(.secondarySystemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func cellTitle(for entry: MenuEntry) -> String {
-        if let recipe = recipesById[entry.recipeId] { return recipe.title }
-        return entry.recipeId.isEmpty ? "(empty)" : "(removed recipe)"
-    }
-
-    private func cellThumb(for recipe: Recipe) -> some View {
-        Group {
-            if let url = photoURL(forKey: recipe.photoThumb) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let img): img.resizable().scaledToFill()
-                    default:
-                        Image(systemName: "fork.knife.circle.fill")
-                            .resizable().scaledToFit().padding(4)
-                            .foregroundStyle(.orange)
-                    }
-                }
-                .frame(width: 32, height: 32)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-            } else {
-                Image(systemName: "fork.knife.circle.fill")
-                    .resizable().scaledToFit().padding(4)
-                    .frame(width: 32, height: 32)
-                    .background(Color.orange.opacity(0.15))
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .foregroundStyle(.orange)
-            }
-        }
-    }
-
-    /// Stepper sink: growing past the entry-backed max is editor-local
-    /// (nothing to persist until new cells are filled); shrinking past saved
-    /// entries needs confirmation because entries with dayOffset >= count
-    /// are dropped.
-    private func requestDayCount(_ newValue: Int) {
-        let clamped = validateDayCount(newValue)
-        if clamped >= dayCount {
-            applyDayCount(clamped)
-            return
-        }
-        if menu.entries.contains(where: { $0.dayOffset >= clamped }) {
-            pendingShrinkTo = clamped
-            shrinkAlert = true
-        } else {
-            applyDayCount(clamped)
-        }
-    }
-
-    private func applyDayCount(_ newValue: Int) {
-        dayCount = newValue
-        if menu.entries.contains(where: { $0.dayOffset >= newValue }) {
-            menu.entries = menu.entries.filter { $0.dayOffset < newValue }
-            menu.updatedAt = Date()
-            try? context.save()
-        }
-    }
-
-    /// Persists a slot rename via renameMenuSlot (dedupe keeps first).
-    private func renameSlot(from old: String, to new: String) {
-        let updated = renameMenuSlot(entries: menu.entries, from: old, to: new)
-        guard updated != menu.entries else { return }
-        menu.entries = updated
-        menu.updatedAt = Date()
-        try? context.save()
-    }
-}
-
-/// Rename field for one entry-derived meal slot. Save rewrites the matching
-/// MenuEntry.meal values via renameMenuSlot (dedupe keeps first); the row
-/// re-renders from entries, so no local slot state is kept.
-private struct SlotRenameRow: View {
-    let slot: String
-    var onSave: (String) -> Void
-    @State private var draft: String
-
-    init(slot: String, onSave: @escaping (String) -> Void) {
-        self.slot = slot
-        self.onSave = onSave
-        _draft = State(initialValue: slot)
-    }
-
-    var body: some View {
-        HStack {
-            TextField("Meal name", text: $draft)
-                .textFieldStyle(.roundedBorder)
-                .submitLabel(.done)
-                .onSubmit { onSave(draft) }
-                .accessibilityIdentifier("menu-slot-rename-\(slot)")
-            Button("Save") { onSave(draft) }
-                .buttonStyle(.bordered)
-                .disabled(normalizeMeal(draft).isEmpty || normalizeMeal(draft) == slot)
-        }
-    }
-}
-
-/// Selected grid cell (day x meal) for the editor sheet.
-private struct MenuCellKey: Hashable, Identifiable {
-    var dayOffset: Int
-    var meal: String
-    var id: String { "\(dayOffset)\u{1F}\(meal)" }
-}
-
-/// Recipe picker + servings for one grid cell. Multiple recipes per cell:
-/// Add appends, per-row delete removes one, Clear empties the cell.
-private struct MenuCellSheet: View {
-    @Environment(\.modelContext) private var context
-    @Environment(\.dismiss) private var dismiss
-    let menu: Menu
-    let recipes: [Recipe]
-    let dayOffset: Int
-    let meal: String
-    @State private var search = ""
-    @State private var pickedId: String?
-    @State private var servings: Double = 2
-
-    private var cellEntries: [MenuEntry] {
-        menu.entries.filter {
-            $0.dayOffset == dayOffset && normalizeMeal($0.meal) == meal
-        }
-    }
-
-    private var filtered: [Recipe] {
-        let q = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return recipes }
-        return recipes.filter { $0.title.lowercased().contains(q) }
-    }
-
-    private func persist(_ entries: [MenuEntry]) {
-        menu.entries = entries
-        menu.updatedAt = Date()
-        try? context.save()
-    }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section("Planned (Day \(dayOffset + 1) · \(PlanView.displayName(for: meal)))") {
-                    if cellEntries.isEmpty {
-                        Text("Nothing planned yet").foregroundStyle(.secondary)
-                    }
-                    ForEach(Array(cellEntries.enumerated()), id: \.offset) { _, entry in
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text(recipeTitle(for: entry.recipeId))
-                                Text("\(fractionDisplayString(for: entry.servings)) servings")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Button(role: .destructive) { remove(entry) } label: {
-                                Label("Remove", systemImage: "trash")
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    if !cellEntries.isEmpty {
-                        Button("Clear cell", role: .destructive) {
-                            persist(menu.entries.filter {
-                                !($0.dayOffset == dayOffset && normalizeMeal($0.meal) == meal)
-                            })
-                        }
-                    }
-                }
-                Section("Add recipe") {
-                    TextField("Search recipes", text: $search)
-                        .textFieldStyle(.roundedBorder)
-                    Stepper("\(fractionDisplayString(for: servings)) servings",
-                        value: $servings, in: 0.25...24, step: 0.5)
-                    ForEach(filtered, id: \.id) { recipe in
-                        Button {
-                            pickedId = recipe.id
-                            if recipe.servings > 0 { servings = recipe.servings }
-                        } label: {
-                            HStack {
-                                pickerThumb(for: recipe)
-                                Text(recipe.title).foregroundStyle(.primary)
-                                Spacer()
-                                if pickedId == recipe.id {
-                                    Image(systemName: "checkmark")
-                                        .foregroundStyle(Color.accentColor)
-                                }
-                            }
-                        }
-                    }
-                    Button("Add") {
-                        guard let id = pickedId else { return }
-                        var entries = menu.entries
-                        entries.append(MenuEntry(dayOffset: dayOffset, meal: meal,
-                            recipeId: id, servings: servings))
-                        persist(entries)
-                        pickedId = nil
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(pickedId == nil)
-                }
-            }
-            .navigationTitle("Day \(dayOffset + 1) · \(PlanView.displayName(for: meal))")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-        }
-    }
-
-    private func recipeTitle(for recipeId: String) -> String {
-        recipes.first(where: { $0.id == recipeId })?.title ?? "(removed recipe)"
-    }
-
-    private func remove(_ entry: MenuEntry) {
-        if let i = menu.entries.firstIndex(of: entry) {
-            var entries = menu.entries
-            entries.remove(at: i)
-            persist(entries)
-        }
-    }
-
-    private func pickerThumb(for recipe: Recipe) -> some View {
-        Group {
-            if let url = photoURL(forKey: recipe.photoThumb) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let img): img.resizable().scaledToFill()
-                    default:
-                        Image(systemName: "fork.knife.circle.fill")
-                            .resizable().scaledToFit().padding(8)
-                            .foregroundStyle(.orange)
-                    }
-                }
-                .frame(width: 52, height: 52)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-            } else {
-                Image(systemName: "fork.knife.circle.fill")
-                    .resizable().scaledToFit().padding(8)
-                    .frame(width: 52, height: 52)
-                    .background(Color.orange.opacity(0.15))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .foregroundStyle(.orange)
-            }
         }
     }
 }

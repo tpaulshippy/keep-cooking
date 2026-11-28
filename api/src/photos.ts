@@ -28,8 +28,9 @@ function toHex(buf: ArrayBuffer): string {
 
 /**
  * Sign an R2 object key. Returns a URL valid for `ttlSeconds` (<15min enforced).
- * Uses HMAC-SHA256 over `key:exp` with the app secret. The Worker serves the
- * bytes after verifying the signature (see route in index.ts); no PII in URL.
+ * Uses HMAC-SHA256 over `key:exp` with the app secret. The URL targets
+ * GET /photos/dl, which serves the bytes after verifying the signature
+ * (see route in index.ts); no PII in URL.
  */
 export async function signKey(
   key: string,
@@ -47,8 +48,12 @@ export async function signKey(
   );
   const sig = toHex(await crypto.subtle.sign('HMAC', cryptoKey, data));
   const base = opts.baseUrl.replace(/\/$/, '');
+  // Single-serve: the byte route is mounted at /api/photos/dl. A prod base
+  // already ends in /api; a bare origin (dev/test) needs the prefix so the
+  // minted URL hits the serving route in every environment.
+  const prefix = base.endsWith('/api') ? '' : '/api';
   return {
-    url: `${base}/photos/sign?key=${encodeURIComponent(key)}&exp=${exp}&sig=${sig}`,
+    url: `${base}${prefix}/photos/dl?key=${encodeURIComponent(key)}&exp=${exp}&sig=${sig}`,
     expiresAt: new Date(exp * 1000).toISOString(),
     key,
   };
