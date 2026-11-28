@@ -586,6 +586,35 @@ export class D1Store extends MemoryStore implements Store {
     return ok;
   }
 
+  override async applyEnvelopeFull(env: { id: string; updatedAt: string; deviceId: string; deleted: boolean; entity: string; payload?: unknown }): Promise<void> {
+    await super.applyEnvelopeFull(env as never);
+    if (env.entity !== 'recipe') return;
+    const row = this.recipes.get(env.id);
+    if (!row) return;
+    await this.persist(
+      'INSERT INTO recipes (id, household_id, title, description, servings, prep_minutes, cook_minutes, rating, is_favorite, source, source_url, categories, photo_original, photo_large1024, photo_thumb, updated_at, device_id, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET title=excluded.title, description=excluded.description, servings=excluded.servings, prep_minutes=excluded.prep_minutes, cook_minutes=excluded.cook_minutes, rating=excluded.rating, is_favorite=excluded.is_favorite, source=excluded.source, source_url=excluded.source_url, categories=excluded.categories, photo_original=excluded.photo_original, photo_large1024=excluded.photo_large1024, photo_thumb=excluded.photo_thumb, updated_at=excluded.updated_at, device_id=excluded.device_id, deleted=excluded.deleted',
+      row.id, row.householdId, row.title, row.description, row.servings, row.prepMinutes, row.cookMinutes, row.rating,
+      (row as { isFavorite?: boolean }).isFavorite ? 1 : 0,
+      row.source, row.sourceUrl, JSON.stringify(row.categories),
+      row.photoKeys.original, row.photoKeys.large1024, row.photoKeys.thumb, row.updatedAt, row.deviceId,
+      row.deleted ? 1 : 0,
+    );
+    for (const g of row.ingredients) {
+      await this.persist(
+        'INSERT INTO ingredients (id, recipe_id, name, quantity, unit, display, position) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, quantity=excluded.quantity, unit=excluded.unit, display=excluded.display, position=excluded.position',
+        g.id, row.id, g.name, g.quantity, g.unit, g.display, g.position,
+      );
+    }
+    for (const s of row.steps) {
+      await this.persist(
+        'INSERT INTO steps (id, recipe_id, position, text, timers) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET position=excluded.position, text=excluded.text, timers=excluded.timers',
+        s.id, row.id, s.position, s.text, JSON.stringify(s.timers),
+      );
+    }
+    await this.pruneChildren('ingredients', 'recipe_id', row.id, row.ingredients.map((g) => g.id));
+    await this.pruneChildren('steps', 'recipe_id', row.id, row.steps.map((s) => s.id));
+  }
+
   override async createList(input: any, meta: { deviceId: string; id?: string; updatedAt?: string }): Promise<ShoppingList> {
     const l = await super.createList(input, meta);
     await this.persist(

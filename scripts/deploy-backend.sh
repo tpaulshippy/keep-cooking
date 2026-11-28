@@ -85,10 +85,19 @@ else
 fi
 
 echo "==> 3/6 D1 schema (remote)"
-for migration in "$API_DIR/drizzle/0001_init.sql" "$API_DIR/drizzle/0002_e2e_blobs.sql" "$API_DIR/drizzle/0003_device_keys.sql" "$API_DIR/drizzle/0004_agent_enrollments.sql"; do
+for migration in "$API_DIR/drizzle/0001_init.sql" "$API_DIR/drizzle/0002_e2e_blobs.sql" "$API_DIR/drizzle/0003_device_keys.sql" "$API_DIR/drizzle/0004_agent_enrollments.sql" "$API_DIR/drizzle/0005_is_favorite.sql"; do
   if [ -f "$migration" ]; then
     echo "    applying $migration --remote"
-    wrangler d1 execute keep-cooking --remote --file="$migration"
+    # 0005 is a one-time ALTER TABLE (SQLite has no ADD COLUMN IF NOT
+    # EXISTS): re-runs fail with "duplicate column" once applied — benign.
+    if ! wrangler d1 execute keep-cooking --remote --file="$migration"; then
+      if [ "$migration" = "$API_DIR/drizzle/0005_is_favorite.sql" ]; then
+        echo "    (0005 already applied — duplicate column tolerated)"
+      else
+        echo "    ERROR applying $migration" >&2
+        exit 1
+      fi
+    fi
   else
     echo "    skipping $migration (not found)"
   fi

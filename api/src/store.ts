@@ -421,7 +421,11 @@ export class MemoryStore implements Store {
   async updateRecipe(id: string, input: any, meta: { deviceId: string }): Promise<Recipe | null> {
     const cur = this.recipes.get(id);
     if (!cur || cur.deleted) return null;
-    const fresh = await this.createRecipe(input, { deviceId: meta.deviceId, id, updatedAt: nowIso() });
+    // isFavorite has no zod default (unlike scalar defaults): old clients
+    // that omit it must not clear a favorite set elsewhere. Preserve the
+    // stored flag when the update omits the field.
+    const merged = { ...input, isFavorite: input.isFavorite ?? (cur as { isFavorite?: boolean }).isFavorite ?? false };
+    const fresh = await this.createRecipe(merged, { deviceId: meta.deviceId, id, updatedAt: nowIso() });
     // preserve nothing else; createRecipe overwrote — keep household if input omitted? input always has householdId default.
     void cur;
     return fresh;

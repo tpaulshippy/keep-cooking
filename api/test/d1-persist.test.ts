@@ -35,6 +35,7 @@ describe('D1Store SQL generation (fake binding)', () => {
     const r = await store.createRecipe(
       {
         title: 'R', householdId: 'hh-demo', prepMinutes: 5, cookMinutes: 6, rating: 3,
+        isFavorite: true,
         source: 'S', sourceUrl: 'https://x.example/', categories: ['c'],
         ingredients: [{ name: 'A' }], steps: [{ text: 'T' }],
       },
@@ -45,6 +46,11 @@ describe('D1Store SQL generation (fake binding)', () => {
     for (const col of ['prep_minutes', 'cook_minutes', 'rating', 'is_favorite', 'source', 'source_url', 'categories', 'photo_original']) {
       expect(upsert!.sql).toContain(`${col}=excluded.${col}`);
     }
+    // Favorite must actually bind 1 (not just appear in SQL): guards
+    // against a misaligned placeholder that silently writes 0.
+    // params: id, household_id, title, description, servings,
+    // prep_minutes, cook_minutes, rating, is_favorite, ...
+    expect(upsert!.params[8]).toBe(1);
     // Update omitting all children: DELETEs must cover both child tables.
     stmts.length = 0;
     await store.updateRecipe(r.id, { title: 'R2', householdId: 'hh-demo', ingredients: [], steps: [] }, { deviceId: 'd1' });
