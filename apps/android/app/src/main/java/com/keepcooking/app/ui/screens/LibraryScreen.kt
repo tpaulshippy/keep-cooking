@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.keepcooking.app.AppContainer
 import com.keepcooking.app.cook.fractionDisplayString
+import com.keepcooking.app.cook.scaledDisplay
 import com.keepcooking.app.library.AdvancedFilter
 import com.keepcooking.app.library.Cookbook
 import com.keepcooking.app.library.DuplicableRecipe
@@ -496,7 +497,11 @@ fun RecipeDetailScreen(
             description = r.recipeDescription
             servings = r.servings
             ingredients = container.db.ingredients().forRecipe(recipeId).map {
-                it.display.ifBlank { it.name }
+                // Display strings are quantity-only ("12 oz"): the name
+                // always survives (web ingredientLabel parity).
+                val d = it.display.ifBlank { null }
+                if (d == null) scaledDisplay(it.name, it.quantity, it.unit, 1.0)
+                else "$d ${it.name}"
             }
             steps = container.db.steps().forRecipe(recipeId).map { it.text }
         }
