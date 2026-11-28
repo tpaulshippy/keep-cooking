@@ -20,6 +20,7 @@ interface LibraryRecipe {
     val prepMinutes: Int?
     val cookMinutes: Int?
     val rating: Double?
+    val isFavorite: Boolean
     val source: String
     val categories: List<String>
     val ingredientNames: List<String>
@@ -39,6 +40,7 @@ data class RoomLibraryRecipe(
     override val prepMinutes get() = entity.prepMinutes
     override val cookMinutes get() = entity.cookMinutes
     override val rating get() = entity.rating
+    override val isFavorite get() = entity.isFavorite
     override val source get() = entity.source
     override val categories: List<String>
         get() = runCatching {
@@ -72,6 +74,8 @@ data class AdvancedFilter(
     val maxTotalMinutes: Int? = null,
     /** Keep recipes rated >= this. Unrated recipes never match. */
     val minRating: Double? = null,
+    /** Keep only favorites. */
+    val favoritesOnly: Boolean = false,
     /** Case-insensitive substring match on `source`. */
     val sourceContains: String? = null,
     /** At least one must match (case-insensitive). Empty = no constraint. */
@@ -79,7 +83,7 @@ data class AdvancedFilter(
 ) {
     val isEmpty: Boolean
         get() = query.isBlank() && includeTerms.isEmpty() && excludeTerms.isEmpty() &&
-            maxTotalMinutes == null && minRating == null &&
+            maxTotalMinutes == null && minRating == null && !favoritesOnly &&
             (sourceContains ?: "").isEmpty() && categories.isEmpty()
 
     fun toJson(): String = Json.encodeToString(this)
@@ -113,6 +117,7 @@ fun <R : LibraryRecipe> matchesFilter(recipe: R, filter: AdvancedFilter): Boolea
         val rating = recipe.rating ?: return false
         if (rating < floor) return false
     }
+    if (filter.favoritesOnly && !recipe.isFavorite) return false
     filter.sourceContains?.trim()?.takeIf { it.isNotEmpty() }?.let { src ->
         if (!recipe.source.lowercase().contains(src.lowercase())) return false
     }

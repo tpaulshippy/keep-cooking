@@ -239,6 +239,7 @@ class SyncEngine(
                 prepMinutes = p.int("prepMinutes"),
                 cookMinutes = p.int("cookMinutes"),
                 rating = p.dbl("rating"),
+                isFavorite = p.bool("isFavorite") ?: false,
                 source = p.str("source") ?: "",
                 sourceUrl = p.str("sourceUrl") ?: "",
                 categoriesJson = categoriesJsonOf(p),
@@ -472,6 +473,9 @@ class SyncEngine(
 
     private fun JsonObject.int(key: String): Int? =
         this[key]?.takeIf { it != JsonNull }?.jsonPrimitive?.content?.toIntOrNull()
+
+    private fun JsonObject.bool(key: String): Boolean? =
+        this[key]?.takeIf { it != JsonNull }?.jsonPrimitive?.booleanOrNull
 
     // --- E2E sync (/v2/sync/:hash) ---
 
