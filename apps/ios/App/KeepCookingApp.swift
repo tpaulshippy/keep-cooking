@@ -48,6 +48,11 @@ struct AdaptiveShell: View {
     @Environment(\.modelContext) private var context
     /// Set when a Files/Mail file tap stages an importable document.
     @State private var showImport = false
+    /// Share-extension deep link (smidgen://clip?url=...). Hoisted here so
+    /// BOTH idioms (phone drawer + PadSplitView) present the Clip review flow.
+    @State private var clipLink = ClipDeepLink.shared
+    @State private var clipURL: String? = nil
+    @State private var showClip = false
 
     var body: some View {
         Group {
@@ -72,6 +77,17 @@ struct AdaptiveShell: View {
             _ = ClipDeepLink.shared.open(url)
         }
         .sheet(isPresented: $showImport) { ImportView() }
+        // Deep-link arrivals: present Clip review above whichever idiom
+        // is showing (phone drawer or iPad split).
+        .sheet(isPresented: $showClip, onDismiss: { clipURL = nil }) {
+            ClipView(urlText: clipURL ?? "")
+        }
+        .onChange(of: clipLink.pendingURL) { _, newValue in
+            guard let newValue else { return }
+            clipURL = newValue
+            clipLink.pendingURL = nil
+            showClip = true
+        }
         .task {
             // Airplane-mode demo: seeds load once, then sync when online.
             await SyncCoordinator.shared.seedIfNeeded(context: context)
@@ -835,6 +851,10 @@ final class ClipDeepLink {
     @discardableResult
     func open(_ url: URL) -> Bool {
         guard let clipped = Self.clippedURL(from: url) else { return false }
+        // The extension already enqueued this URL into ShareStore; consume
+        // the matching entry so a later manual Clip visit can't replay it.
+        // Other queued URLs are preserved.
+        ShareStore.consume(url: clipped)
         pendingURL = clipped
         return true
     }
@@ -933,11 +953,6 @@ struct DrawerShellView: View {
     @State private var selection: DrawerSection = .recipes
     @State private var drawerOpen = false
     @State private var quickAdd: QuickAddKind? = nil
-    /// Observed clip-link router (smidgen://clip?url=... via onOpenURL).
-    @State private var clipLink = ClipDeepLink.shared
-    /// URL forwarded into ClipView(urlText:) when a deep link arrives.
-    /// Cleared when the sheet dismisses; ShareStore.drain() stays fallback.
-    @State private var clipURL: String? = nil
     /// Blank-recipe request forwarded to the library (single + menu entry).
     @State private var requestBlankRecipe = false
     /// Recipe filter state (section + sheet + visible count): the top-bar
@@ -979,21 +994,14 @@ struct DrawerShellView: View {
         .animation(.easeInOut(duration: 0.22), value: drawerOpen)
         // Each quick-add destination owns its own NavigationStack —
         // no outer stack here (avoids nested navigation chrome).
-        .sheet(item: $quickAdd, onDismiss: { clipURL = nil }) { kind in
+        .sheet(item: $quickAdd) { kind in
             switch kind {
-            case .clip: ClipView(urlText: clipURL ?? "")
+            case .clip: ClipView()
             case .scan: OCRScanView()
             case .caption: CaptionsImportView()
             case .importFile: ImportView()
             case .paste: PasteImportView()
             }
-        }
-        // Deep-link arrivals: present the Clip review flow with the URL.
-        .onChange(of: clipLink.pendingURL) { _, newValue in
-            guard let newValue else { return }
-            clipURL = newValue
-            clipLink.pendingURL = nil
-            quickAdd = .clip
         }
     }
 
