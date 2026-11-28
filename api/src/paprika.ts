@@ -829,7 +829,7 @@ function stripTags(html: string): string {
     .trim();
 }
 
-function findRecipeJsonLd(html: string): Record<string, unknown> | null {
+function findAllRecipeJsonLd(html: string): Record<string, unknown>[] {
   const re = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script\s*>/gi;
   let m: RegExpExecArray | null;
   const candidates: unknown[] = [];
@@ -844,12 +844,15 @@ function findRecipeJsonLd(html: string): Record<string, unknown> | null {
       // ignore unparseable blocks
     }
   }
-  for (const c of candidates) {
+  return candidates.filter((c) => {
     const o = c as Record<string, unknown>;
     const type = o['@type'];
-    if (type === 'Recipe' || (Array.isArray(type) && type.includes('Recipe'))) return o;
-  }
-  return null;
+    return type === 'Recipe' || (Array.isArray(type) && type.includes('Recipe'));
+  }) as Record<string, unknown>[];
+}
+
+function findRecipeJsonLd(html: string): Record<string, unknown> | null {
+  return findAllRecipeJsonLd(html)[0] ?? null;
 }
 
 function schemaOrgToPaprika(ld: Record<string, unknown>): Record<string, unknown> {
@@ -935,13 +938,20 @@ export function parsePaprikaHtml(html: string, docName = 'index.html'): ParsedPa
   const warnings: string[] = [];
   let mapped: Record<string, unknown> | null = null;
 
-  // 1. Prefer JSON-LD Recipe blocks (Paprika 4+ / schema.org).
-  const ld = findRecipeJsonLd(html);
-  if (ld) {
-    mapped = schemaOrgToPaprika(ld);
-    warnings.push(`${docName}: parsed via JSON-LD Recipe block`);
-  } else {
-    // 2. hRecipe / h-recipe microformats (Paprika <=3 / Windows).
+  // 1. Prefer JSON-LD Recipe blocks (Paprika 4+ / schema.org). Accumulate
+  // EVERY block so a multi-recipe HTML export round-trips all of them.
+  const lds = findAllRecipeJsonLd(html);
+  if (lds.length > 0) {
+    return lds.map((ld, i) => {
+      const parsed = parsePaprikaJson(schemaOrgToPaprika(ld));
+      parsed.warnings = [
+        `${docName}: parsed recipe ${i + 1}/${lds.length} via JSON-LD Recipe block`,
+        ...parsed.warnings.map((w) => `${docName}: ${w}`),
+      ];
+      return parsed;
+    });
+  }
+  // 2. hRecipe / h-recipe microformats (Paprika <=3 / Windows).
     const fns = extractByClass(html, ['fn', 'p-name']);
     const ings = extractByClass(html, ['ingredient', 'p-ingredient']);
     const instr = extractByClass(html, ['instructions', 'e-instructions', 'p-instructions']);
@@ -976,7 +986,6 @@ export function parsePaprikaHtml(html: string, docName = 'index.html'): ParsedPa
         warnings.push(`${docName}: parsed via visible headings fallback (verify field mapping)`);
       }
     }
-  }
 
   if (!mapped) {
     return [{ input: null, warnings: [`${docName}: no JSON-LD, hRecipe, or heading structure found; skipped`], rawKeys: [] }];

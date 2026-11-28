@@ -365,6 +365,31 @@ describe('agent enroll + key-only REST', () => {
     expect(del.status).toBe(204);
   });
 
+  it('bulk export with blank householdId stays agent-scoped', async () => {
+    const { app, store } = agentApp();
+    await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
+    const h = agentHeaders(AGENT_TOKEN);
+    const now = new Date().toISOString();
+    await store.createRecipe(
+      { title: 'Mine', servings: 2, householdId: HH, categories: ['Shared'] },
+      { deviceId: 'd', updatedAt: now },
+    );
+    await store.createRecipe(
+      { title: 'Theirs', servings: 2, householdId: 'hh-other', categories: ['Shared'] },
+      { deviceId: 'd', updatedAt: now },
+    );
+    // A present-but-blank householdId must behave as absent (agent scope),
+    // not as "no filter" leaking the other household's cookbook match.
+    const res = await app.request('/api/export?format=json&cookbook=shared&householdId=', { headers: h });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { title: string }[];
+    expect(body.map((r) => r.title)).toEqual(['Mine']);
+    // all=true + ids= honors all (ids ignored per contract).
+    const both = await app.request('/api/export?format=json&all=true&ids=missing-id', { headers: h });
+    expect(both.status).toBe(200);
+    expect(((await both.json()) as unknown[])).toHaveLength(1);
+  });
+
   it('agent works in prod (no header-role escalation path needed)', async () => {
     const { app } = prodAgentApp();
     await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);

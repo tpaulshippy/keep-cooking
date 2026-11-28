@@ -216,7 +216,7 @@ object RecipeFileParser {
         if (trimmed.startsWith("<")) return ParsedFile(listOfNotNull(parseXmlRecipe(fileName, text, warnings)))
         // 4. HTML export: prefer embedded JSON-LD, fall back to headings.
         if (ext in setOf("html", "htm") || trimmed.contains("<html", ignoreCase = true)) {
-            return ParsedFile(listOfNotNull(parseHtmlRecipe(fileName, text, warnings)))
+            return ParsedFile(parseHtmlRecipes(fileName, text, warnings))
         }
         // 5. P1 labeled/columnar text: MMF / MXP / Pepperplate TXT / Recipe Manager.
         val p1 = parseLabeledText(fileName, text)
@@ -543,37 +543,46 @@ object RecipeFileParser {
 
     // --- P1 best-effort: HTML (JSON-LD → headings) ---
 
-    private fun parseHtmlRecipe(fileName: String, text: String, warnings: MutableList<String>): ParsedRecipe? {
-        // 1. schema.org JSON-LD Recipe block.
-        val ld = Regex(
+    private fun parseHtmlRecipes(fileName: String, text: String, warnings: MutableList<String>): List<ParsedRecipe> {
+        // 1. schema.org JSON-LD Recipe blocks — accumulate EVERY block so a
+        // multi-recipe HTML export re-imports all of its recipes.
+        val lds = Regex(
             """<script[^>]*application/ld\+json[^>]*>(.*?)</script>""",
             setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE),
         ).findAll(text).mapNotNull { runCatching { lenientJson.parseToJsonElement(it.groupValues[1]) }.getOrNull() }
-            .firstOrNull { (it as? JsonObject)?.let { o -> o["@type"] == JsonPrimitive("Recipe") } == true }
-            as? JsonObject
-        if (ld != null) {
-            warnings += "“$fileName”: imported from embedded recipe metadata."
-            val ings = (ld["recipeIngredient"] as? JsonArray)
-                ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty()
-            val instr = when (val v = ld["recipeInstructions"]) {
-                is JsonArray -> v.mapNotNull {
-                    when (it) {
-                        is JsonPrimitive -> it.contentOrNull
-                        is JsonObject -> (it["text"] as? JsonPrimitive)?.contentOrNull
-                        else -> null
-                    }
-                }
-                is JsonPrimitive -> splitDirections(v.contentOrNull.orEmpty())
-                else -> emptyList()
-            }
-            return ParsedRecipe(
-                title = (ld["name"] as? JsonPrimitive)?.contentOrNull ?: fileName.substringBeforeLast('.'),
-                description = (ld["description"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
-                servings = parseServings((ld["recipeYield"] as? JsonPrimitive)?.contentOrNull.orEmpty()),
-                ingredients = ings,
-                steps = instr,
-            )
+            .filter { (it as? JsonObject)?.let { o -> o["@type"] == JsonPrimitive("Recipe") } == true }
+            .map { it as JsonObject }.toList()
+        if (lds.isNotEmpty()) {
+            warnings += "“$fileName”: imported ${lds.size} recipe(s) from embedded recipe metadata."
+            return lds.map { jsonLdToRecipe(fileName, it) }
         }
+        return parseHtmlHeadingsFallback(fileName, text, warnings)
+    }
+
+    private fun jsonLdToRecipe(fileName: String, ld: JsonObject): ParsedRecipe {
+        val ings = (ld["recipeIngredient"] as? JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty()
+        val instr = when (val v = ld["recipeInstructions"]) {
+            is JsonArray -> v.mapNotNull {
+                when (it) {
+                    is JsonPrimitive -> it.contentOrNull
+                    is JsonObject -> (it["text"] as? JsonPrimitive)?.contentOrNull
+                    else -> null
+                }
+            }
+            is JsonPrimitive -> splitDirections(v.contentOrNull.orEmpty())
+            else -> emptyList()
+        }
+        return ParsedRecipe(
+            title = (ld["name"] as? JsonPrimitive)?.contentOrNull ?: fileName.substringBeforeLast('.'),
+            description = (ld["description"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
+            servings = parseServings((ld["recipeYield"] as? JsonPrimitive)?.contentOrNull.orEmpty()),
+            ingredients = ings,
+            steps = instr,
+        )
+    }
+
+    private fun parseHtmlHeadingsFallback(fileName: String, text: String, warnings: MutableList<String>): List<ParsedRecipe> {
         // 2. Visible headings fallback.
         fun section(headings: List<String>): List<String> {
             for (h in headings) {
@@ -598,10 +607,10 @@ object RecipeFileParser {
         val steps = section(listOf("Directions", "Instructions", "Steps", "Method"))
         if (ings.isEmpty() && steps.isEmpty()) {
             warnings += "“$fileName”: no recipe sections found."
-            return null
+            return emptyList()
         }
         warnings += "“$fileName”: imported from visible headings (best-effort)."
-        return ParsedRecipe(title = title, ingredients = ings, steps = steps)
+        return listOf(ParsedRecipe(title = title, ingredients = ings, steps = steps))
     }
 
     private fun stripTags(s: String): String =

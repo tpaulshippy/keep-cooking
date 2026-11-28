@@ -279,6 +279,27 @@ describe('POST /api/import + GET /export round-trip', () => {
     expect(re[0]!.input.title).toBe('Antipasto');
   });
 
+  it('bulk HTML export re-imports every recipe', async () => {
+    const { app } = await makeApp({ seed: false });
+    for (const title of ['Html One', 'Html Two']) {
+      const c = await req(app, 'POST', '/api/recipes', {
+        body: {
+          title, servings: 2, householdId: 'hh-demo',
+          ingredients: [{ name: 'flour' }], steps: [{ text: 'Mix.' }],
+        },
+      });
+      expect(c.status).toBe(201);
+    }
+    const htmlRes = await req(app, 'GET', '/api/export?format=html&all=true');
+    expect(htmlRes.status).toBe(200);
+    const back = await req(app, 'POST', '/api/import', {
+      body: { format: 'html', text: await htmlRes.text(), householdId: 'hh-demo' },
+    });
+    expect(back.status).toBe(200);
+    const report = (await back.json()) as { imported: number };
+    expect(report.imported).toBe(2);
+  });
+
   it('imports a .paprikarecipes zip payload and bulk-exports all', async () => {
     const { app } = await makeApp({ seed: false });
     const gz = await gzipBytes(new TextEncoder().encode(JSON.stringify({ ...SAMPLE, uid: 'UID-ZIP-1', name: 'Zip One' })));
