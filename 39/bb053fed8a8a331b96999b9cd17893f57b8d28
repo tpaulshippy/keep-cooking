@@ -1,0 +1,22 @@
+apps/ios/App/KeepCookingApp.swift
+  h_6bbd00fe0a456a 69-73,820-857,936-940,982,984,991-997
+apps/ios/Config/Info-App.plist
+  h_6bbd00fe0a456a 46-58
+apps/ios/Features/Ingest/ClipView.swift
+  h_6bbd00fe0a456a 43,45
+apps/ios/ShareExtension/ShareViewController.swift
+  h_6bbd00fe0a456a 26-31,43-44,128-148,184-187,195-198,206-209,219-259,278,280,324-325,406,412,419-420,422-423,430,436-443
+apps/ios/project.yml
+  h_6bbd00fe0a456a 129-135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "39bb053fed8a8a331b96999b9cd17893f57b8d28",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
