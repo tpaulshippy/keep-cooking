@@ -1,5 +1,6 @@
 package com.keepcooking.app.ui.screens
 
+import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -45,11 +55,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.keepcooking.app.AppContainer
 import com.keepcooking.app.network.SyncEnvelopeDto
 import com.keepcooking.app.cook.fractionDisplayString
 import com.keepcooking.app.cook.scaledDisplay
+import com.keepcooking.app.data.IngredientEntity
 import com.keepcooking.app.library.AdvancedFilter
 import com.keepcooking.app.library.Cookbook
 import com.keepcooking.app.library.DuplicableRecipe
@@ -497,8 +512,11 @@ private fun SavedSearches(
     }
 }
 
-/** Recipe detail — parity with iOS recipe detail. Loads the Room recipe with
- * ingredients + steps and launches the Cook flow from here (Cook is not a tab). */
+/** Recipe detail — read-only. Loads the Room recipe with ingredients +
+ * steps; Cook launches from here (Cook is not a tab), Edit opens the
+ * recipe editor, Share fires a plain-text ACTION_SEND, Delete tombstones
+ * via NavGraph's outbox write. Group-header ingredient rows (see editor)
+ * render as section headers, never bullets. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecipeDetailScreen(
@@ -506,13 +524,22 @@ fun RecipeDetailScreen(
     recipeId: String,
     onBack: () -> Unit = {},
     onCook: (String) -> Unit = {},
+    onEdit: (String) -> Unit = {},
+    onDelete: (String) -> Unit = {},
 ) {
+    val context = LocalContext.current
     var title by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
-    var ingredients by remember { mutableStateOf(listOf<String>()) }
+    var ingredients by remember { mutableStateOf(listOf<IngredientEntity>()) }
     var steps by remember { mutableStateOf(listOf<String>()) }
     var servings by remember { mutableStateOf(4.0) }
     var isFavorite by remember { mutableStateOf(false) }
+    var rating by remember { mutableStateOf<Double?>(null) }
+    var source by remember { mutableStateOf("") }
+    var sourceUrl by remember { mutableStateOf("") }
+    var categories by remember { mutableStateOf(listOf<String>()) }
+    var photoThumb by remember { mutableStateOf<String?>(null) }
+    var showDelete by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(recipeId) {
         val r = container.db.recipes().byId(recipeId)
@@ -521,27 +548,123 @@ fun RecipeDetailScreen(
             description = r.recipeDescription
             servings = r.servings
             isFavorite = r.isFavorite
-            ingredients = container.db.ingredients().forRecipe(recipeId).map {
-                // Display strings are quantity-only ("12 oz"): the name
-                // always survives (web ingredientLabel parity), but don't
-                // duplicate it when display already ends with the name.
-                val d = it.display.trim().ifBlank { null }
-                val n = it.name.trim()
-                if (d == null) scaledDisplay(it.name, it.quantity, it.unit, 1.0)
-                else if (n.isNotEmpty() && d.endsWith(n, ignoreCase = true)) d
-                else "$d $n".trim()
-            }
+            rating = r.rating
+            source = r.source
+            sourceUrl = r.sourceUrl
+            photoThumb = r.photoThumb ?: r.photoOriginal
+            categories = runCatching {
+                kotlinx.serialization.json.Json.parseToJsonElement(r.categoriesJson)
+                    .jsonArray.map { it.jsonPrimitive.content }
+            }.getOrDefault(emptyList())
+            ingredients = container.db.ingredients().forRecipe(recipeId)
             steps = container.db.steps().forRecipe(recipeId).map { it.text }
         }
     }
-    Scaffold(topBar = { TopAppBar(title = { Text(title.ifBlank { "Recipe" }) }) }) { padding ->
-        Column(Modifier.padding(padding).padding(16.dp)) {
+    fun shareRecipe() {
+        val lines = ingredients.map { it.display.ifBlank { it.name } }
+        val text = buildString {
+            appendLine(title)
+            appendLine("Serves ${fractionDisplayString(servings)}")
+            if (sourceUrl.isNotBlank()) appendLine(sourceUrl)
+            if (lines.isNotEmpty()) {
+                appendLine()
+                appendLine("Ingredients")
+                lines.forEach { appendLine("• $it") }
+            }
+            steps.forEachIndexed { i, s ->
+                if (i == 0) appendLine()
+                if (i == 0) appendLine("Steps")
+                appendLine("${i + 1}. $s")
+            }
+        }
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, title)
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        context.startActivity(Intent.createChooser(send, "Share recipe"))
+    }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(title.ifBlank { "Recipe" }) },
+                navigationIcon = {
+                    androidx.compose.material3.IconButton(onClick = onBack) {
+                        androidx.compose.material3.Icon(
+                            Icons.Filled.ArrowBack,
+                            contentDescription = "Back",
+                        )
+                    }
+                },
+                actions = {
+                    androidx.compose.material3.IconButton(onClick = { onEdit(recipeId) }) {
+                        androidx.compose.material3.Icon(Icons.Filled.Edit, contentDescription = "Edit")
+                    }
+                    androidx.compose.material3.IconButton(onClick = ::shareRecipe) {
+                        androidx.compose.material3.Icon(Icons.Filled.Share, contentDescription = "Share")
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        Column(Modifier.padding(padding).padding(16.dp).verticalScroll(rememberScrollState())) {
             if (title.isBlank()) {
                 Text("Recipe not found.", style = MaterialTheme.typography.bodyMedium)
                 TextButton(onClick = onBack) { Text("Back") }
                 return@Column
             }
+            if (!photoThumb.isNullOrBlank()) {
+                AsyncImage(
+                    model = photoThumb,
+                    contentDescription = "Recipe photo",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxWidth().height(200.dp)
+                        .clip(RoundedCornerShape(16.dp)),
+                )
+                Spacer(Modifier.height(12.dp))
+            }
             if (description.isNotBlank()) Text(description, style = MaterialTheme.typography.bodyMedium)
+            rating?.let {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.Icon(
+                        Icons.Filled.Star,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("$it / 5", style = MaterialTheme.typography.labelMedium)
+                }
+            }
+            val canOpen = sourceUrl.trim().lowercase().let {
+                it.startsWith("http://") || it.startsWith("https://")
+            }
+            if (source.isNotBlank() || sourceUrl.isNotBlank()) {
+                Text(
+                    text = source.ifBlank { sourceUrl },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (canOpen) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.typography.labelMedium.color,
+                    modifier = if (canOpen) {
+                        Modifier.clickable {
+                            runCatching {
+                                context.startActivity(
+                                    Intent(
+                                        Intent.ACTION_VIEW,
+                                        android.net.Uri.parse(sourceUrl.trim()),
+                                    ),
+                                )
+                            }
+                        }
+                    } else Modifier,
+                )
+            }
+            if (categories.isNotEmpty()) {
+                Text(
+                    "Categories: ${categories.joinToString(", ")}",
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
             Text(
                 "Serves ${fractionDisplayString(servings)}",
                 style = MaterialTheme.typography.labelMedium,
@@ -624,10 +747,54 @@ fun RecipeDetailScreen(
             Button(onClick = { onCook(recipeId) }, modifier = Modifier.fillMaxWidth()) {
                 Text("Start Cooking")
             }
+            OutlinedButton(
+                onClick = { onEdit(recipeId) },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            ) {
+                Text("Edit")
+            }
             Text("Ingredients", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
-            ingredients.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
+            ingredients.forEach { ing ->
+                val line = ing.display.ifBlank { ing.name }
+                val isHeader = ing.quantity == null && ing.unit.isBlank() &&
+                    line.trim().endsWith(":") && line.isNotBlank()
+                if (isHeader) {
+                    Text(
+                        line,
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                } else {
+                    Text("• $line", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
             Text("Steps", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
             steps.forEachIndexed { i, s -> Text("${i + 1}. $s", style = MaterialTheme.typography.bodyMedium) }
+            TextButton(
+                onClick = { showDelete = true },
+                modifier = Modifier.padding(top = 16.dp),
+            ) {
+                androidx.compose.material3.Icon(
+                    Icons.Filled.Delete,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                )
+                Spacer(Modifier.width(4.dp))
+                Text("Delete recipe", color = MaterialTheme.colorScheme.error)
+            }
         }
+    }
+    if (showDelete) {
+        AlertDialog(
+            onDismissRequest = { showDelete = false },
+            title = { Text("Delete recipe?") },
+            text = { Text("“$title” will be removed on this device and the delete will sync.") },
+            confirmButton = {
+                TextButton(onClick = { showDelete = false; onDelete(recipeId) }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { showDelete = false }) { Text("Cancel") } },
+        )
     }
 }

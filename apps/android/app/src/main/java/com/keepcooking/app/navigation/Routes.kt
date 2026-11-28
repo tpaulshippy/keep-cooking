@@ -24,6 +24,9 @@ enum class TopDestination(
 object Routes {
     const val RecipeDetail = "recipe/{recipeId}"
     fun recipeDetail(recipeId: String) = "recipe/$recipeId"
+    /** Editor is a recipe-launched flow (parity with web /recipes/:id/edit). */
+    const val RecipeEdit = "recipe/{recipeId}/edit"
+    fun recipeEdit(recipeId: String) = "recipe/$recipeId/edit"
     /** Cook is a recipe-launched flow (parity with iOS), not a tab. */
     const val Cook = "cook/{recipeId}"
     fun cook(recipeId: String) = "cook/$recipeId"

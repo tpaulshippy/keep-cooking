@@ -225,9 +225,9 @@ function render(): void {
   const route = parsePath(location.pathname);
   switch (route.name) {
     case 'recipes': return viewLibrary('');
-    case 'recipeNew': return viewRecipeForm(null);
+    case 'recipeNew': return viewRecipeEditor(null);
     case 'recipeDetail': return viewRecipeDetail(route.params.id);
-    case 'recipeEdit': return viewRecipeForm(route.params.id);
+    case 'recipeEdit': return viewRecipeEditor(route.params.id);
     case 'cook': return viewCook(route.params.id);
     case 'plan': return viewPlan();
     case 'lists': return viewLists();
@@ -293,56 +293,393 @@ interface RecipeFormPayload {
   title?: string; description?: string; servings?: number;
   prepMinutes?: number | null; cookMinutes?: number | null; rating?: number | null;
   isFavorite?: boolean; source?: string; sourceUrl?: string; categories?: string[];
+  difficulty?: string; photos?: unknown; photo?: unknown; photoUrl?: unknown; imageUrl?: unknown;
+  cookbooks?: string[]; totalMinutes?: number | null;
+  notes?: string; nutritionText?: string;
 }
 
-// ---- Recipe new/edit (shared form) ----
-function viewRecipeForm(editId: string | null): void {
+// ---- Recipe editor (sheet) — all metadata editing lives here; the detail
+// view is read-only. Used for both "new" (editId null) and "edit" modes.
+function editorPhotos(p: RecipeFormPayload & Record<string, unknown>): { count: number; thumb: string | null } {
+  const raw = p.photos;
+  const list: unknown[] = Array.isArray(raw) ? raw : [];
+  const candidates: unknown[] = [
+    ...list,
+    (p as Record<string, unknown>).photo,
+    (p as Record<string, unknown>).photoUrl,
+    (p as Record<string, unknown>).imageUrl,
+  ].filter((v) => typeof v === 'string' && (v as string).trim() !== '');
+  const urls = candidates.map((v) => safeHttpUrl(v)).filter((v): v is string => v !== null);
+  // Array-form photos count even when the URLs aren't renderable (offline blobs);
+  // bare string fields count when they hold a safe http(s) URL.
+  const count = Array.isArray(raw) ? raw.length : urls.length;
+  return { count, thumb: urls[0] ?? null };
+}
+
+function editorDomain(p: { source?: string; sourceUrl?: string }): string {
+  const safe = safeHttpUrl(p.sourceUrl);
+  if (safe) {
+    try {
+      return new URL(safe).hostname;
+    } catch {
+      return safe;
+    }
+  }
+  return p.source || '';
+}
+
+/** Compact duration label: 25 -> "25 min", 85 -> "1 hr 25 min", 120 -> "2 hr". */
+function formatMinutes(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return '';
+  const m = Math.round(n);
+  const h = Math.floor(m / 60);
+  const rest = m % 60;
+  if (h === 0) return `${rest} min`;
+  if (rest === 0) return `${h} hr`;
+  return `${h} hr ${rest} min`;
+}
+
+/** One textarea line per ingredient. Display+name pairs join as
+ *  "display name" unless the name already carries the display text
+ *  (prevents "line line" duplication when display === name). */
+function ingredientLine(ing: RecipeIngredient): string {
+  const d = (ing.display ?? '').trim();
+  const n = (ing.name ?? '').trim();
+  if (d && d !== n) return n.startsWith(d) ? n : `${d} ${n}`;
+  return (d || n || 'ingredient').trim();
+}
+
+/** One textarea line per ingredient, preserving group headers ("X:") as lines. */
+function ingredientsToText(ings: RecipeIngredient[]): string {
+  return ings.map((ing) => ingredientLine(ing)).join('\n');
+}
+
+/** Round-trip textarea lines to ingredient rows, carrying over id/quantity /
+ *  unit / display when a line matches an existing row's text (first match
+ *  wins); brand-new lines (incl. "Header:" group headers) become plain rows.
+ *  Never drops rows silently — every non-blank line yields a row. */
+function textToIngredients(text: string, prev: RecipeIngredient[]): RecipeIngredient[] {
+  const pool = new Map<string, RecipeIngredient[]>();
+  for (const ing of prev) {
+    const key = ingredientLine(ing);
+    const list = pool.get(key);
+    if (list) list.push(ing);
+    else pool.set(key, [ing]);
+  }
+  return text.split('\n').map((l) => l.trim()).filter(Boolean).map((line, i) => {
+    const match = pool.get(line)?.shift();
+    if (match) return { ...match, position: i };
+    return { name: line, position: i };
+  });
+}
+
+/** Steps round-trip on blank-line-separated paragraphs, preserving id/timers
+ *  when a paragraph matches an existing step's text. */
+function stepsToText(steps: RecipeStep[]): string {
+  return steps.map((s) => s.text.trim()).filter(Boolean).join('\n\n');
+}
+
+function textToSteps(text: string, prev: RecipeStep[]): RecipeStep[] {
+  const pool = new Map<string, RecipeStep[]>();
+  for (const s of prev) {
+    const list = pool.get(s.text.trim());
+    if (list) list.push(s);
+    else pool.set(s.text.trim(), [s]);
+  }
+  return text.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean).map((para, i) => {
+    const match = pool.get(para)?.shift();
+    if (match) return { ...match, text: para, position: i };
+    return { text: para, position: i };
+  });
+}
+
+/** "Key: value" nutrition lines render as a two-column read-only table. */
+function nutritionRows(text: string): { k: string; v: string }[] {
+  return text.split('\n').map((l) => l.trim()).filter(Boolean).map((line) => {
+    const idx = line.indexOf(':');
+    if (idx === -1) return { k: line, v: '' };
+    return { k: line.slice(0, idx).trim(), v: line.slice(idx + 1).trim() };
+  });
+}
+
+function viewRecipeEditor(editId: string | null): void {
   const existing = editId ? store.state.recipes.find((e) => e.id === editId && !e.deleted) : undefined;
   if (editId && !existing) {
     shell(`<h1>Not found</h1><p>This recipe is gone. <a href="${href('/recipes')}">Back to Library</a></p>`);
     return;
   }
   const p = (existing?.payload ?? {}) as RecipeFormPayload & Record<string, unknown>;
-  const cats = Array.isArray(p.categories) ? (p.categories as string[]).join(', ') : '';
-  shell(`<h1>${existing ? 'Edit recipe' : 'New recipe'}</h1>
-  <form id="recipeform">
-  <label>Title <input name="title" required value="${esc(p.title ?? '')}" /></label>
-  <label>Description <textarea name="description" rows="3">${esc(p.description ?? '')}</textarea></label>
-  <label>Servings <input name="servings" type="number" min="0.25" max="100" step="0.25" value="${esc(p.servings ?? 4)}" /></label>
-  <label>Prep minutes <input name="prepMinutes" type="number" min="0" step="1" value="${esc(p.prepMinutes ?? '')}" /></label>
-  <label>Cook minutes <input name="cookMinutes" type="number" min="0" step="1" value="${esc(p.cookMinutes ?? '')}" /></label>
-  <label>Rating (0–5) <input name="rating" type="number" min="0" max="5" step="0.5" value="${esc(p.rating ?? '')}" /></label>
-  <label><input name="isFavorite" type="checkbox"${p.isFavorite ? ' checked' : ''} /> Favorite</label>
-  <label>Source <input name="source" value="${esc(p.source ?? '')}" /></label>
-  <label>Source URL <input name="sourceUrl" type="url" value="${esc(p.sourceUrl ?? '')}" /></label>
-  <label>Categories (comma-separated) <input name="categories" value="${esc(cats)}" /></label>
-  <button type="submit">Save (offline OK)</button> <a href="${existing ? href('/recipes/' + existing.id) : href('/recipes')}">Cancel</a></form>`);
-  (document.getElementById('recipeform') as HTMLFormElement).addEventListener('submit', (e) => {
-    e.preventDefault();
-    const fd = new FormData(e.target as HTMLFormElement);
-    const title = String(fd.get('title') || '').trim();
-    if (!title) return;
-    const servings = numVal(fd.get('servings')) ?? 4;
-    const rating = numVal(fd.get('rating'));
+  const savedCats = Array.isArray(p.categories) ? (p.categories as string[]).join(', ') : '';
+  const savedDifficulty = typeof p.difficulty === 'string' ? p.difficulty : '';
+  const savedCookbookList = Array.isArray(p.cookbooks) ? [...(p.cookbooks as string[])] : [];
+  const savedCookbook = savedCookbookList[0] ?? '';
+  const photos = editorPhotos(p);
+  const domain = editorDomain(p);
+  const srcLink = safeHttpUrl(p.sourceUrl);
+  let rating = typeof p.rating === 'number' && Number.isFinite(p.rating) ? Math.min(5, Math.max(0, p.rating)) : 0;
+  let servings = typeof p.servings === 'number' && Number.isFinite(p.servings) ? p.servings : 4;
+  const prevIngredients = [...((p.ingredients as RecipeIngredient[] | undefined) ?? [])]
+    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  const prevSteps = [...((p.steps as RecipeStep[] | undefined) ?? [])]
+    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  const prepInit = typeof p.prepMinutes === 'number' && Number.isFinite(p.prepMinutes) ? p.prepMinutes : null;
+  const cookInit = typeof p.cookMinutes === 'number' && Number.isFinite(p.cookMinutes) ? p.cookMinutes : null;
+  const storedTotal = typeof p.totalMinutes === 'number' && Number.isFinite(p.totalMinutes) ? p.totalMinutes : null;
+  // Total defaults to the derived prep+cook when the model has no explicit
+  // totalMinutes (display + editable, matching the native sheet).
+  const totalInit = storedTotal ?? (prepInit != null && cookInit != null ? prepInit + cookInit : null);
+  const nutritionInit = typeof p.nutritionText === 'string' ? p.nutritionText : '';
+  let nutritionMode: 'text' | 'table' = 'text';
+
+  const DIFF_OPTS = ['', 'Easy', 'Medium', 'Hard'];
+  const diffOpts = DIFF_OPTS.includes(savedDifficulty) ? DIFF_OPTS : [...DIFF_OPTS, savedDifficulty];
+  const diffLabel = (v: string): string => (v === '' ? 'Not set' : v);
+
+  const starsHtml = (r: number): string =>
+    [1, 2, 3, 4, 5].map((i) =>
+      `<button type="button" class="star${i <= Math.round(r) ? ' on' : ''}" data-star="${i}" aria-label="Rate ${i} of 5" aria-pressed="${i <= Math.round(r)}">★</button>`).join('');
+
+  const sectionHead = (id: string, icon: string, label: string): string =>
+    `<button type="button" id="${id}-toggle" class="sheet-section" aria-expanded="true" aria-controls="${id}"><span><span class="sheet-secicon" aria-hidden="true">${icon}</span> ${label}</span><span class="chev" aria-hidden="true">⌃</span></button>`;
+
+  shell(`<div class="sheet" aria-label="${existing ? 'Edit recipe' : 'New recipe'}">
+  <header class="sheet-head">
+    <button type="button" id="ed-cancel" class="sheet-x" aria-label="Cancel editing">✕</button>
+    <h1 class="sheet-heading">${existing ? 'Edit Recipe' : 'New Recipe'}</h1>
+    <button type="button" id="ed-save" class="sheet-check" aria-label="Save recipe">✓</button>
+  </header>
+  ${sectionHead('ed-info', 'ⓘ', 'Info')}
+  <section id="ed-info" class="sheet-card" aria-label="Recipe info">
+    <label class="sheet-title-label"><span class="sr">Title</span>
+      <input id="ed-title" value="${esc(p.title ?? '')}" placeholder="Recipe title" required maxlength="200" /></label>
+    <div class="sheet-row" aria-label="Photos">
+      <div class="sheet-row-text"><span class="sheet-label">Photos</span>
+        <span class="muted">${esc(photos.count)} photo${photos.count === 1 ? '' : 's'}</span></div>
+      ${photos.thumb
+        ? `<img class="sheet-thumb" src="${esc(photos.thumb)}" alt="" loading="lazy" />`
+        : `<span class="sheet-thumb sheet-thumb-empty" aria-hidden="true">📷</span>`}
+    </div>
+    <div class="sheet-row" aria-label="Rating">
+      <span class="sheet-label">Rating</span>
+      <div class="stars" role="group" aria-label="Rating (0 to 5 stars)">${starsHtml(rating)}</div>
+    </div>
+    <div class="sheet-row" aria-label="Servings">
+      <label class="sheet-label" for="ed-servings">Servings</label>
+      <div class="stepper">
+        <button type="button" id="ed-serv-dec" aria-label="Fewer servings">−</button>
+        <input id="ed-servings" type="number" min="0.25" max="100" step="0.25" value="${esc(servings)}" />
+        <button type="button" id="ed-serv-inc" aria-label="More servings">+</button>
+      </div>
+    </div>
+    <div class="sheet-row sheet-col" aria-label="Source">
+      <div class="sheet-rowline">
+        <span class="sheet-label">${esc(domain || 'Source')}</span>
+        ${srcLink ? `<a class="sheet-linkicon" href="${esc(srcLink)}" aria-label="Open source link">🔗</a>` : `<span class="sheet-linkicon" aria-hidden="true">🔗</span>`}
+      </div>
+      <label class="sheet-sublabel">Source name <input id="ed-source" value="${esc(p.source ?? '')}" placeholder="e.g. bettycrocker.com" /></label>
+      <label class="sheet-sublabel">Source URL <input id="ed-sourceurl" type="url" value="${esc(p.sourceUrl ?? '')}" placeholder="https://…" inputmode="url" /></label>
+    </div>
+    <div class="sheet-row" aria-label="Difficulty">
+      <label class="sheet-label" for="ed-difficulty">Difficulty</label>
+      <select id="ed-difficulty">${diffOpts.map((o) => `<option value="${esc(o)}"${o === savedDifficulty ? ' selected' : ''}>${esc(diffLabel(o))}</option>`).join('')}</select>
+    </div>
+    <div class="sheet-row sheet-row-last" aria-label="Categories">
+      <label class="sheet-label" for="ed-cats">🗂 Categories</label>
+      <input id="ed-cats" value="${esc(savedCats)}" placeholder="Uncategorized" />
+    </div>
+    <div class="sheet-row sheet-row-last" aria-label="Cookbook">
+      <label class="sheet-label" for="ed-cookbook">📕 Cookbook</label>
+      <input id="ed-cookbook" value="${esc(savedCookbook)}" placeholder="My Cookbook" />
+    </div>
+  </section>
+  ${sectionHead('ed-times', '◔', 'Times')}
+  <section id="ed-times" class="sheet-card" aria-label="Times">
+    <div class="sheet-row" aria-label="Prep time">
+      <span class="sheet-label">🍴 Prep Time</span>
+      <span class="sheet-timeval"><span id="ed-prep-fmt" class="sheet-timefmt">${esc(prepInit != null ? formatMinutes(prepInit) : '')}</span>
+      <input id="ed-prep" type="number" min="0" step="1" value="${esc(prepInit ?? '')}" placeholder="—" aria-label="Prep time in minutes" /><span aria-hidden="true">🕐</span></span>
+    </div>
+    <div class="sheet-row" aria-label="Cook time">
+      <span class="sheet-label">🔥 Cook Time</span>
+      <span class="sheet-timeval"><span id="ed-cook-fmt" class="sheet-timefmt">${esc(cookInit != null ? formatMinutes(cookInit) : '')}</span>
+      <input id="ed-cook" type="number" min="0" step="1" value="${esc(cookInit ?? '')}" placeholder="—" aria-label="Cook time in minutes" /><span aria-hidden="true">🕐</span></span>
+    </div>
+    <div class="sheet-row sheet-row-last" aria-label="Total time">
+      <span class="sheet-label">⏱ Total Time</span>
+      <span class="sheet-timeval"><span id="ed-total-fmt" class="sheet-timefmt">${esc(totalInit != null ? formatMinutes(totalInit) : '')}</span>
+      <input id="ed-total" type="number" min="0" step="1" value="${esc(totalInit ?? '')}" placeholder="—" aria-label="Total time in minutes" /><span aria-hidden="true">🕐</span></span>
+    </div>
+  </section>
+  ${sectionHead('ed-descsec', '❝', 'Description')}
+  <section id="ed-descsec" class="sheet-card" aria-label="Description">
+    <label class="sheet-sublabel"><span class="sr">Description</span>
+      <textarea id="ed-desc" class="sheet-area" rows="5" placeholder="Describe this recipe…">${esc(p.description ?? '')}</textarea></label>
+  </section>
+  ${sectionHead('ed-ingssec', '☰', 'Ingredients')}
+  <section id="ed-ingssec" class="sheet-card" aria-label="Ingredients">
+    <label class="sheet-sublabel"><span class="sr">Ingredients, one per line</span>
+      <textarea id="ed-ings" class="sheet-area" rows="10" placeholder="One ingredient per line">${esc(ingredientsToText(prevIngredients))}</textarea></label>
+  </section>
+  ${sectionHead('ed-stepssec', '☰', 'Directions')}
+  <section id="ed-stepssec" class="sheet-card" aria-label="Directions">
+    <label class="sheet-sublabel"><span class="sr">Directions, blank line between steps</span>
+      <textarea id="ed-steps" class="sheet-area" rows="10" placeholder="One step per paragraph — blank line between steps">${esc(stepsToText(prevSteps))}</textarea></label>
+  </section>
+  ${sectionHead('ed-notessec', '🗒', 'Notes')}
+  <section id="ed-notessec" class="sheet-card" aria-label="Notes">
+    <label class="sheet-sublabel"><span class="sr">Notes</span>
+      <textarea id="ed-notes" class="sheet-area" rows="3" placeholder="">${esc(typeof p.notes === 'string' ? p.notes : '')}</textarea></label>
+  </section>
+  ${sectionHead('ed-nutsec', '🍴', 'Nutrition')}
+  <section id="ed-nutsec" class="sheet-card" aria-label="Nutrition">
+    <div class="seg" role="group" aria-label="Nutrition view">
+      <button type="button" id="ed-nut-text" class="seg-on" aria-pressed="true">Text</button>
+      <button type="button" id="ed-nut-tablebtn" aria-pressed="false">Table</button>
+    </div>
+    <button type="button" id="ed-nut-extract" class="sheet-linkbtn">▦ Extract to Table</button>
+    <label class="sheet-sublabel" id="ed-nut-textwrap"><span class="sr">Nutrition text</span>
+      <textarea id="ed-nut" class="sheet-area" rows="8" placeholder="Calories: 130 calories&#10;Serving Size: 1 Cookie">${esc(nutritionInit)}</textarea></label>
+    <div id="ed-nut-tablewrap" class="sheet-tablewrap" hidden></div>
+  </section>
+  <p id="ed-err" class="sheet-err" role="alert" aria-live="assertive"></p>
+  </div>`);
+
+  const servingsInput = document.getElementById('ed-servings') as HTMLInputElement;
+  const paintStars = (): void => {
+    document.querySelector('.stars')!.innerHTML = starsHtml(rating);
+    bindStars();
+  };
+  const bindStars = (): void => {
+    document.querySelectorAll<HTMLButtonElement>('[data-star]').forEach((b) => b.addEventListener('click', () => {
+      const v = Number(b.dataset.star);
+      // Tapping the current rating clears it back to 0 (mobile pattern).
+      rating = v === Math.round(rating) ? 0 : Math.min(5, Math.max(0, v));
+      paintStars();
+    }));
+  };
+  bindStars();
+
+  const setServings = (v: number): void => {
+    servings = v;
+    servingsInput.value = String(v);
+  };
+  document.getElementById('ed-serv-dec')!.addEventListener('click', () => {
+    const cur = Number(servingsInput.value) || servings || 4;
+    setServings(Math.max(0.25, Math.round((cur - 1) * 4) / 4));
+  });
+  document.getElementById('ed-serv-inc')!.addEventListener('click', () => {
+    const cur = Number(servingsInput.value) || servings || 4;
+    setServings(Math.min(100, Math.round((cur + 1) * 4) / 4));
+  });
+  servingsInput.addEventListener('input', () => {
+    const n = Number(servingsInput.value);
+    if (Number.isFinite(n)) servings = n;
+  });
+
+  const bindSection = (id: string): void => {
+    const sec = document.getElementById(id)!;
+    const btn = document.getElementById(`${id}-toggle`) as HTMLButtonElement;
+    let open = true;
+    btn.addEventListener('click', () => {
+      open = !open;
+      sec.hidden = !open;
+      btn.setAttribute('aria-expanded', String(open));
+      btn.classList.toggle('collapsed', !open);
+    });
+  };
+  for (const id of ['ed-info', 'ed-times', 'ed-descsec', 'ed-ingssec', 'ed-stepssec', 'ed-notessec', 'ed-nutsec']) {
+    bindSection(id);
+  }
+
+  // Live "25 min / 1 hr 25 min" labels next to the Times minute inputs.
+  const bindTimeFmt = (inputId: string, fmtId: string): void => {
+    const input = document.getElementById(inputId) as HTMLInputElement;
+    const fmt = document.getElementById(fmtId)!;
+    input.addEventListener('input', () => {
+      const n = Number(input.value);
+      fmt.textContent = input.value.trim() === '' || !Number.isFinite(n) ? '' : formatMinutes(n);
+    });
+  };
+  bindTimeFmt('ed-prep', 'ed-prep-fmt');
+  bindTimeFmt('ed-cook', 'ed-cook-fmt');
+  bindTimeFmt('ed-total', 'ed-total-fmt');
+
+  // Nutrition Text/Table views share one textarea source of truth; Table is a
+  // read-only parse ("Extract to Table" jumps to it), Text edits round-trip.
+  const paintNutritionTable = (): void => {
+    const text = (document.getElementById('ed-nut') as HTMLTextAreaElement).value;
+    const rows = nutritionRows(text);
+    document.getElementById('ed-nut-tablewrap')!.innerHTML = rows.length
+      ? `<table class="sheet-table"><tbody>${rows.map((r) =>
+        `<tr><th scope="row">${esc(r.k)}</th><td>${esc(r.v)}</td></tr>`).join('')}</tbody></table>`
+      : '<p class="muted">No nutrition lines yet.</p>';
+  };
+  const setNutritionMode = (mode: 'text' | 'table'): void => {
+    nutritionMode = mode;
+    if (mode === 'table') paintNutritionTable();
+    (document.getElementById('ed-nut-textwrap') as HTMLLabelElement).hidden = mode !== 'text';
+    (document.getElementById('ed-nut-tablewrap') as HTMLDivElement).hidden = mode !== 'table';
+    const t = document.getElementById('ed-nut-text') as HTMLButtonElement;
+    const b = document.getElementById('ed-nut-tablebtn') as HTMLButtonElement;
+    t.classList.toggle('seg-on', mode === 'text');
+    b.classList.toggle('seg-on', mode === 'table');
+    t.setAttribute('aria-pressed', String(mode === 'text'));
+    b.setAttribute('aria-pressed', String(mode === 'table'));
+  };
+  document.getElementById('ed-nut-text')!.addEventListener('click', () => setNutritionMode('text'));
+  document.getElementById('ed-nut-tablebtn')!.addEventListener('click', () => setNutritionMode('table'));
+  document.getElementById('ed-nut-extract')!.addEventListener('click', () => setNutritionMode('table'));
+
+  document.getElementById('ed-cancel')!.addEventListener('click', () => {
+    navigate(existing ? '/recipes/' + existing.id : '/recipes');
+  });
+
+  document.getElementById('ed-save')!.addEventListener('click', () => {
+    const err = document.getElementById('ed-err')!;
+    const title = (document.getElementById('ed-title') as HTMLInputElement).value.trim();
+    if (!title) {
+      err.textContent = 'Title is required.';
+      (document.getElementById('ed-title') as HTMLInputElement).focus();
+      return;
+    }
+    const servingsRaw = Number((document.getElementById('ed-servings') as HTMLInputElement).value);
+    const servingsOut = Number.isFinite(servingsRaw) && servingsRaw > 0 ? servingsRaw : 4;
+    const difficulty = (document.getElementById('ed-difficulty') as HTMLSelectElement).value;
+    const cats = (document.getElementById('ed-cats') as HTMLInputElement).value
+      .split(',').map((s) => s.trim()).filter(Boolean);
+    const cookbook = (document.getElementById('ed-cookbook') as HTMLInputElement).value.trim();
+    const prepOut = numVal((document.getElementById('ed-prep') as HTMLInputElement).value);
+    const cookOut = numVal((document.getElementById('ed-cook') as HTMLInputElement).value);
+    const totalOut = numVal((document.getElementById('ed-total') as HTMLInputElement).value);
     const fields: Record<string, unknown> = {
       title,
-      description: String(fd.get('description') || ''),
-      servings,
-      isFavorite: (e.target as HTMLFormElement).querySelector<HTMLInputElement>('input[name="isFavorite"]')!.checked,
-      source: String(fd.get('source') || ''),
-      sourceUrl: String(fd.get('sourceUrl') || ''),
-      categories: String(fd.get('categories') || '').split(',').map((s) => s.trim()).filter(Boolean),
+      description: (document.getElementById('ed-desc') as HTMLTextAreaElement).value,
+      servings: servingsOut,
+      source: (document.getElementById('ed-source') as HTMLInputElement).value,
+      sourceUrl: (document.getElementById('ed-sourceurl') as HTMLInputElement).value,
+      categories: cats,
       // Blank clears the server value (null serializes as omitted/null, never
       // a key-drop that would keep the stale value).
-      prepMinutes: numVal(fd.get('prepMinutes')) ?? null,
-      cookMinutes: numVal(fd.get('cookMinutes')) ?? null,
-      rating: rating == null ? null : Math.min(5, Math.max(0, rating)),
+      prepMinutes: prepOut ?? null,
+      cookMinutes: cookOut ?? null,
+      totalMinutes: totalOut ?? null,
+      rating: Math.min(5, Math.max(0, rating)),
+      notes: (document.getElementById('ed-notes') as HTMLTextAreaElement).value,
+      nutritionText: (document.getElementById('ed-nut') as HTMLTextAreaElement).value,
+      ingredients: textToIngredients(
+        (document.getElementById('ed-ings') as HTMLTextAreaElement).value, prevIngredients),
+      steps: textToSteps(
+        (document.getElementById('ed-steps') as HTMLTextAreaElement).value, prevSteps),
+      ...(difficulty ? { difficulty } : { difficulty: '' }),
+      // Clearing the cookbook box leaves the stored cookbooks untouched so a
+      // blank row can never wipe the model's array.
+      ...(cookbook ? { cookbooks: [cookbook, ...savedCookbookList.slice(1)] } : {}),
     };
     if (existing) {
       patchPayload('recipe', existing.id, fields);
       navigate('/recipes/' + existing.id);
     } else {
-      const env = store.upsert('recipe', '', { ...fields, ingredients: [], steps: [] });
+      const env = store.upsert('recipe', '', fields);
       navigate('/recipes/' + env.id);
     }
   });
@@ -359,15 +696,19 @@ function viewRecipeDetail(id: string): void {
   }
   const p = env.payload as {
     title?: string; description?: string; servings?: number;
-    prepMinutes?: number; cookMinutes?: number; rating?: number; isFavorite?: boolean;
+    prepMinutes?: number; cookMinutes?: number; totalMinutes?: number; rating?: number; isFavorite?: boolean;
     source?: string; sourceUrl?: string; categories?: string[];
+    difficulty?: string; cookbooks?: string[];
+    notes?: string; nutritionText?: string;
     ingredients?: RecipeIngredient[]; steps?: RecipeStep[];
   };
   const meta: string[] = [];
   if (p.prepMinutes != null) meta.push(`prep ${esc(p.prepMinutes)} min`);
   if (p.cookMinutes != null) meta.push(`cook ${esc(p.cookMinutes)} min`);
+  if (p.totalMinutes != null) meta.push(`total ${esc(p.totalMinutes)} min`);
   if (p.rating != null) meta.push(`rating ${esc(p.rating)}/5`);
   if (p.isFavorite) meta.push('★ favorite');
+  if (typeof p.difficulty === 'string' && p.difficulty) meta.push(`difficulty ${esc(p.difficulty)}`);
   // Non-http(s) source URLs render as plain text, never href (XSS allowlist).
   const srcLink = safeHttpUrl(p.sourceUrl);
   const srcHtml = srcLink
@@ -381,126 +722,28 @@ function viewRecipeDetail(id: string): void {
   const heroHtml = heroKey
     ? `<p><img class="recipe-hero" data-photo-key="${esc(heroKey)}" alt="Photo of ${esc(p.title ?? 'recipe')}" loading="lazy" hidden /></p>`
     : '';
+  const ratingStars = (r: number): string =>
+    [1, 2, 3, 4, 5].map((i) => `<span class="star${i <= Math.round(r) ? ' on' : ''}" aria-hidden="true">★</span>`).join('');
   shell(`<h1>${esc(p.title ?? id)}</h1>
   ${heroHtml}
   <p class="muted">Serves ${esc(p.servings ?? 4)} · updated ${esc(env.updatedAt)}${meta.length ? ' · ' + meta.join(' · ') : ''}</p>
   ${srcHtml}
   ${(p.categories ?? []).length ? `<p class="muted">Categories: ${esc((p.categories ?? []).join(', '))}</p>` : ''}
+  ${(p.cookbooks ?? []).length ? `<p class="muted">Cookbook: ${esc((p.cookbooks ?? []).join(', '))}</p>` : ''}
   <p>${esc(p.description ?? '')}</p>
+  ${p.rating != null ? `<p aria-label="Rating ${esc(p.rating)} out of 5"><span class="stars stars-ro">${ratingStars(p.rating)}</span></p>` : ''}
   <h2>Ingredients</h2>
-  <ul>${ings.map((ing, i) => `<li>${esc(ingredientLabel(ing))}
-    <button type="button" data-ing-up="${i}"${i === 0 ? ' disabled' : ''}>↑</button>
-    <button type="button" data-ing-down="${i}"${i === ings.length - 1 ? ' disabled' : ''}>↓</button>
-    <button type="button" data-ing-del="${i}">Remove</button></li>`).join('') || '<li>No ingredients yet.</li>'}</ul>
-  <form id="adding"><h3>Add ingredient</h3>
-  <label>Name <input name="name" required /></label>
-  <label>Quantity <input name="quantity" type="number" step="any" /></label>
-  <label>Unit <input name="unit" /></label>
-  <label>Display (optional override) <input name="display" /></label>
-  <button type="submit">Add (offline OK)</button></form>
+  <ul>${ings.map((ing) => `<li>${esc(ingredientLabel(ing))}</li>`).join('') || '<li>No ingredients yet.</li>'}</ul>
   <h2>Steps</h2>
-  <ol>${steps.map((s, i) => `<li><form data-stepform="${i}">
-    <label>Text <textarea name="text" rows="2" required>${esc(s.text)}</textarea></label>
-    <label>Timer seconds (optional) <input name="seconds" type="number" min="1" step="1" value="${esc(s.timers?.[0]?.seconds ?? '')}" /></label>
-    <label>Timer label <input name="label" value="${esc(s.timers?.[0]?.label ?? '')}" placeholder="Timer" /></label>
-    <button type="submit">Save step</button>
-    <button type="button" data-step-up="${i}"${i === 0 ? ' disabled' : ''}>↑</button>
-    <button type="button" data-step-down="${i}"${i === steps.length - 1 ? ' disabled' : ''}>↓</button>
-    <button type="button" data-step-del="${i}">Remove</button></form></li>`).join('') || '<li>No steps yet.</li>'}</ol>
-  <form id="addstep"><h3>Add step</h3>
-  <label>Text <textarea name="text" rows="2" required></textarea></label>
-  <label>Timer seconds (optional) <input name="seconds" type="number" min="1" step="1" /></label>
-  <label>Timer label <input name="label" placeholder="Timer" /></label>
-  <button type="submit">Add step (offline OK)</button></form>
-  <p><a href="${href('/cook/' + id)}">Start cook mode</a> · <a href="${href('/recipes/' + id + '/edit')}">Edit details</a> · <a href="${href('/recipes')}">Back</a></p>
+  <ol>${steps.map((s) => `<li>${esc(s.text)}</li>`).join('') || '<li>No steps yet.</li>'}</ol>
+  ${typeof p.notes === 'string' && p.notes ? `<h2>Notes</h2><p>${esc(p.notes)}</p>` : ''}
+  ${typeof p.nutritionText === 'string' && p.nutritionText ? `<h2>Nutrition</h2><p>${esc(p.nutritionText)}</p>` : ''}
+  <p><a href="${href('/cook/' + id)}">Start cook mode</a> · <a href="${href('/recipes/' + id + '/edit')}">Edit recipe</a> · <a href="${href('/recipes')}">Back</a></p>
   <button id="del" type="button">Delete recipe</button>`);
   hydrateRecipePhotos();
-  // Stable child ids: existing rows keep their id so server updates match
-  // them (no id regeneration); only brand-new rows mint an id.
-  const saveIngredients = (next: RecipeIngredient[]) => {
-    patchPayload('recipe', id, { ingredients: next.map((ing, i) => ({ ...ing, id: ing.id || crypto.randomUUID(), position: i })) });
-    render();
-  };
-  const saveSteps = (next: RecipeStep[]) => {
-    patchPayload('recipe', id, { steps: next.map((s, i) => ({ ...s, id: s.id || crypto.randomUUID(), position: i })) });
-    render();
-  };
   document.getElementById('del')!.addEventListener('click', () => {
     store.remove('recipe', id);
     navigate('/recipes');
-  });
-  document.querySelectorAll<HTMLButtonElement>('[data-ing-del]').forEach((b) => b.addEventListener('click', () => {
-    saveIngredients(ings.filter((_, i) => i !== Number(b.dataset.ingDel)));
-  }));
-  document.querySelectorAll<HTMLButtonElement>('[data-ing-up]').forEach((b) => b.addEventListener('click', () => {
-    const i = Number(b.dataset.ingUp);
-    if (i <= 0) return;
-    const next = [...ings];
-    [next[i - 1], next[i]] = [next[i], next[i - 1]];
-    saveIngredients(next);
-  }));
-  document.querySelectorAll<HTMLButtonElement>('[data-ing-down]').forEach((b) => b.addEventListener('click', () => {
-    const i = Number(b.dataset.ingDown);
-    if (i >= ings.length - 1) return;
-    const next = [...ings];
-    [next[i + 1], next[i]] = [next[i], next[i + 1]];
-    saveIngredients(next);
-  }));
-  (document.getElementById('adding') as HTMLFormElement).addEventListener('submit', (e) => {
-    e.preventDefault();
-    const fd = new FormData(e.target as HTMLFormElement);
-    const name = String(fd.get('name') || '').trim();
-    if (!name) return;
-    const q = numVal(fd.get('quantity'));
-    saveIngredients([...ings, {
-      name,
-      ...(q !== undefined ? { quantity: q } : {}),
-      unit: String(fd.get('unit') || ''),
-      display: String(fd.get('display') || ''),
-    }]);
-  });
-  const readStepForm = (form: HTMLFormElement): RecipeStep | null => {
-    const fd = new FormData(form);
-    const text = String(fd.get('text') || '').trim();
-    if (!text) return null;
-    const seconds = numVal(fd.get('seconds'));
-    const label = String(fd.get('label') || '').trim() || 'Timer';
-    // Optional timer as seconds+label, matching the iOS StepTimer shape
-    // ({seconds, label}) produced by StepTimerParser.
-    return { text, ...(seconds && seconds > 0 ? { timers: [{ seconds: Math.round(seconds), label }] } : { timers: [] }) };
-  };
-  document.querySelectorAll<HTMLFormElement>('[data-stepform]').forEach((form) => {
-    form.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const i = Number(form.dataset.stepform);
-      const parsed = readStepForm(form);
-      if (!parsed) return;
-      const next = steps.map((s, j) => (j === i ? { ...parsed, id: s.id } : s));
-      saveSteps(next);
-    });
-  });
-  document.querySelectorAll<HTMLButtonElement>('[data-step-del]').forEach((b) => b.addEventListener('click', () => {
-    saveSteps(steps.filter((_, i) => i !== Number(b.dataset.stepDel)));
-  }));
-  document.querySelectorAll<HTMLButtonElement>('[data-step-up]').forEach((b) => b.addEventListener('click', () => {
-    const i = Number(b.dataset.stepUp);
-    if (i <= 0) return;
-    const next = [...steps];
-    [next[i - 1], next[i]] = [next[i], next[i - 1]];
-    saveSteps(next);
-  }));
-  document.querySelectorAll<HTMLButtonElement>('[data-step-down]').forEach((b) => b.addEventListener('click', () => {
-    const i = Number(b.dataset.stepDown);
-    if (i >= steps.length - 1) return;
-    const next = [...steps];
-    [next[i + 1], next[i]] = [next[i], next[i + 1]];
-    saveSteps(next);
-  }));
-  (document.getElementById('addstep') as HTMLFormElement).addEventListener('submit', (e) => {
-    e.preventDefault();
-    const parsed = readStepForm(e.target as HTMLFormElement);
-    if (!parsed) return;
-    saveSteps([...steps, parsed]);
   });
 }
 

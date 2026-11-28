@@ -115,3 +115,66 @@ code { background: #f5f5f4; padding: 0.1em 0.3em; border-radius: 0.25rem; color:
   nav { flex-wrap: nowrap; overflow-x: auto; gap: 0.25rem; }
   nav a { white-space: nowrap; }
 }
+
+/* ---- Recipe editor sheet (mobile-first, dark-modal look) ---- */
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.sheet { max-width: 30rem; margin: 0 auto; background: #1c1917; color: #fafaf9; border-radius: 1rem; padding: 0.5rem 0.75rem 1.25rem; }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.25rem 0; }
+.sheet-heading { font-size: 1.15rem; margin: 0; flex: 1; text-align: center; font-weight: 650; }
+.sheet-x, .sheet-check { width: 2.75rem; height: 2.75rem; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-size: 1.3rem; line-height: 1; flex: none; }
+.sheet-x { background: transparent; border: 1px solid #57534e; color: #f87171; }
+.sheet-check { background: #3b82f6; border: 1px solid #3b82f6; color: #fff; font-size: 1.5rem; }
+.sheet-check:hover { border-color: #93c5fd; filter: brightness(1.08); }
+.sheet-section { width: 100%; background: transparent; border: 0; color: #a8a29e; display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 0.25rem; font-size: 1rem; font-weight: 600; }
+.sheet-section .chev { display: inline-block; transition: transform 0.15s ease; font-size: 1.2rem; }
+.sheet-section.collapsed .chev { transform: rotate(180deg); }
+.sheet-card { background: #292524; border-radius: 1rem; padding: 0.25rem 1rem; margin: 0 0 1rem; display: grid; }
+.sheet-card:last-of-type { margin-bottom: 0.5rem; }
+.sheet-title-label { display: block; padding: 0.9rem 0; }
+.sheet-title-label input { width: 100%; background: transparent; border: 0; color: inherit; font-size: 1.15rem; font-weight: 600; padding: 0; }
+.sheet-title-label input::placeholder { color: #78716c; }
+.sheet-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.9rem 0; border-top: 1px solid #44403c; }
+.sheet-row-text { display: grid; gap: 0.15rem; }
+.sheet-label { font-size: 1.05rem; font-weight: 500; }
+.sheet-row .muted { color: #a8a29e; }
+.sheet-thumb { width: 5.5rem; height: 5.5rem; border-radius: 1rem; object-fit: cover; flex: none; }
+.sheet-thumb-empty { display: inline-flex; align-items: center; justify-content: center; background: #44403c; font-size: 1.75rem; }
+.sheet-col { flex-direction: column; align-items: stretch; }
+.sheet-rowline { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.sheet-linkicon { color: #60a5fa; font-size: 1.25rem; text-decoration: none; }
+span.sheet-linkicon { opacity: 0.45; }
+.sheet-sublabel { display: grid; gap: 0.3rem; font-size: 0.85rem; color: #d6d3d1; font-weight: 500; margin-top: 0.6rem; }
+.sheet-sublabel input, .sheet-sublabel textarea, .sheet-sublabel select { background: #1c1917; color: #fafaf9; border: 1px solid #57534e; }
+.sheet-row input#ed-cats { background: transparent; border: 0; color: inherit; text-align: right; max-width: 55%; padding: 0; }
+.sheet-row input#ed-cookbook { background: transparent; border: 0; color: inherit; text-align: right; max-width: 55%; padding: 0; }
+.sheet-secicon { color: #78716c; margin-right: 0.35rem; }
+.sheet-timeval { display: inline-flex; align-items: center; gap: 0.5rem; }
+.sheet-timefmt { color: #fafaf9; font-size: 1.05rem; }
+.sheet-timeval input[type="number"] { width: 4.25rem; background: transparent; border: 1px solid #57534e; border-radius: 0.5rem; color: inherit; text-align: right; padding: 0.2rem 0.35rem; font-size: 1rem; }
+.sheet-area { width: 100%; background: transparent; border: 0; color: inherit; font-size: 1.05rem; line-height: 1.55; padding: 0.9rem 0; resize: vertical; min-height: 4rem; }
+.sheet-area::placeholder { color: #78716c; }
+.seg { display: flex; background: #44403c; border-radius: 0.6rem; padding: 0.2rem; margin: 0.75rem 0 0.25rem; }
+.seg button { flex: 1; border: 0; background: transparent; color: #d6d3d1; border-radius: 0.45rem; padding: 0.45rem 0; font-weight: 600; }
+.seg button.seg-on { background: #78716c; color: #fff; }
+.sheet-linkbtn { justify-self: start; background: transparent; border: 0; color: #60a5fa; font-size: 1.05rem; padding: 0.75rem 0; font-weight: 500; }
+.sheet-linkbtn:hover { border: 0; text-decoration: underline; }
+.sheet-tablewrap { padding: 0.25rem 0 0.9rem; }
+.sheet-table { width: 100%; border-collapse: collapse; font-size: 1rem; }
+.sheet-table th, .sheet-table td { text-align: left; padding: 0.3rem 0; border-bottom: 1px solid #44403c; font-weight: 400; }
+.sheet-table th { font-weight: 500; padding-right: 0.75rem; }
+.stars { display: inline-flex; gap: 0.35rem; }
+.star { background: transparent; border: 0; padding: 0.2rem; font-size: 1.5rem; color: #57534e; cursor: pointer; line-height: 1; }
+.star.on { color: #fbbf24; }
+.stars-ro .star { cursor: default; padding: 0; }
+.stepper { display: inline-flex; align-items: center; gap: 0.5rem; }
+.stepper button { width: 2.25rem; height: 2.25rem; border-radius: 999px; font-size: 1.2rem; line-height: 1; background: #44403c; border-color: #57534e; color: #fafaf9; }
+.stepper input { width: 4.5rem; text-align: right; background: transparent; border: 0; color: inherit; font-size: 1.15rem; }
+.sheet-row select#ed-difficulty { background: #1c1917; color: #fafaf9; border: 1px solid #57534e; max-width: 55%; }
+.sheet-meta2 { gap: 0.5rem; padding-top: 0.75rem; padding-bottom: 0.75rem; }
+.sheet-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.sheet-err { color: #fca5a5; min-height: 1.5em; margin: 0.25rem 0 0; }
+.sheet-err:empty { display: none; }
+/* Light-mode sheet keeps the same dark-modal chrome for parity with native. */
+@media (prefers-color-scheme: light) {
+  .sheet input, .sheet select, .sheet textarea { color-scheme: dark; }
+}

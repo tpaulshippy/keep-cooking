@@ -37,4 +37,11 @@ describe('href', () => {
     expect(href('/recipes/abc')).toBe('/app/recipes/abc');
     expect(href('/cook/abc')).toBe('/app/cook/abc');
   });
+
+  it('builds editor routes for new and edit modes', () => {
+    expect(href('/recipes/new')).toBe('/app/recipes/new');
+    expect(href('/recipes/abc/edit')).toBe('/app/recipes/abc/edit');
+    expect(parsePath('/app/recipes/new')).toEqual({ name: 'recipeNew', params: {} });
+    expect(parsePath('/app/recipes/abc/edit')).toEqual({ name: 'recipeEdit', params: { id: 'abc' } });
+  });
 });

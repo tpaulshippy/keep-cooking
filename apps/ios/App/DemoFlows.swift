@@ -920,11 +920,13 @@ private struct ActionsCTA: View {
 
 struct RecipeDetailView: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
     let recipe: Recipe
     @State private var addedMessage: String?
     @State private var checked: Set<String> = []
     @State private var servings: Double
     @State private var pane: DetailPane = .ingredients
+    @State private var showEditor = false
 
     /// Paprika-style segmented pane (custom capsule toggle, no copy).
     private enum DetailPane: String, CaseIterable {
@@ -991,8 +993,16 @@ struct RecipeDetailView: View {
         .navigationTitle(recipe.title)
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("recipe-detail-title")
+        .sheet(isPresented: $showEditor) {
+            RecipeEditorView(recipe: recipe)
+        }
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { showEditor = true } label: {
+                    Image(systemName: "pencil")
+                }
+                .accessibilityIdentifier("edit-recipe-button")
+                .accessibilityLabel("Edit recipe")
                 Button { addToList() } label: {
                     Image(systemName: "cart.badge.plus")
                 }
@@ -1011,6 +1021,11 @@ struct RecipeDetailView: View {
                     Image(systemName: "square.and.arrow.up")
                 }
                 .accessibilityLabel("Share recipe")
+                Button(role: .destructive) { deleteRecipe() } label: {
+                    Image(systemName: "trash")
+                }
+                .accessibilityIdentifier("delete-recipe-button")
+                .accessibilityLabel("Delete recipe")
             }
         }
     }
@@ -1092,25 +1107,21 @@ struct RecipeDetailView: View {
             initialServings: servings)
     }
 
-    /// Title + tappable 1–5 star rating + source link + breadcrumb.
+    /// Title + static 1–5 star rating display + source link + breadcrumb.
+    /// View-only: all metadata edits live in RecipeEditorView (Edit button).
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(recipe.title)
                 .font(.title2.weight(.bold))
-            HStack(spacing: 0) {
+            HStack(spacing: 2) {
                 ForEach(1...5, id: \.self) { star in
                     let filled = Double(star) <= (recipe.rating ?? 0)
-                    Button { setRating(star) } label: {
-                        Image(systemName: filled ? "star.fill" : "star")
-                            .font(.title3)
-                            .foregroundStyle(filled ? .yellow : .secondary)
-                            .frame(width: 44, height: 44)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Rate \(star) star\(star == 1 ? "" : "s")")
+                    Image(systemName: filled ? "star.fill" : "star")
+                        .font(.title3)
+                        .foregroundStyle(filled ? .yellow : .secondary)
                 }
             }
-            .padding(.leading, -12)
+            .accessibilityLabel(recipe.rating.map { "Rated \($0) out of 5" } ?? "Not rated")
             if !recipe.sourceUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                let url = URL(string: recipe.sourceUrl),
                url.scheme != nil {
@@ -1299,20 +1310,19 @@ struct RecipeDetailView: View {
         return "~\(num) \(short)"
     }
 
-    private func setRating(_ stars: Int) {
-        if recipe.rating == Double(stars) {
-            recipe.rating = nil
-        } else {
-            recipe.rating = Double(stars)
-        }
-        recipe.updatedAt = Date()
-        try? context.save()
-    }
-
     private func toggleFavorite() {
         recipe.isFavorite.toggle()
         recipe.updatedAt = Date()
         try? context.save()
+    }
+
+    /// Sync-safe delete: tombstone + updatedAt bump (last-write-wins), then
+    /// pop back to the list. Mirrors the library swipe-to-delete path.
+    private func deleteRecipe() {
+        recipe.tombstoned = true
+        recipe.updatedAt = Date()
+        try? context.save()
+        dismiss()
     }
 
     /// Real SwiftData insert: this recipe planned for tonight's dinner.
