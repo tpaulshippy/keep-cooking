@@ -321,6 +321,8 @@ public final class ShareViewController: UIViewController {
     }
 
     private func store(_ s: String) {
+        // Late loadItem callbacks after cancel/timeout must not save.
+        guard !didFinish else { return }
         let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             finish(message: "Nothing to share", success: false)

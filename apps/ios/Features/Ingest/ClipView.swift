@@ -218,11 +218,15 @@ public struct ClipView: View {
     /// Host drain for the Share extension bridge (ShareStore.enqueue → App Group).
     /// Prefills the URL field when the user arrives via Share sheet.
     private func drainShareExtension() {
+        // Never steal the queue while the user is typing: draining clears it.
+        guard urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let pending = ShareStore.drain()
         guard let first = pending.first?.trimmingCharacters(in: .whitespacesAndNewlines),
               !first.isEmpty else { return }
-        if urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            urlText = first
+        urlText = first
+        // Preserve the rest for subsequent visits instead of dropping them.
+        for rest in pending.dropFirst() {
+            ShareStore.enqueue(url: rest)
         }
     }
 
