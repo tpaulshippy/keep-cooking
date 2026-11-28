@@ -28,35 +28,6 @@ let editingPantryId: string | null = null;
 /** Shopping-list item (original index) with its quantity/aisle editor open. */
 let editingItemIdx: number | null = null;
 
-// ---- Theme (light/dark/auto, persisted as kc.theme) ----
-type ThemePref = 'light' | 'dark' | 'auto';
-const THEME_KEY = 'kc.theme';
-
-function getThemePref(): ThemePref {
-  try {
-    const v = localStorage.getItem(THEME_KEY);
-    if (v === 'light' || v === 'dark' || v === 'auto') return v;
-  } catch { /* no localStorage (SSR/test): fall through to auto */ }
-  return 'auto';
-}
-
-/** Apply the preference: explicit light/dark sets data-theme, auto removes
- *  it so the prefers-color-scheme media query in styles.css decides. */
-function applyTheme(): void {
-  const pref = getThemePref();
-  if (pref === 'auto') document.documentElement.removeAttribute('data-theme');
-  else document.documentElement.setAttribute('data-theme', pref);
-}
-
-function cycleTheme(): void {
-  const next: ThemePref = getThemePref() === 'auto' ? 'light' : getThemePref() === 'light' ? 'dark' : 'auto';
-  try {
-    localStorage.setItem(THEME_KEY, next);
-  } catch { /* ignore */ }
-  applyTheme();
-  render();
-}
-
 /** Live transport: every entity maps to its real contract CRUD endpoint. */
 const webTransport: PushTransport = {
   update: (entity, id, input) => {
@@ -114,9 +85,7 @@ function shell(view: string): void {
     const active = (p === '/' && route.name === 'home') || href(p) === here;
     return `<a href="${href(p)}"${active ? ' aria-current="page"' : ''}>${label}</a>`;
   }).join('');
-  const pref = getThemePref();
-  root.innerHTML = `<header class="topbar"><a class="brand" href="${href('/')}">Keep Cooking</a><nav aria-label="Primary">${nav}</nav><button id="themebtn" type="button" aria-label="Color theme (current: ${pref})">Theme: ${pref}</button></header><div class="view">${view}</div>`;
-  document.getElementById('themebtn')!.addEventListener('click', cycleTheme);
+  root.innerHTML = `<header class="topbar"><a class="brand" href="${href('/')}">Keep Cooking</a><nav aria-label="Primary">${nav}</nav></header><div class="view">${view}</div>`;
 }
 
 function esc(s: unknown): string {
@@ -1591,6 +1560,5 @@ function viewSettings(): void {
   });
 }
 
-applyTheme();
 initRouter(render);
 render();
