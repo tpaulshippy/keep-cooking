@@ -1,0 +1,16 @@
+apps/ios/App/KeepCookingApp.swift
+  h_6bbd00fe0a456a 51-55,80-90,854-857,997,999
+apps/ios/ShareExtension/ShareStore.swift
+  h_6bbd00fe0a456a 45-56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e91415bbfe8e6de95449de0dc8c64d8bb11e420e",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
