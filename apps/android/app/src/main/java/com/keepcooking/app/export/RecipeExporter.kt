@@ -37,6 +37,19 @@ class RecipeExporter(private val context: Context) {
         val categories: List<String>,
         val ingredients: List<ExportableIngredient>,
         val steps: List<ExportableStep>,
+        // Paprika round-trip fields (spec /tmp/paprika-spec.md §1.4). Room has
+        // no columns for these, so they default empty and callers/importers
+        // fill them when known. All optional — existing call sites unaffected.
+        val uid: String = "",
+        val notes: String = "",
+        val difficulty: String? = null,
+        val nutritionalInfo: String = "",
+        val totalMinutes: Int? = null,
+        val servingsRaw: String = "",
+        val created: String = "",
+        val cookbook: String = "",
+        val photoBase64: String? = null,
+        val photoFileName: String? = null,
     )
 
     suspend fun loadRecipe(db: AppDatabase, recipeId: String): ExportableRecipe? {
@@ -152,6 +165,27 @@ class RecipeExporter(private val context: Context) {
         return file
     }
 
+    /** Writes raw bytes (e.g. Paprika ZIP) to the app cache dir for ACTION_SEND. */
+    fun writeCacheBytes(format: ExportFormat, title: String, bytes: ByteArray): java.io.File {
+        val file = java.io.File(context.cacheDir, fileNameFor(title, format.ext))
+        file.writeBytes(bytes)
+        return file
+    }
+
+    // --- Paprika (.paprikarecipes ZIP of gzipped JSON) + YAML (JSON-as-YAML) ---
+
+    /** Single recipe → Paprika JSON string (spec §1.4). */
+    fun toPaprikaJson(r: ExportableRecipe): String = paprikaJsonFor(r)
+
+    /** Single recipe → `.paprikarecipes` ZIP bytes (one gzip member). */
+    fun toPaprikaZip(r: ExportableRecipe): ByteArray = paprikaZipFor(listOf(r))
+
+    /** Recipe list → `.paprikarecipes` ZIP bytes (one gzip member per recipe). */
+    fun toPaprikaZip(recipes: List<ExportableRecipe>): ByteArray = paprikaZipFor(recipes)
+
+    /** Single recipe → YAML text (emitted as a JSON array: valid YAML, spec §2). */
+    fun toYaml(r: ExportableRecipe): String = yamlFor(r)
+
     fun shareText(markdown: String): String = markdown // callers wrap in ACTION_SEND chooser
 }
 
@@ -159,6 +193,117 @@ enum class ExportFormat(val ext: String, val title: String, val mime: String) {
     JSON("json", "JSON", "application/json"),
     MD("md", "Markdown", "text/markdown"),
     HTML("html", "HTML (Schema.org)", "text/html"),
+    PAPRIKA("paprikarecipes", "Paprika", "application/zip"),
+    YAML("yml", "YAML", "text/yaml"),
+}
+
+/** Stable Paprika uid: reuse the stored one, else mint an uppercase UUID (spec §1.4). */
+fun paprikaUidFor(r: RecipeExporter.ExportableRecipe): String =
+    r.uid.ifBlank { java.util.UUID.randomUUID().toString().uppercase(java.util.Locale.US) }
+
+/** Paprika `photo` filename: keep the stored one, else synthesize `${UID}.jpg`
+ * when photo bytes are present — a `photo_data` with null/absent `photo`
+ * crashes Paprika mid-import (spec §1.2 #19). */
+fun paprikaPhotoNameFor(r: RecipeExporter.ExportableRecipe, uid: String): String? =
+    if (r.photoBase64.isNullOrBlank()) null
+    else r.photoFileName?.ifBlank { null } ?: "$uid.jpg"
+
+/** Human duration Paprika expects ("20 minutes"), from integer minutes. */
+internal fun paprikaMinutes(m: Int?): String? = m?.let { "$it minutes" }
+
+/**
+ * Keep Cooking recipe → Paprika recipe JSON object (spec §1.4). Pure function
+ * (no Context) so JVM unit tests can cover it without Robolectric.
+ */
+fun paprikaJsonFor(r: RecipeExporter.ExportableRecipe): String {
+    val uid = paprikaUidFor(r)
+    val photoName = paprikaPhotoNameFor(r, uid)
+    val created = r.created.ifBlank { paprikaNow() }
+    val parts = mutableListOf(
+        "${jsonStr("uid")}:${jsonStr(uid)}",
+        "${jsonStr("name")}:${jsonStr(r.title)}",
+        "${jsonStr("ingredients")}:${jsonStr(r.ingredients.joinToString("\n") { it.text })}",
+        "${jsonStr("directions")}:${jsonStr(r.steps.sortedBy { it.position }.joinToString("\n") { it.text })}",
+        "${jsonStr("servings")}:${jsonStr(r.servingsRaw.ifBlank { formatServings(r.servings) })}",
+        "${jsonStr("categories")}:${r.categories.joinToString(prefix = "[", postfix = "]") { jsonStr(it) }}",
+        "${jsonStr("rating")}:${(r.rating?.toInt()?.coerceIn(0, 5)) ?: 0}",
+        "${jsonStr("description")}:${jsonStr(r.description)}",
+        "${jsonStr("notes")}:${jsonStr(r.notes)}",
+        "${jsonStr("difficulty")}:${r.difficulty?.let { jsonStr(it) } ?: "null"}",
+        "${jsonStr("nutritional_info")}:${jsonStr(r.nutritionalInfo)}",
+        "${jsonStr("source")}:${jsonStr(r.source)}",
+        "${jsonStr("source_url")}:${jsonStr(r.sourceUrl)}",
+        "${jsonStr("created")}:${jsonStr(created)}",
+        "${jsonStr("hash")}:${jsonStr("")}",
+    )
+    paprikaMinutes(r.prepMinutes)?.let { parts += "${jsonStr("prep_time")}:${jsonStr(it)}" }
+    paprikaMinutes(r.cookMinutes)?.let { parts += "${jsonStr("cook_time")}:${jsonStr(it)}" }
+    paprikaMinutes(r.totalMinutes)?.let { parts += "${jsonStr("total_time")}:${jsonStr(it)}" }
+    if (r.cookbook.isNotBlank()) parts += "${jsonStr("cookbook")}:${jsonStr(r.cookbook)}"
+    if (photoName != null) {
+        parts += "${jsonStr("photo")}:${jsonStr(photoName)}"
+        parts += "${jsonStr("photo_data")}:${jsonStr(r.photoBase64 ?: "")}"
+    }
+    return "{${parts.joinToString(",")}}"
+}
+
+/** GZIP a single Paprika JSON member (`.paprikarecipe` body, magic `1F 8B`). */
+fun paprikaGzip(json: String): ByteArray {
+    val out = java.io.ByteArrayOutputStream()
+    java.util.zip.GZIPOutputStream(out).use { it.write(json.toByteArray(Charsets.UTF_8)) }
+    return out.toByteArray()
+}
+
+/**
+ * Recipes → `.paprikarecipes` ZIP bytes: one `*.paprikarecipe` gzip member per
+ * recipe (spec §1.1/§1.4). Unicode titles are sanitized to filesystem-safe names.
+ */
+fun paprikaZipFor(recipes: List<RecipeExporter.ExportableRecipe>): ByteArray {
+    val out = java.io.ByteArrayOutputStream()
+    java.util.zip.ZipOutputStream(out).use { zip ->
+        recipes.forEachIndexed { i, r ->
+            val safe = r.title.lowercase().map { if (it.isLetterOrDigit()) it else '-' }
+                .joinToString("").take(40).ifBlank { "recipe-${i + 1}" }
+            zip.putNextEntry(java.util.zip.ZipEntry("$safe.paprikarecipe"))
+            zip.write(paprikaGzip(paprikaJsonFor(r)))
+            zip.closeEntry()
+        }
+    }
+    return out.toByteArray()
+}
+
+internal fun paprikaNow(): String {
+    val cal = java.util.Calendar.getInstance()
+    fun p(v: Int) = v.toString().padStart(2, '0')
+    return "${cal.get(java.util.Calendar.YEAR)}-${p(cal.get(java.util.Calendar.MONTH) + 1)}-" +
+        "${p(cal.get(java.util.Calendar.DAY_OF_MONTH))} " +
+        "${p(cal.get(java.util.Calendar.HOUR_OF_DAY))}:${p(cal.get(java.util.Calendar.MINUTE))}:${p(cal.get(java.util.Calendar.SECOND))}"
+}
+
+/**
+ * Recipe → YAML text. Emission strategy per spec §2: the recipe as a JSON
+ * array (`[{...}]`) with a `.yml` extension — JSON is valid YAML, so this
+ * avoids all pipe-block indentation risk. Photo bytes reuse `photo_data`
+ * semantics under the YAML `photo` key.
+ */
+fun yamlFor(r: RecipeExporter.ExportableRecipe): String {
+    val parts = mutableListOf(
+        "${jsonStr("name")}:${jsonStr(r.title)}",
+        "${jsonStr("servings")}:${jsonStr(r.servingsRaw.ifBlank { formatServings(r.servings) })}",
+        "${jsonStr("source")}:${jsonStr(r.source)}",
+        "${jsonStr("source_url")}:${jsonStr(r.sourceUrl)}",
+        "${jsonStr("categories")}:${r.categories.joinToString(prefix = "[", postfix = "]") { jsonStr(it) }}",
+        "${jsonStr("rating")}:${(r.rating?.toInt()?.coerceIn(0, 5)) ?: 0}",
+        "${jsonStr("notes")}:${jsonStr(r.notes)}",
+        "${jsonStr("ingredients")}:${r.ingredients.joinToString(prefix = "[", postfix = "]") { jsonStr(it.text) }}",
+        "${jsonStr("directions")}:${r.steps.sortedBy { it.position }.joinToString(prefix = "[", postfix = "]") { jsonStr(it.text) }}",
+    )
+    r.difficulty?.let { parts += "${jsonStr("difficulty")}:${jsonStr(it)}" }
+    paprikaMinutes(r.prepMinutes)?.let { parts += "${jsonStr("prep_time")}:${jsonStr(it)}" }
+    paprikaMinutes(r.cookMinutes)?.let { parts += "${jsonStr("cook_time")}:${jsonStr(it)}" }
+    if (r.nutritionalInfo.isNotBlank()) parts += "${jsonStr("nutritional_info")}:${jsonStr(r.nutritionalInfo)}"
+    if (r.photoBase64?.isNotBlank() == true) parts += "${jsonStr("photo")}:${jsonStr(r.photoBase64)}"
+    return "[{${parts.joinToString(",")}}]"
 }
 
 internal fun formatServings(s: Double): String =

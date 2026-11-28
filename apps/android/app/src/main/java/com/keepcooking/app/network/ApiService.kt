@@ -77,6 +77,21 @@ interface ApiService {
     @POST("v2/devices")
     suspend fun enrollDevice(@Body body: DeviceEnrollRequest): Response<JsonObject>
 
+    // --- File import (POST /import/paprika; offline parse fallback when absent) ---
+
+    /**
+     * Server-side file import (Paprika/YAML/P1 formats). Optional: when the
+     * server does not implement this route (404/5xx) callers fall back to the
+     * on-device parser in `com.keepcooking.app.import`, so import works offline.
+     * Request: `{ fileName, contentBase64, cookbook?, importCookbooks }`.
+     * Response: `{ recipes: [...KC-shaped...], warnings: [...] }`.
+     */
+    @POST("import/paprika")
+    suspend fun importPaprika(
+        @Header("Authorization") auth: String?,
+        @Body body: JsonObject,
+    ): JsonObject
+
     // --- Share (POST /share/cookbook — parity with ShareAPIClient) ---
 
     @POST("share/cookbook")

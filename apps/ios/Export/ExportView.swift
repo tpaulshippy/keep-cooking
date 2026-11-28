@@ -19,21 +19,32 @@ extension Recipe: ExportableRecipe {
 }
 
 public enum ExportFormat: String, CaseIterable, Identifiable {
-    case json, md, html
+    case json, md, html, paprikarecipes, yaml
     public var id: String { rawValue }
     public var title: String {
         switch self {
         case .json: return "JSON"
         case .md: return "Markdown"
         case .html: return "HTML (Schema.org)"
+        case .paprikarecipes: return "Paprika"
+        case .yaml: return "YAML"
         }
     }
-    public var fileExtension: String { self == .md ? "md" : rawValue }
+    public var fileExtension: String {
+        switch self {
+        case .md: return "md"
+        case .paprikarecipes: return "paprikarecipes"
+        case .yaml: return "yml"
+        default: return rawValue
+        }
+    }
     public var utType: String {
         switch self {
         case .json: return "public.json"
         case .md: return "net.daringfireball.markdown"
         case .html: return "public.html"
+        case .paprikarecipes: return "com.paprika.recipe"
+        case .yaml: return "public.yaml"
         }
     }
 }
@@ -62,7 +73,17 @@ public struct RecipeExportView: View {
         case .json: return exportJSON(r)
         case .md: return exportMarkdown(r)
         case .html: return exportHTML(r)
+        case .paprikarecipes: return exportPaprikaJSON(r)
+        case .yaml: return exportYaml(r)
         }
+    }
+
+    /// Binary payload for formats that are not plain text. Paprika single
+    /// export is a real `.paprikarecipes` ZIP (one gzip member), so Files/
+    /// Mail receive an importable document — not a JSON dump in disguise.
+    private var exportedData: Data? {
+        guard let r = selected, format == .paprikarecipes else { return nil }
+        return exportPaprikaArchive([r])
     }
 
     public var body: some View {
@@ -108,13 +129,18 @@ public struct RecipeExportView: View {
     }
 
     /// Writes the current export to a temp file for ShareLink. Returns nil
-    /// (hiding the row) only when there is nothing to export.
+    /// (hiding the row) only when there is nothing to export. Binary formats
+    /// (Paprika ZIP) write bytes; text formats write UTF-8.
     private func writeTempFile() -> URL? {
         guard let r = selected else { return nil }
         let safe = r.title.lowercased().map { $0.isLetter || $0.isNumber ? $0 : "-" }
         let name = "keep-cooking-\(String(safe).prefix(40)).\(format.fileExtension)"
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(String(name))
-        try? exportedText.write(to: url, atomically: true, encoding: .utf8)
+        if let data = exportedData {
+            try? data.write(to: url, options: .atomic)
+        } else {
+            try? exportedText.write(to: url, atomically: true, encoding: .utf8)
+        }
         return (try? url.checkResourceIsReachable()) == true ? url : nil
     }
 }

@@ -40,7 +40,14 @@ Merge (`planMerge`): survivor = most ingredients → has photo → highest ratin
 ### Export (`Export/`)
 
 - `RecipeExporter.swift` (Foundation-only): `exportJSON` / `exportMarkdown` / `exportHTML`, mirroring `api/src/export.ts` (Markdown line style, `PT<n>M` durations, JSON-LD `Recipe` block). HTML escapes `<` inside JSON-LD so `</script>` can never break out.
-- `ExportView.swift`: recipe picker + format picker + preview + ShareLink temp-file export (offline-capable).
+- `RecipeExporter.swift` also hosts Paprika + YAML export (P0): `exportPaprikaJSON` (full §1.4 object incl. stable uppercase `uid`, human durations, `created` stamp), `exportPaprikaArchive` (real `.paprikarecipes` ZIP bytes — manual writer + CRC-32, gzip via `Compression` when present, raw-JSON fallback the parser accepts), `exportYaml` / `exportYamlArray` (JSON-as-YAML, `.yml`). See `Export/README.md` for the samples-regen note.
+- `ExportView.swift`: recipe picker + format picker + preview + ShareLink temp-file export (offline-capable). The Paprika format writes ZIP bytes, not text, so the shared file imports into Paprika as-is.
+
+### Import (`Features/Ingest/`)
+
+- `PaprikaImport.swift` (Foundation-only, no SwiftData/SwiftUI): offline parser + `POST /import` client. P0: `.paprikarecipes` ZIP, `.paprikarecipe` gzip/multi-member/bare JSON, YAML (+JSON-as-YAML), HTML (JSON-LD → hRecipe → headings). P1 best-effort: MX2/MXP/MZ2, MealMaster text, FDX/FDXZ, Pepperplate/Copy-Me-That ZIPs, Yum XML, `.mcb`, Recipe Manager TXT. Pure-Swift DEFLATE + ZIP reader (zero new dependencies). P2/P3 blobs rejected with re-export guidance. Server owns uid upsert; on-device-only saves dedupe by title (Recipe has no paprikaUid column — Core is frozen).
+- `ImportView.swift`: file picker (all import extensions) → offline parse preview → cookbook picker + **Import cookbooks from file** toggle → progress + result (`imported / updated / warnings`, server vs on-device noted).
+- Wiring (app shell owns this — snippet in `Export/README.md`): Info.plist `UTExportedTypeDeclarations` for `com.paprika.recipe(s)` + `CFBundleDocumentTypes`, app-root `.modifier(ImportURLHandler(...))` → `ImportPendingStore.stage(_:)` → present `ImportView()` (consumes staged file on appear). Tapping a `.paprikarecipes` attachment in Files/Mail then offers import.
 - `EXPORT_SAMPLES/recipe.{json,md,html}`: generated **from the real Swift exporter** (`swiftc` compile of `RecipeExporter.swift` + a seed-01-based main), validated: JSON parses with 4 ingredients/3 steps; Markdown spot-checked; HTML contains exactly one `application/ld+json` block whose `@type` is `Recipe` with `prepTime PT10M`/`cookTime PT20M`, 4 `recipeIngredient`, 3 `HowToStep`.
 
 ### System — Widgets, Intents, Watch
@@ -52,8 +59,7 @@ Merge (`planMerge`): survivor = most ingredients → has photo → highest ratin
 
 ## Validation (this machine, no Xcode project in repo)
 
-- `swiftc -parse` on all 11 files: clean.
-- `swiftc -typecheck` (macOS SDK): all library/export/widget/watch/intents sources typecheck with **zero errors** (one fix applied along the way: removed iOS-only `textInputAutocapitalization`; `AnyObject`-protocol alignment with Lane 2's `Syncable` precedent).
+- `swiftc -parse` on all 11 files: clean.- `swiftc -typecheck` (macOS SDK): all library/export/widget/watch/intents sources typecheck with **zero errors** (one fix applied along the way: removed iOS-only `textInputAutocapitalization`; `AnyObject`-protocol alignment with Lane 2's `Syncable` precedent).
 - `DuplicateFinderTests.swift`: `swiftc -parse` clean. Full `xctest` execution is **not possible with raw `swiftc` in this environment** (even a trivial `import XCTest` file fails the same way — the toolchain needs the xcodebuild test-bundle pipeline). Instead, **every assertion in the XCTest file is mirrored in a standalone harness** compiled against the real shipped sources (`LibrarySearch` + `DuplicateFinder` + `RecipeExporter` + `WidgetSnapshot`): **18/18 PASS** — all 3 seeded dupes caught, no false positives on distinct seeds, merge keeps best photo + unions ingredients, all filter dimensions, HTML escaping + single JSON-LD block, snapshot roundtrip + corrupt-tolerance.
 - Export samples validated with Python `json` + string checks (see above).
 - No auth/sync/Core changes: `git status` shows only Lane 5 paths (plus this README).
@@ -69,4 +75,4 @@ Merge (`planMerge`): survivor = most ingredients → has photo → highest ratin
 - Server-side household membership/invite redemption (`POST /households/:id/invites` + `POST /invites/redeem`) — invites are local + out-of-band only. Every button in `HouseholdInvitesView` works against that local model.
 - Actual widget/watch screenshots — no `.xcodeproj` exists in the repo so nothing can be screenshotted here; see `Widgets/PREVIEW_NOTES.md` and `watch/PREVIEW_NOTES.md` for the exact preview configuration to capture them from.
 - Cookbook cover art, drag-reorder of cookbook members, full-text stemming/stop-words (substring matching only).
-- Export to Paprika/Mela formats (JSON/Markdown/Schema.org HTML only, per contract).
+- File import UI + Paprika/YAML export have landed (`Features/Ingest/ImportView.swift`, `PaprikaImport.swift`, exporter Paprika/YAML) — the remaining gap is Mela format + server `POST /import` (client posts it best-effort and falls back to on-device save until the route exists).

@@ -1,4 +1,8 @@
 # Changelog
+## Unreleased — Paprika full-parity import/export (on top of #26)
+- openapi.yaml/json: POST /import (ImportRequest/ImportReport mirroring ClipRequest/ClipReport; format enum paprika-json|paprika-zip|paprika-recipe|yaml|html|mx2|mxp|mz2|mmf|fdx|fdxz|pepperplate-zip|pepperplate-db|copymethat-zip|yum-xml|ysr|mgourmet|dvo|mcb|recipe-manager-txt|hcb|myrecipebook-sqlite|rbox; payload base64 or payloadJson; importCookbooks; dryRun; response {imported, updated, warnings})
+- openapi.yaml/json: GET /export/{id}.paprikarecipes (gzipped native JSON) + GET /export/{id}.yaml (JSON-as-YAML) + GET /export bulk (?format=json|md|html|paprikarecipes|yaml, ?all, ?ids, ?cookbook, ?householdId)
+- openapi.yaml/json: Recipe/RecipeInput gain optional Paprika extension fields (non-breaking): notes, nutritionText, difficulty, servingsText, prepTimeText/cookTimeText/totalTimeText, paprikaUid, paprikaRaw, cookbooks[], isFavorite, scaleFactor; RecipeInput also gains optional totalMinutes
 ## Unreleased — key-only agent access (#26, on top of 0.2.0 device-auth)
 - openapi.yaml/json: POST /agent/enroll, GET /agent/status, POST /mcp + AgentToken security scheme (agent token is an alternative credential to the device signature for mutations)
 - mcp-tools.json: 32 versioned MCP tools (same Worker, stateless JSON-RPC)

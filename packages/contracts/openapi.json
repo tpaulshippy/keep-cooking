@@ -307,6 +307,113 @@
         ],
         "type": "object"
       },
+      "ImportReport": {
+        "description": "Paprika import result. Mirrors ClipReport conventions (warnings[] + parsed recipes).",
+        "properties": {
+          "cookbooksCreated": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "dryRun": {
+            "type": "boolean"
+          },
+          "imported": {
+            "items": {
+              "$ref": "#/components/schemas/Recipe"
+            },
+            "type": "array"
+          },
+          "updated": {
+            "description": "re-import uid matches updated in place",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "imported",
+          "updated"
+        ],
+        "type": "object"
+      },
+      "ImportRequest": {
+        "anyOf": [
+          {
+            "required": [
+              "payload"
+            ]
+          },
+          {
+            "required": [
+              "payloadJson"
+            ]
+          }
+        ],
+        "description": "Paprika full-parity import request. Mirrors ClipRequest conventions (anyOf payload variants).",
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "parse and report without persisting",
+            "type": "boolean"
+          },
+          "format": {
+            "enum": [
+              "paprika-json",
+              "paprika-zip",
+              "paprika-recipe",
+              "yaml",
+              "html",
+              "mx2",
+              "mxp",
+              "mz2",
+              "mmf",
+              "fdx",
+              "fdxz",
+              "pepperplate-zip",
+              "pepperplate-db",
+              "copymethat-zip",
+              "yum-xml",
+              "ysr",
+              "mgourmet",
+              "dvo",
+              "mcb",
+              "recipe-manager-txt",
+              "hcb",
+              "myrecipebook-sqlite",
+              "rbox"
+            ],
+            "type": "string"
+          },
+          "householdId": {
+            "type": "string"
+          },
+          "importCookbooks": {
+            "default": true,
+            "description": "recreate Paprika cookbooks; else fold into categories",
+            "type": "boolean"
+          },
+          "payload": {
+            "description": "base64-encoded file bytes (ZIP/gzip/YAML/HTML/SQLite/blob per format)",
+            "type": "string"
+          },
+          "payloadJson": {
+            "description": "already-decoded JSON (alternative to payload; for paprika-json / JSON-as-YAML)",
+            "type": "object"
+          }
+        },
+        "required": [
+          "householdId",
+          "format"
+        ],
+        "type": "object"
+      },
       "Ingredient": {
         "properties": {
           "display": {
@@ -660,7 +767,22 @@
               "cookMinutes": {
                 "type": "integer"
               },
+              "cookTimeText": {
+                "description": "raw Paprika cook_time string",
+                "type": "string"
+              },
+              "cookbooks": {
+                "description": "Paprika cookbook(s) (v4 cookbook); created on import when importCookbooks is on",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
               "description": {
+                "type": "string"
+              },
+              "difficulty": {
+                "description": "Paprika difficulty (no enum enforcement, e.g. Easy)",
                 "type": "string"
               },
               "householdId": {
@@ -672,19 +794,53 @@
                 },
                 "type": "array"
               },
+              "isFavorite": {
+                "description": "Paprika on_favorites flag",
+                "type": "boolean"
+              },
+              "notes": {
+                "description": "Paprika notes free text (native-only; appended after description, never merged into steps)",
+                "type": "string"
+              },
+              "nutritionText": {
+                "description": "Paprika nutritional_info blob (free text",
+                "no structured nutrients)": null,
+                "type": "string"
+              },
+              "paprikaRaw": {
+                "description": "original Paprika JSON sidecar for lossless round-trip",
+                "type": "object"
+              },
+              "paprikaUid": {
+                "description": "stable Paprika uid (uppercase UUID); upsert key for re-import idempotency",
+                "type": "string"
+              },
               "photoKeys": {
                 "$ref": "#/components/schemas/PhotoKeys"
               },
               "prepMinutes": {
                 "type": "integer"
               },
+              "prepTimeText": {
+                "description": "raw Paprika prep_time string",
+                "type": "string"
+              },
               "rating": {
                 "maximum": 5,
                 "minimum": 0,
                 "type": "number"
               },
+              "scaleFactor": {
+                "description": "Paprika saved serving multiplier (raw string)",
+                "type": "string"
+              },
               "servings": {
                 "type": "number"
+              },
+              "servingsText": {
+                "1 pie)": null,
+                "description": "raw Paprika servings string (e.g. 4-6 servings",
+                "type": "string"
               },
               "source": {
                 "type": "string"
@@ -703,6 +859,10 @@
               },
               "totalMinutes": {
                 "type": "integer"
+              },
+              "totalTimeText": {
+                "description": "raw Paprika total_time string (native-only)",
+                "type": "string"
               }
             },
             "required": [
@@ -724,7 +884,19 @@
           "cookMinutes": {
             "type": "integer"
           },
+          "cookTimeText": {
+            "type": "string"
+          },
+          "cookbooks": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "description": {
+            "type": "string"
+          },
+          "difficulty": {
             "type": "string"
           },
           "householdId": {
@@ -736,20 +908,44 @@
             },
             "type": "array"
           },
+          "isFavorite": {
+            "type": "boolean"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "nutritionText": {
+            "type": "string"
+          },
+          "paprikaRaw": {
+            "type": "object"
+          },
+          "paprikaUid": {
+            "type": "string"
+          },
           "photoKeys": {
             "$ref": "#/components/schemas/PhotoKeys"
           },
           "prepMinutes": {
             "type": "integer"
           },
+          "prepTimeText": {
+            "type": "string"
+          },
           "rating": {
             "maximum": 5,
             "minimum": 0,
             "type": "number"
           },
+          "scaleFactor": {
+            "type": "string"
+          },
           "servings": {
             "default": 4,
             "type": "number"
+          },
+          "servingsText": {
+            "type": "string"
           },
           "source": {
             "type": "string"
@@ -764,6 +960,12 @@
             "type": "array"
           },
           "title": {
+            "type": "string"
+          },
+          "totalMinutes": {
+            "type": "integer"
+          },
+          "totalTimeText": {
             "type": "string"
           }
         },
@@ -1063,6 +1265,70 @@
         ]
       }
     },
+    "/export": {
+      "get": {
+        "description": "Bulk export. `?format=` selects json|md|html|paprikarecipes|yaml (default json; paprikarecipes returns a .paprikarecipes ZIP of gzipped per-recipe JSON, yaml returns a multi-recipe YAML list as JSON-as-YAML). `?all=true` exports every recipe in the household; otherwise pass `?ids=` (comma-separated) or a single `?id=`. Cookbook-scoped export passes `?cookbook=`. Single-recipe suffix routes (/export/{id}.json|.md|.html|.paprikarecipes|.yaml) remain canonical for one recipe.",
+        "operationId": "exportBulk",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HouseholdId"
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "schema": {
+              "default": "json",
+              "enum": [
+                "json",
+                "md",
+                "html",
+                "paprikarecipes",
+                "yaml"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "export every recipe in the household",
+            "in": "query",
+            "name": "all",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "comma-separated recipe ids (ignored when all=true)",
+            "in": "query",
+            "name": "ids",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "limit bulk export to one cookbook/menu name",
+            "in": "query",
+            "name": "cookbook",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "bulk export bytes (content-type follows format)"
+          }
+        }
+      }
+    },
     "/export/{id}.html": {
       "get": {
         "operationId": "exportHtml",
@@ -1129,6 +1395,53 @@
         }
       }
     },
+    "/export/{id}.paprikarecipes": {
+      "get": {
+        "description": "Single-recipe native Paprika export: gzipped JSON (.paprikarecipe bytes). Always emits a `photo` filename when `photo_data` is present (synthesized `${UID}.jpg`), reuses stored `paprikaUid`, stringifies servings/times from raw text fields when present.",
+        "operationId": "exportPaprikaRecipe",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "gzipped Paprika recipe JSON"
+          }
+        }
+      }
+    },
+    "/export/{id}.yaml": {
+      "get": {
+        "description": "Single-recipe Paprika YAML export (emitted as JSON-as-YAML, valid YAML). `on_favorites` is accepted on import but unreliable on Paprika iOS \u2014 clients should warn.",
+        "operationId": "exportYaml",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/yaml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "YAML export (JSON-as-YAML)"
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "operationId": "health",
@@ -1152,6 +1465,47 @@
             "description": "ok"
           }
         }
+      }
+    },
+    "/import": {
+      "post": {
+        "description": "Paprika full-parity import. Accepts native Paprika bundles (paprika-json decoded JSON, paprika-zip .paprikarecipes ZIP of gzipped JSON, paprika-recipe single gzip/JSON) plus YAML (.yml/.yaml, JSON-as-YAML accepted), HTML directory export (JSON-LD \u2192 hRecipe \u2192 headings), and third-party formats Paprika imports (mx2/mxp/mz2/mmf/fdx/fdxz/ pepperplate-zip/pepperplate-db/copymethat-zip/yum-xml/ysr/mgourmet/dvo/ mcb/recipe-manager-txt/hcb/myrecipebook-sqlite/rbox). Binary payloads go in `payload` as base64; already-decoded JSON goes in `payloadJson`. `paprikaUid` is the upsert key (re-import updates in place, trashed match restores); YAML has no identity so it is create-only. `importCookbooks` recreates Paprika cookbooks (else folds into categories). `dryRun` parses and reports without persisting.",
+        "operationId": "importRecipes",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportReport"
+                }
+              }
+            },
+            "description": "import report"
+          },
+          "400": {
+            "description": "unsupported format or undecodable payload"
+          }
+        },
+        "security": [
+          {
+            "DeviceId": [],
+            "DeviceSig": [],
+            "DeviceTs": []
+          },
+          {
+            "AgentToken": []
+          }
+        ]
       }
     },
     "/lists": {

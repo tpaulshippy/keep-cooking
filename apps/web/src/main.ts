@@ -1,6 +1,6 @@
 import './styles.css';
 import { api, resolveApiBase, setApiBaseOverride, getApiBaseOverride, enrollDevice } from './api';
-import type { RecipeInput } from './api';
+import type { RecipeInput, ImportFormat } from './api';
 import { Store, visible, type SyncEnvelope } from './store';
 import { parsePath, href, navigate, initRouter } from './router';
 import { scaleQuantity, formatQuantity } from './scale';
@@ -487,6 +487,453 @@ function download(name: string, text: string, type: string): void {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
+// ---- Import/export parity (Paprika full-parity, offline-capable) ----
+type AnyRec = Record<string, unknown>;
+
+const IMPORT_ACCEPT = '.paprikarecipes,.paprikarecipe,.yml,.yaml,.html,.htm,.zip,.xml,.mx2,.mxp,.mz2,.mmf,.mm,.fdx,.fdxz,.txt,.db,.mcb';
+
+function inferImportFormat(name: string): ImportFormat {
+  const n = name.toLowerCase();
+  if (n.endsWith('.paprikarecipes')) return 'paprika-zip';
+  if (n.endsWith('.paprikarecipe')) return 'paprika-recipe';
+  if (n.endsWith('.yml') || n.endsWith('.yaml')) return 'yaml';
+  if (n.endsWith('.html') || n.endsWith('.htm')) return 'html';
+  if (n.endsWith('.mx2')) return 'mx2';
+  if (n.endsWith('.mxp')) return 'mxp';
+  if (n.endsWith('.mz2')) return 'mz2';
+  if (n.endsWith('.mmf') || n.endsWith('.mm')) return 'mmf';
+  if (n.endsWith('.fdxz')) return 'fdxz';
+  if (n.endsWith('.fdx')) return 'fdx';
+  if (n.endsWith('.mcb')) return 'mcb';
+  if (n.endsWith('.txt')) return 'recipe-manager-txt';
+  if (n.endsWith('.db')) return 'pepperplate-db';
+  if (n.endsWith('.xml')) return 'yum-xml';
+  if (n.endsWith('.zip')) return 'paprika-zip';
+  return 'paprika-json';
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let s = '';
+  const CH = 0x8000;
+  for (let i = 0; i < bytes.length; i += CH) {
+    s += String.fromCharCode(...bytes.subarray(i, i + CH));
+  }
+  return btoa(s);
+}
+
+interface LocalRecipe {
+  title: string;
+  description: string;
+  servings: number;
+  servingsText?: string;
+  prepMinutes?: number;
+  cookMinutes?: number;
+  totalMinutes?: number;
+  prepTimeText?: string;
+  cookTimeText?: string;
+  totalTimeText?: string;
+  categories: string[];
+  rating: number;
+  difficulty?: string;
+  notes?: string;
+  nutritionText?: string;
+  source?: string;
+  sourceUrl?: string;
+  paprikaUid?: string;
+  cookbooks: string[];
+  isFavorite?: boolean;
+  scaleFactor?: string;
+  ingredients: { name: string; quantity?: number; unit?: string; display?: string }[];
+  steps: { text: string }[];
+  updatedAt: string;
+}
+
+function localRecipes(): LocalRecipe[] {
+  return visible(store.state.recipes).map((e) => {
+    const p = (e.payload ?? {}) as AnyRec;
+    const str = (v: unknown, fb = ''): string => (typeof v === 'string' ? v : fb);
+    const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+    const ings = (Array.isArray(p['ingredients']) ? (p['ingredients'] as AnyRec[]) : []).map((i) => ({
+      name: str(i['name'] ?? i['display'], 'ingredient'),
+      ...(num(i['quantity']) !== undefined ? { quantity: num(i['quantity']) as number } : {}),
+      ...(typeof i['unit'] === 'string' ? { unit: i['unit'] as string } : {}),
+      ...(typeof i['display'] === 'string' ? { display: i['display'] as string } : {}),
+    }));
+    const steps = (Array.isArray(p['steps']) ? (p['steps'] as AnyRec[]) : [])
+      .map((s) => ({ text: str(s['text']) }))
+      .filter((s) => s.text);
+    return {
+      title: str(p['title'], e.id.slice(0, 8)),
+      description: str(p['description']),
+      servings: num(p['servings']) ?? 4,
+      ...(typeof p['servingsText'] === 'string' ? { servingsText: p['servingsText'] as string } : {}),
+      ...(num(p['prepMinutes']) !== undefined ? { prepMinutes: num(p['prepMinutes']) as number } : {}),
+      ...(num(p['cookMinutes']) !== undefined ? { cookMinutes: num(p['cookMinutes']) as number } : {}),
+      ...(num(p['totalMinutes']) !== undefined ? { totalMinutes: num(p['totalMinutes']) as number } : {}),
+      ...(typeof p['prepTimeText'] === 'string' ? { prepTimeText: p['prepTimeText'] as string } : {}),
+      ...(typeof p['cookTimeText'] === 'string' ? { cookTimeText: p['cookTimeText'] as string } : {}),
+      ...(typeof p['totalTimeText'] === 'string' ? { totalTimeText: p['totalTimeText'] as string } : {}),
+      categories: Array.isArray(p['categories']) ? (p['categories'] as unknown[]).filter((c): c is string => typeof c === 'string') : [],
+      rating: num(p['rating']) ?? 0,
+      ...(typeof p['difficulty'] === 'string' ? { difficulty: p['difficulty'] as string } : {}),
+      ...(typeof p['notes'] === 'string' ? { notes: p['notes'] as string } : {}),
+      ...(typeof p['nutritionText'] === 'string' ? { nutritionText: p['nutritionText'] as string } : {}),
+      ...(typeof p['source'] === 'string' ? { source: p['source'] as string } : {}),
+      ...(typeof p['sourceUrl'] === 'string' ? { sourceUrl: p['sourceUrl'] as string } : {}),
+      ...(typeof p['paprikaUid'] === 'string' ? { paprikaUid: p['paprikaUid'] as string } : {}),
+      cookbooks: Array.isArray(p['cookbooks']) ? (p['cookbooks'] as unknown[]).filter((c): c is string => typeof c === 'string') : [],
+      ...(typeof p['isFavorite'] === 'boolean' ? { isFavorite: p['isFavorite'] as boolean } : {}),
+      ...(typeof p['scaleFactor'] === 'string' ? { scaleFactor: p['scaleFactor'] as string } : {}),
+      ingredients: ings,
+      steps,
+      updatedAt: e.updatedAt,
+    };
+  });
+}
+
+function paprikaDate(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 19).replace('T', ' ');
+}
+
+/** Keep Cooking -> Paprika native JSON (§1.4). Photo bytes live server-side, so
+ *  the offline fallback omits photo_data (and its filename). */
+function toPaprikaJson(r: LocalRecipe): AnyRec {
+  const uid = (r.paprikaUid ?? crypto.randomUUID()).toUpperCase();
+  const time = (raw: string | undefined, mins: number | undefined): string =>
+    raw ?? (mins != null ? `${mins} minutes` : '');
+  return {
+    uid,
+    hash: '',
+    name: r.title,
+    description: r.description,
+    ingredients: r.ingredients.map((i) => (i.display ? `${i.display} ${i.name}` : i.name).trim()).join('\n'),
+    directions: r.steps.map((s) => s.text).join('\n'),
+    notes: r.notes ?? '',
+    categories: r.categories,
+    servings: r.servingsText ?? String(r.servings),
+    prep_time: time(r.prepTimeText, r.prepMinutes),
+    cook_time: time(r.cookTimeText, r.cookMinutes),
+    total_time: time(r.totalTimeText, r.totalMinutes),
+    difficulty: r.difficulty ?? null,
+    rating: r.rating,
+    nutritional_info: r.nutritionText ?? '',
+    source: r.source ?? '',
+    source_url: r.sourceUrl ?? null,
+    image_url: null,
+    photo: null,
+    photo_large: null,
+    photo_hash: '',
+    photo_data: null,
+    photos: [],
+    photo_url: null,
+    created: paprikaDate(r.updatedAt),
+    on_favorites: !!r.isFavorite,
+    scale: r.scaleFactor ?? null,
+    cookbook: r.cookbooks[0] ?? '',
+    in_trash: false,
+    deleted: false,
+  };
+}
+
+/** Keep Cooking -> Paprika YAML keys, emitted as JSON-as-YAML (valid YAML, §2). */
+function toPaprikaYaml(r: LocalRecipe): AnyRec {
+  const full = toPaprikaJson(r);
+  return {
+    name: full['name'],
+    servings: full['servings'],
+    source: full['source'],
+    source_url: full['source_url'],
+    prep_time: full['prep_time'],
+    cook_time: full['cook_time'],
+    on_favorites: full['on_favorites'] ? 'yes' : 'no',
+    categories: full['categories'],
+    nutritional_info: full['nutritional_info'],
+    difficulty: full['difficulty'],
+    rating: full['rating'],
+    notes: full['notes'],
+    ingredients: full['ingredients'],
+    directions: full['directions'],
+  };
+}
+
+function exportHtmlLocal(): string {
+  const recipes = localRecipes();
+  const bodies = recipes.map((r) => {
+    const ld = {
+      '@context': 'https://schema.org',
+      '@type': 'Recipe',
+      name: r.title,
+      description: r.description,
+      recipeYield: String(r.servings),
+      recipeIngredient: r.ingredients.map((i) => (i.display ? `${i.display} ${i.name}` : i.name).trim()),
+      recipeInstructions: r.steps.map((s) => ({ '@type': 'HowToStep', text: s.text })),
+      ...(r.prepMinutes != null ? { prepTime: `PT${r.prepMinutes}M` } : {}),
+      ...(r.cookMinutes != null ? { cookTime: `PT${r.cookMinutes}M` } : {}),
+      ...(r.sourceUrl ? { url: r.sourceUrl } : {}),
+    };
+    return `<article itemscope itemtype="https://schema.org/Recipe">
+<h2 itemprop="name">${esc(r.title)}</h2>
+<script type="application/ld+json">${esc(JSON.stringify(ld))}</script>
+<p>${esc(r.description)}</p>
+<h3>Ingredients</h3>
+<ul>${r.ingredients.map((i) => `<li itemprop="recipeIngredient">${esc((i.display ? `${i.display} ${i.name}` : i.name).trim())}</li>`).join('')}</ul>
+<h3>Directions</h3>
+<ol>${r.steps.map((s) => `<li itemprop="recipeInstructions">${esc(s.text)}</li>`).join('')}</ol>
+</article>`;
+  }).join('\n');
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Keep Cooking export</title></head><body><h1>Keep Cooking export</h1>\n${bodies}\n</body></html>`;
+}
+
+function parseServingsNumber(raw: string): number {
+  const m = raw.match(/(\d+\s+\d+\s*\/\s*\d+|\d+\s*\/\s*\d+|\d+(?:\.\d+)?)/);
+  if (!m) return 4;
+  const t = m[1].replace(/\s+/g, ' ').trim();
+  if (t.includes('/')) {
+    const parts = t.split(' ');
+    const frac = (parts[parts.length - 1] ?? '').split('/');
+    const n = Number(frac[0]);
+    const d = Number(frac[1]);
+    const whole = parts.length > 1 ? Number(parts[0]) : 0;
+    if (Number.isFinite(n) && Number.isFinite(d) && d !== 0) return whole + n / d;
+    return 4;
+  }
+  const v = Number.parseFloat(t);
+  return Number.isFinite(v) && v > 0 ? v : 4;
+}
+
+function parseMinutes(raw: string): number | undefined {
+  const s = raw.toLowerCase().trim();
+  if (!s) return undefined;
+  const colon = s.match(/(\d+)\s*:\s*(\d+)/);
+  if (colon) return Number(colon[1]) * 60 + Number(colon[2]);
+  let mins = 0;
+  let found = false;
+  const h = s.match(/(\d+(?:\.\d+)?)\s*h(?:ours?|rs?)?/);
+  if (h) {
+    mins += Number(h[1]) * 60;
+    found = true;
+  }
+  const m = s.match(/(\d+(?:\.\d+)?)\s*m(?:in(?:utes?)?)?/);
+  if (m) {
+    mins += Number(m[1]);
+    found = true;
+  }
+  if (found) return Math.round(mins);
+  const plain = s.match(/(\d+(?:\.\d+)?)/);
+  return plain ? Number(plain[1]) : undefined;
+}
+
+/** Paprika native JSON -> Keep Cooking RecipeInput (§1.3). Never drops the
+ *  line text: every ingredient keeps display = original line. */
+function paprikaToRecipeInput(p: AnyRec, importCookbooks: boolean): RecipeInput {
+  const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
+  const servingsRaw = str(p['servings']) ?? '';
+  const prepRaw = str(p['prep_time']);
+  const cookRaw = str(p['cook_time']);
+  const totalRaw = str(p['total_time']);
+  const ings = str(p['ingredients']) ?? '';
+  const dirs = str(p['directions']) ?? '';
+  const steps = dirs
+    .split(/\n\s*\n|\r\n\s*\r\n/)
+    .flatMap((b) => b.split('\n'))
+    .map((t) => t.replace(/^\s*\d+[.)]\s*/, '').trim())
+    .filter(Boolean)
+    .map((text, i) => ({ text, position: i }));
+  const cookbook = str(p['cookbook']);
+  const categories = (Array.isArray(p['categories']) ? p['categories'] : []).filter((c): c is string => typeof c === 'string');
+  const rating = typeof p['rating'] === 'number' ? p['rating'] : 0;
+  const fav = p['on_favorites'];
+  return {
+    title: str(p['name']) ?? 'Untitled import',
+    description: str(p['description']) ?? '',
+    servings: servingsRaw ? parseServingsNumber(servingsRaw) : 4,
+    ...(servingsRaw ? { servingsText: servingsRaw } : {}),
+    ...(prepRaw ? { prepTimeText: prepRaw, ...(parseMinutes(prepRaw) !== undefined ? { prepMinutes: parseMinutes(prepRaw) as number } : {}) } : {}),
+    ...(cookRaw ? { cookTimeText: cookRaw, ...(parseMinutes(cookRaw) !== undefined ? { cookMinutes: parseMinutes(cookRaw) as number } : {}) } : {}),
+    ...(totalRaw ? { totalTimeText: totalRaw, ...(parseMinutes(totalRaw) !== undefined ? { totalMinutes: parseMinutes(totalRaw) as number } : {}) } : {}),
+    rating,
+    ...(typeof p['difficulty'] === 'string' && p['difficulty'] ? { difficulty: p['difficulty'] as string } : {}),
+    ...(str(p['notes']) ? { notes: str(p['notes']) as string } : {}),
+    ...(str(p['nutritional_info']) ? { nutritionText: str(p['nutritional_info']) as string } : {}),
+    ...(str(p['source']) ? { source: str(p['source']) as string } : {}),
+    ...(str(p['source_url']) ?? (str(p['source'])?.startsWith('http') ? str(p['source']) : undefined)
+      ? { sourceUrl: (str(p['source_url']) ?? str(p['source'])) as string }
+      : {}),
+    ...(typeof p['uid'] === 'string' && p['uid'] ? { paprikaUid: (p['uid'] as string).toUpperCase() } : {}),
+    ...(typeof p['scale'] === 'string' && p['scale'] ? { scaleFactor: p['scale'] as string } : {}),
+    categories: importCookbooks || !cookbook ? categories : [...categories, cookbook],
+    ...(importCookbooks && cookbook ? { cookbooks: [cookbook] } : {}),
+    ...(fav === true || fav === 1 || fav === '1' || fav === 'yes' ? { isFavorite: true } : {}),
+    ingredients: ings.split('\n').map((l) => l.trim()).filter(Boolean).map((line, i) => ({ name: line, display: line, position: i })),
+    steps,
+  };
+}
+
+function htmlToRecipeInputs(doc: Document, importCookbooks: boolean): { recipes: RecipeInput[]; warnings: string[] } {
+  const warnings: string[] = [];
+  const recipes: RecipeInput[] = [];
+  // Prefer JSON-LD Recipe blocks, fall back to hRecipe, then headings (§3).
+  const ldBlocks: AnyRec[] = [];
+  for (const el of Array.from(doc.querySelectorAll('script[type="application/ld+json"]'))) {
+    try {
+      const parsed: unknown = JSON.parse(el.textContent ?? '');
+      const items = Array.isArray(parsed) ? parsed : [(parsed ?? {}) as AnyRec];
+      for (const it of items) {
+        const rec = it as AnyRec;
+        const graph = rec['@graph'];
+        const pool = Array.isArray(graph) ? (graph as AnyRec[]) : [rec];
+        for (const g of pool) {
+          const t = g['@type'];
+          if (t === 'Recipe' || (Array.isArray(t) && (t as unknown[]).includes('Recipe'))) ldBlocks.push(g);
+        }
+      }
+    } catch {
+      warnings.push('Skipped an unreadable JSON-LD block.');
+    }
+  }
+  for (const g of ldBlocks) {
+    const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+    const ings = (Array.isArray(g['recipeIngredient']) ? (g['recipeIngredient'] as unknown[]) : [])
+      .filter((x): x is string => typeof x === 'string');
+    const instr = g['recipeInstructions'];
+    const steps: string[] = Array.isArray(instr)
+      ? (instr as unknown[]).map((s) => (typeof s === 'string' ? s : str((s as AnyRec)['text']))).filter(Boolean)
+      : (typeof instr === 'string' ? instr.split('\n').filter(Boolean) : []);
+    recipes.push({
+      title: str(g['name']) || 'Untitled import',
+      description: str(g['description']),
+      servings: 4,
+      ingredients: ings.map((line, i) => ({ name: line, display: line, position: i })),
+      steps: steps.map((text, i) => ({ text, position: i })),
+      ...(str(g['url']) ? { sourceUrl: str(g['url']) } : {}),
+    });
+  }
+  if (recipes.length) return { recipes, warnings };
+  const hrecipes = Array.from(doc.querySelectorAll('.hrecipe, .h-recipe'));
+  for (const h of hrecipes) {
+    const title = h.querySelector('.fn')?.textContent?.trim() || doc.querySelector('h1')?.textContent?.trim() || 'Untitled import';
+    const ings = Array.from(h.querySelectorAll('.ingredient')).map((e) => e.textContent?.trim() ?? '').filter(Boolean);
+    const steps = Array.from(h.querySelectorAll('.instructions')).map((e) => e.textContent?.trim() ?? '').filter(Boolean);
+    recipes.push({
+      title,
+      description: h.querySelector('.summary')?.textContent?.trim() ?? '',
+      servings: 4,
+      ingredients: ings.map((line, i) => ({ name: line, display: line, position: i })),
+      steps: steps.map((text, i) => ({ text, position: i })),
+    });
+  }
+  if (recipes.length) {
+    warnings.push('No JSON-LD found; parsed hRecipe markup.');
+    return { recipes, warnings };
+  }
+  // Last resort: first h1 + visible lists under Ingredients/Directions headings.
+  const title = doc.querySelector('h1')?.textContent?.trim() || 'Untitled import';
+  const collect = (names: string[]): string[] => {
+    const out: string[] = [];
+    for (const h of Array.from(doc.querySelectorAll('h1,h2,h3'))) {
+      if (names.some((n) => (h.textContent ?? '').toLowerCase().includes(n))) {
+        let sib = h.nextElementSibling;
+        while (sib && !/^h[1-3]$/i.test(sib.tagName)) {
+          out.push(...Array.from(sib.querySelectorAll('li')).map((li) => li.textContent?.trim() ?? '').filter(Boolean));
+          if (/^(ul|ol)$/i.test(sib.tagName)) break;
+          sib = sib.nextElementSibling;
+        }
+      }
+    }
+    return out;
+  };
+  warnings.push('No structured metadata found; parsed visible headings (JSON-LD → hRecipe → headings).');
+  void importCookbooks;
+  return {
+    recipes: [{
+      title,
+      servings: 4,
+      ingredients: collect(['ingredient']).map((line, i) => ({ name: line, display: line, position: i })),
+      steps: collect(['direction', 'instruction', 'step', 'method']).map((text, i) => ({ text, position: i })),
+    }],
+    warnings,
+  };
+}
+
+async function gunzipIfNeeded(buf: Uint8Array): Promise<Uint8Array> {
+  const gzipMagic = buf.length > 2 && buf[0] === 0x1f && buf[1] === 0x8b;
+  const DS = (globalThis as AnyRec)['DecompressionStream'] as
+    | (new (format: string) => { readable: ReadableStream; writable: WritableStream })
+    | undefined;
+  if (gzipMagic && typeof DS !== 'undefined') {
+    try {
+      const ds = new DS('gzip');
+      const stream = new Blob([buf as unknown as BlobPart]).stream().pipeThrough(ds);
+      const out = await new Response(stream).arrayBuffer();
+      return new Uint8Array(out);
+    } catch {
+      return buf; // fall through to plain-text parse
+    }
+  }
+  return buf;
+}
+
+/** Offline fallback for text-based imports (JSON / JSON-as-YAML / plain-text
+ *  Paprika JSON / HTML). Binary bundles (ZIP/gzip members, SQLite, XML
+ *  third-party formats) need the server. */
+async function parseOfflineImport(
+  buf: Uint8Array,
+  fileName: string,
+  importCookbooks: boolean,
+): Promise<{ recipes: RecipeInput[]; warnings: string[] }> {
+  const lower = fileName.toLowerCase();
+  const isZip = buf.length > 2 && buf[0] === 0x50 && buf[1] === 0x4b;
+  if (isZip || lower.endsWith('.zip') || lower.endsWith('.paprikarecipes') || lower.endsWith('.mz2') || lower.endsWith('.mcb')) {
+    throw new Error('ZIP bundles cannot be read offline — reconnect and retry for server-side import.');
+  }
+  if (lower.endsWith('.db') || lower.endsWith('.sqlite')) {
+    throw new Error('SQLite imports need a server connection — reconnect and retry.');
+  }
+  if (/\.(xml|mx2|mxp|fdx|fdxz|mmf|mm)$/.test(lower)) {
+    throw new Error('This format needs server-side parsing — reconnect and retry.');
+  }
+  const bytes = await gunzipIfNeeded(buf);
+  const text = new TextDecoder().decode(bytes);
+  const trimmed = text.trim();
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    const parsed: unknown = JSON.parse(trimmed);
+    const items = Array.isArray(parsed) ? parsed : [parsed];
+    const recipes: RecipeInput[] = (items as AnyRec[]).map((it) => {
+      if (typeof it['name'] === 'string' || typeof it['ingredients'] === 'string') {
+        return paprikaToRecipeInput(it, importCookbooks);
+      }
+      const rawIngs: unknown[] = Array.isArray(it['ingredients']) ? (it['ingredients'] as unknown[]) : [];
+      const rawSteps: unknown[] = Array.isArray(it['steps']) ? (it['steps'] as unknown[]) : [];
+      return {
+        title: typeof it['title'] === 'string' ? (it['title'] as string) : 'Untitled import',
+        servings: typeof it['servings'] === 'number' ? (it['servings'] as number) : 4,
+        description: typeof it['description'] === 'string' ? (it['description'] as string) : '',
+        ingredients: rawIngs.map((l, i) => {
+          const o = l as AnyRec;
+          const line = typeof l === 'string' ? l : String(o['display'] ?? o['name'] ?? l);
+          return { name: typeof o['name'] === 'string' ? (o['name'] as string) : line, display: line, position: i };
+        }),
+        steps: rawSteps.map((s, i) => {
+          const o = s as AnyRec;
+          return { text: typeof s === 'string' ? s : String(o['text'] ?? ''), position: i };
+        }),
+      };
+    });
+    return {
+      recipes,
+      warnings: ['Offline fallback: parsed as JSON (photo binaries and cookbook recreation need the server).'],
+    };
+  }
+  if (/<html|<!doctype/i.test(text.slice(0, 500)) || lower.endsWith('.html') || lower.endsWith('.htm')) {
+    if (typeof DOMParser === 'undefined') throw new Error('HTML import needs a browser DOM or a server connection.');
+    const doc = new DOMParser().parseFromString(text, 'text/html');
+    const { recipes, warnings } = htmlToRecipeInputs(doc, importCookbooks);
+    return { recipes, warnings: [...warnings, 'Offline fallback: images resolved from the file are skipped.'] };
+  }
+  throw new Error('Unrecognized file: expected Paprika/JSON/YAML/HTML text or a server connection for binary bundles.');
+}
+
 function viewSettings(): void {
   const override = getApiBaseOverride();
   shell(`<h1>Settings</h1>
@@ -501,7 +948,36 @@ function viewSettings(): void {
   <button type="button" id="share">Copy share link</button></p>
   <p id="syncstatus" role="status" aria-live="polite"></p>
   <h2>Export</h2>
-  <p><button type="button" id="expjson">Export JSON</button> <button type="button" id="expmd">Export Markdown</button></p>`);
+  <p><button type="button" id="expjson">Export JSON</button> <button type="button" id="expmd">Export Markdown</button> <button type="button" id="exchtml">Export HTML</button> <button type="button" id="exppaprika">Export Paprika (.paprikarecipes)</button> <button type="button" id="expyaml">Export YAML</button></p>
+  <p id="exportstatus" role="status" aria-live="polite"></p>
+  <h2>Import</h2>
+  <form id="importform">
+  <label>File <input id="importfile" name="file" type="file" accept="${IMPORT_ACCEPT}" required /></label>
+  <label>Format <select id="importformat" name="format">
+  <option value="auto">Auto (from extension)</option>
+  <option value="paprika-zip">Paprika bulk (.paprikarecipes / .zip)</option>
+  <option value="paprika-recipe">Paprika single (.paprikarecipe)</option>
+  <option value="paprika-json">Paprika JSON</option>
+  <option value="yaml">Paprika YAML (.yml/.yaml)</option>
+  <option value="html">HTML export</option>
+  <option value="mx2">MasterCook MX2</option>
+  <option value="mxp">MasterCook MXP</option>
+  <option value="mz2">MasterCook MZ2</option>
+  <option value="mmf">MealMaster (.mmf)</option>
+  <option value="fdx">Living Cookbook FDX</option>
+  <option value="fdxz">Living Cookbook FDXZ</option>
+  <option value="pepperplate-zip">Pepperplate ZIP</option>
+  <option value="pepperplate-db">Pepperplate DB</option>
+  <option value="copymethat-zip">Copy Me That ZIP</option>
+  <option value="yum-xml">Yum XML</option>
+  <option value="mcb">My CookBook (.mcb)</option>
+  <option value="recipe-manager-txt">Recipe Manager TXT</option>
+  </select></label>
+  <label><input id="importcookbooks" type="checkbox" checked /> Import cookbooks from file</label>
+  <label><input id="importdryrun" type="checkbox" /> Dry run (preview only)</label>
+  <button type="submit">Import</button></form>
+  <p id="importstatus" role="status" aria-live="polite"></p>
+  <p class="muted">Accepts .paprikarecipes, .paprikarecipe, .yml/.yaml, .html, .zip, .xml and P1 formats (.mx2, .mxp, .mz2, .mmf, .fdx/.fdxz, Pepperplate, Copy Me That, Yum). Offline: text imports (JSON/YAML/HTML) are parsed locally; binary bundles need a server connection.</p>`);
   (document.getElementById('apibase') as HTMLFormElement).addEventListener('submit', (e) => {
     e.preventDefault();
     const v = String(new FormData(e.target as HTMLFormElement).get('api') || '').trim();
@@ -570,6 +1046,89 @@ function viewSettings(): void {
   });
   document.getElementById('expjson')!.addEventListener('click', () => download('keep-cooking.json', exportJSON(), 'application/json'));
   document.getElementById('expmd')!.addEventListener('click', () => download('keep-cooking.md', exportMarkdown(), 'text/markdown'));
+  const bulkExport = async (
+    format: 'json' | 'md' | 'html' | 'paprikarecipes' | 'yaml',
+    onlineName: string,
+    offline: { name: string; text: string; type: string },
+  ): Promise<void> => {
+    const st = () => document.getElementById('exportstatus')!;
+    try {
+      const blob = await api.fetchExportBlob(api.exportBulkUrl({ format, all: true }));
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = onlineName;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      st().textContent = `Exported the library via the server (${format}).`;
+    } catch {
+      download(offline.name, offline.text, offline.type);
+      st().textContent = 'Server unreachable — saved an offline-generated fallback instead.';
+    }
+  };
+  document.getElementById('exchtml')!.addEventListener('click', () =>
+    void bulkExport('html', 'keep-cooking.html', { name: 'keep-cooking.html', text: exportHtmlLocal(), type: 'text/html' }));
+  document.getElementById('exppaprika')!.addEventListener('click', () =>
+    void bulkExport('paprikarecipes', 'keep-cooking.paprikarecipes', {
+      name: 'keep-cooking.paprikarecipes.json',
+      text: JSON.stringify(localRecipes().map(toPaprikaJson), null, 2),
+      type: 'application/json',
+    }));
+  document.getElementById('expyaml')!.addEventListener('click', () =>
+    void bulkExport('yaml', 'keep-cooking.yaml', {
+      name: 'keep-cooking.yaml',
+      text: JSON.stringify(localRecipes().map(toPaprikaYaml), null, 2),
+      type: 'text/yaml',
+    }));
+  (document.getElementById('importform') as HTMLFormElement).addEventListener('submit', (e) => {
+    e.preventDefault();
+    const statusEl = () => document.getElementById('importstatus')!;
+    const file = (document.getElementById('importfile') as HTMLInputElement).files?.[0];
+    if (!file) {
+      statusEl().textContent = 'Choose a file to import.';
+      return;
+    }
+    const sel = (document.getElementById('importformat') as HTMLSelectElement).value;
+    const format: ImportFormat = sel === 'auto' ? inferImportFormat(file.name) : (sel as ImportFormat);
+    const importCookbooks = (document.getElementById('importcookbooks') as HTMLInputElement).checked;
+    const dryRun = (document.getElementById('importdryrun') as HTMLInputElement).checked;
+    statusEl().textContent = `Importing ${file.name} (${format})…`;
+    void (async () => {
+      const buf = new Uint8Array(await file.arrayBuffer());
+      try {
+        const report = await api.importReport({ format, payload: bytesToBase64(buf), importCookbooks, dryRun });
+        if (!dryRun) {
+          const now = new Date().toISOString();
+          for (const r of report.imported ?? []) {
+            store.applyRemote({
+              id: r.id, updatedAt: r.updatedAt ?? now, deviceId: (r.deviceId as string | undefined) ?? 'server',
+              entity: 'recipe', payload: r,
+            } as SyncEnvelope);
+          }
+          render();
+        }
+        const warns = report.warnings?.length ? ` Warnings: ${report.warnings.join('; ')}` : '';
+        const preview = dryRun && report.imported?.length
+          ? ` Preview: ${report.imported.map((r) => r.title).slice(0, 5).join(', ')}${report.imported.length > 5 ? '…' : ''}.`
+          : '';
+        const cooks = report.cookbooksCreated?.length ? ` Cookbooks: ${report.cookbooksCreated.join(', ')}.` : '';
+        statusEl().textContent = `${dryRun ? 'Dry run — ' : ''}imported ${report.imported?.length ?? 0}, updated ${report.updated ?? 0}.${preview}${cooks}${warns}`;
+      } catch (err) {
+        // Offline fallback: parse text-based formats locally, save via upsert.
+        try {
+          const { recipes, warnings } = await parseOfflineImport(buf, file.name, importCookbooks);
+          if (!dryRun) {
+            for (const input of recipes) store.upsert('recipe', '', { ...input, servings: input.servings ?? 4 });
+            render();
+          }
+          const names = recipes.map((r) => r.title).slice(0, 5).join(', ') + (recipes.length > 5 ? '…' : '');
+          const warnStr = warnings.length ? ` Warnings: ${warnings.join('; ')}` : '';
+          statusEl().textContent = `${dryRun ? 'Dry run (offline) — ' : 'Saved offline — '}parsed ${recipes.length} recipe(s)${recipes.length ? `: ${names}.` : '.'} Server unreachable (${err instanceof Error ? err.message : err}).${warnStr}`;
+        } catch (fallbackErr) {
+          statusEl().textContent = `Import failed: ${fallbackErr instanceof Error ? fallbackErr.message : fallbackErr}`;
+        }
+      }
+    })();
+  });
 }
 
 initRouter(render);
