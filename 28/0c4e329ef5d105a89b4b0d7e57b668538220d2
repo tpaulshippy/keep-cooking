@@ -1,0 +1,40 @@
+apps/web/README.md
+  h_6bbd00fe0a456a 74-76
+apps/web/package.json
+  h_6bbd00fe0a456a 16
+apps/web/src/aggregate.test.ts
+  h_6bbd00fe0a456a 18-24,66-79
+apps/web/src/aggregate.ts
+  h_6bbd00fe0a456a 10-11,24-37,54-59,62
+apps/web/src/api.test.ts
+  h_6bbd00fe0a456a 34,39-41,53,58,67,69-124
+apps/web/src/api.ts
+  h_6bbd00fe0a456a 90-94,103-104,106,125-131,146-148,150-152,155-167,170,172-184,188-189,193-194,198
+apps/web/src/main.ts
+  h_6bbd00fe0a456a 14-20,200,205-208,210,290-292,297,306-307,310-315,370-372,385,393-398,400,406,527-528,537-540,542-554,556,558
+apps/web/src/scale.test.ts
+  h_6bbd00fe0a456a 20-23,33-41
+apps/web/src/scale.ts
+  h_6bbd00fe0a456a 12,17-44,47,50-65
+apps/web/src/store.test.ts
+  h_6bbd00fe0a456a 145-166
+apps/web/src/store.ts
+  h_6bbd00fe0a456a 31-39,152,164,211-215,228-232,277
+apps/web/src/sync.test.ts
+  h_6bbd00fe0a456a 3-4,37-54,58-82,277-360
+apps/web/src/sync.ts
+  h_6bbd00fe0a456a 5-8,13-14,43-47,49,55,65,71,74,81,154-165,193-215,228-256
+docs/demos/NOTES.md
+  h_6bbd00fe0a456a 139-141
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "280c4e329ef5d105a89b4b0d7e57b668538220d2",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
