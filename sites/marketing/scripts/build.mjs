@@ -48,15 +48,26 @@ check("no heavy client JS (only nav.js)", !/react|vue|next|alpine|jquery/i.test(
 // separate hosting — API Worker routes + /app project — plus this absence)
 check("no api dir in public", !existsSync(join(pub, "api")));
 check("no app dir in public", !existsSync(join(pub, "app")));
-// Every local <img src> must resolve to a file under public/
+// Theme-aware screenshots: every <img src> and <source srcset> must resolve
 for (const m of index.matchAll(/<img\b[^>]*\ssrc="([^"]+)"/g)) {
   const src = m[1];
   if (src.startsWith("/")) {
     check(`img resolves: ${src}`, existsSync(join(pub, src.slice(1))));
   }
 }
+for (const m of index.matchAll(/<source\b[^>]*\ssrcset="([^"]+)"/g)) {
+  const src = m[1];
+  if (src.startsWith("/")) {
+    check(`source resolves: ${src}`, existsSync(join(pub, src.slice(1))));
+  }
+}
+// Light/dark screenshot pairs per screen (fresh iOS captures, 640px JPEG)
+for (const s of ["recipes", "clip", "plan", "shop"]) {
+  check(`screenshot pair ${s} light+dark`, existsSync(join(pub, `img/${s}-light.jpg`)) && existsSync(join(pub, `img/${s}-dark.jpg`)));
+}
+check("no legacy single-theme screenshots", !existsSync(join(pub, "img/recipes.jpg")) && !existsSync(join(pub, "img/clip.jpg")) && !existsSync(join(pub, "img/plan.jpg")) && !existsSync(join(pub, "img/shop.jpg")));
 for (const f of ["index.html", "privacy.html", "styles.css", "nav.js", "favicon.svg", "og-image.svg", "og-image.png", "robots.txt", "sitemap.xml",
-  "img/recipes.jpg", "img/clip.jpg", "img/plan.jpg", "img/shop.jpg"]) {
+  "img/recipes-light.jpg", "img/recipes-dark.jpg", "img/clip-light.jpg", "img/clip-dark.jpg", "img/plan-light.jpg", "img/plan-dark.jpg", "img/shop-light.jpg", "img/shop-dark.jpg"]) {
   check(`asset ${f} exists`, existsSync(join(pub, f)));
 }
 
