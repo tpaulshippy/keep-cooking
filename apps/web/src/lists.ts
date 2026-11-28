@@ -23,9 +23,9 @@ export function toggleItemChecked<T extends { checked?: boolean }>(items: T[], i
   return items.map((it, i) => (i === index ? { ...it, checked } : it));
 }
 
-/** One aisle-sorted row. The name sits in a span adjacent to the checkbox so
- * `input:checked + span` line-through visibly marks the item (bare text nodes
- * can't be selected). `esc` is injected to keep this module DOM-free. */
+/** One aisle-sorted row. Checkbox, name, and quantity/aisle metadata share one
+ * label so `label:has(input:checked)` line-through visibly marks the whole
+ * item. `esc` is injected to keep this module DOM-free. */
 export function shopRowHtml(it: ShopItem, originalIndex: number, esc: (v: unknown) => string): string {
   return `<li><label><input type="checkbox" data-item="${originalIndex}"${it.checked ? ' checked' : ''} /> <span class="item-name">${esc(it.name)}</span> <span class="muted">${esc(it.quantity ?? '')} · ${esc(it.aisle ?? 'Other')}</span></label></li>`;
 }

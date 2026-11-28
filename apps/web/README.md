@@ -24,15 +24,17 @@ Legacy hash URLs (`/app/#/recipes/:id`) are upgraded once on load via
 
 ## Deploy prerequisite: `/app/*` fallback (manual step, not yet wired)
 
-Deep links (`/app/recipes/:id`) cold-load correctly **only if** the serving
-Worker returns `/app/index.html` for unknown `/app/*` paths. That fallback
-is **not currently wired in this repo's Worker** (`api/wrangler.toml` has no
-`[assets]` SPA handling), so until someone wires it:
+Deep links (`/app/recipes/:id`) cold-load correctly **only if** the host
+serving `/app/*` returns `/app/index.html` for unknown `/app/*` paths. The
+API Worker in this repo does **not** serve `/app` — `api/wrangler.toml` has
+no `[assets]` binding, and `apps/web/dist` is build output (gitignored), so
+there is nothing for the API Worker to fall back to. Until hosted separately:
 
-- Prerequisite: serve the built `apps/web/dist` through a Worker/static host
-  with single-page-application fallback (Cloudflare: `[assets]` with
-  `not_found_handling = "single-page-application"`, plus a route sending
-  `/app/*` to that host), or an equivalent rewrite of `/app/*` → `/app/index.html`.
+- Prerequisite: deploy the built `apps/web/dist` to a **separate static
+  host** (e.g. Cloudflare Pages, or a dedicated Worker with
+  `not_found_handling = "single-page-application"`), then route
+  `keepcooking.app/app/*` to that host (or an equivalent rewrite of
+  `/app/*` → `/app/index.html`).
 - Without it: `/app/` loads and all in-app navigation works, but a cold load,
   refresh, or shared link to any deeper path (e.g. `/app/recipes/:id`)
   returns 404 instead of the app.
@@ -47,11 +49,13 @@ Resolution order:
 
 ## How `/app` + `/api` + `/` coexist
 
-Same Worker family: `/` serves the marketing/landing surface, `/api/*`
-serves the Hono API, and `/app/*` serves this static SPA bundle. All route
-paths are real history URLs (`/app/recipes/:id`); they resolve to the same
-`index.html` **once the deploy prerequisite above is wired**, and the router
-parses `location.pathname` client-side.
+Three separate surfaces on one domain: `/` is the marketing/landing surface,
+`/api/*` is served by the Hono API Worker in `api/`, and `/app/*` is served
+by a separate static host (see the deploy prerequisite above — not the API
+Worker). All `/app` route paths are real history URLs
+(`/app/recipes/:id`); they resolve to the same `index.html` **once that
+static host's SPA fallback is wired**, and the router parses
+`location.pathname` client-side.
 
 ## Offline model
 

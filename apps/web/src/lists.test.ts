@@ -29,9 +29,9 @@ describe('toggleItemChecked', () => {
 });
 
 describe('shopRowHtml', () => {
-  it('puts the name in a span adjacent to the checkbox (checked line-through hits it)', () => {
+  it('wraps checkbox + name + metadata in one label (whole-label :has checked styling)', () => {
     const html = shopRowHtml({ name: 'Milk', quantity: '1 gal', aisle: 'Dairy', checked: true }, 3, esc);
     expect(html).toContain('data-item="3"');
-    expect(html).toMatch(/<input[^>]*\/> <span class="item-name">Milk<\/span>/);
+    expect(html).toMatch(/<label><input[^>]*\/> <span class="item-name">Milk<\/span> <span class="muted">1 gal · Dairy<\/span><\/label>/);
   });
 });
