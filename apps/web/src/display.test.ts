@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { safeHttpUrl, ingredientLabel } from './display';
+import { safeHttpUrl, ingredientLabel, recipePhotoKey } from './display';
 
 describe('safeHttpUrl', () => {
   it('allows http/https only', () => {
@@ -16,6 +16,21 @@ describe('safeHttpUrl', () => {
   });
 });
 
+describe('recipePhotoKey', () => {
+  it('prefers thumb for lists, large for detail', () => {
+    const payload = { photoKeys: { original: 'photos/r/original.jpg', large1024: 'photos/r/1024.jpg', thumb: 'photos/r/thumb.jpg' } };
+    expect(recipePhotoKey(payload, 'thumb')).toBe('photos/r/thumb.jpg');
+    expect(recipePhotoKey(payload, 'large')).toBe('photos/r/1024.jpg');
+  });
+
+  it('falls back across variants and returns null when empty', () => {
+    expect(recipePhotoKey({ photoKeys: { original: 'photos/r/original.jpg' } }, 'thumb')).toBe('photos/r/original.jpg');
+    expect(recipePhotoKey({ photoKeys: { thumb: 'photos/r/thumb.jpg' } }, 'large')).toBe('photos/r/thumb.jpg');
+    expect(recipePhotoKey({ photoKeys: { original: '', large1024: '', thumb: '' } }, 'thumb')).toBeNull();
+    expect(recipePhotoKey({}, 'thumb')).toBeNull();
+    expect(recipePhotoKey(null, 'large')).toBeNull();
+  });
+});
 describe('ingredientLabel', () => {
   it('prefixes truthy display with the name, falls back when blank', () => {
     expect(ingredientLabel({ name: 'Salt', display: 'to taste' })).toBe('to taste Salt');

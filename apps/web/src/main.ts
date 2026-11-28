@@ -18,7 +18,7 @@ import { parsePath, href, navigate, initRouter } from './router';
 import { scaleQuantity, formatQuantity } from './scale';
 import { aggregateWeekToList, collectPlanIngredients, scaleIngredientsForServings } from './aggregate';
 import { sortedRows, toggleItemChecked, shopRowHtml } from './lists';
-import { safeHttpUrl, ingredientLabel } from './display';
+import { safeHttpUrl, ingredientLabel, recipePhotoKey } from './display';
 import { firstNonEmptyLine, parsePastedText, previewToRecipeInput, recipeToPreviewFields } from './ingest';
 
 const store = new Store();
@@ -136,6 +136,50 @@ function recipeTitle(id: string): string {
   return p?.title ?? id.slice(0, 8);
 }
 
+/** Signed-URL cache: one GET /photos/sign per R2 key per page lifetime.
+ *  Absolute http(s) values bypass signing (forward-compat with direct URLs). */
+const photoUrlCache = new Map<string, string>();
+
+function photoUrlFor(key: string): Promise<string | null> {
+  const cached = photoUrlCache.get(key);
+  if (cached) return Promise.resolve(cached);
+  const direct = safeHttpUrl(key);
+  if (direct) {
+    photoUrlCache.set(key, direct);
+    return Promise.resolve(direct);
+  }
+  return api.photoSign(key).then(
+    (signed) => {
+      photoUrlCache.set(key, signed.url);
+      return signed.url;
+    },
+    () => null,
+  );
+}
+
+/** Fill every `img[data-photo-key]` in scope: signed R2 URLs load lazily,
+ *  failures remove the element so lists stay clean offline / without R2. */
+function hydrateRecipePhotos(scope: ParentNode = document): void {
+  for (const node of scope.querySelectorAll('img[data-photo-key]')) {
+    const img = node as HTMLImageElement;
+    if (img.dataset.hydrated || img.hasAttribute('src')) continue;
+    img.dataset.hydrated = '1';
+    const key = img.dataset.photoKey ?? '';
+    if (!key) {
+      img.remove();
+      continue;
+    }
+    void photoUrlFor(key).then((url) => {
+      if (!url || !img.isConnected) {
+        if (!url) img.remove();
+        return;
+      }
+      img.src = url;
+      img.hidden = false;
+    });
+  }
+}
+
 /** Number field helper: blank/invalid -> undefined (field left unset). */
 function numVal(v: FormDataEntryValue | null): number | undefined {
   const s = String(v ?? '').trim();
@@ -175,8 +219,14 @@ function viewHome(): void {
   shell(`<h1>Keep Cooking</h1>
   <p>Offline-first recipes, planning, shopping and pantry. Your data lives on this device; sync when online.</p>
   <h2>Recent recipes</h2>
-  <ul class="cards">${recipes.map((r) => `<li><a href="${href('/recipes/' + r.id)}">${esc((r.payload as { title?: string }).title ?? r.id)}</a></li>`).join('') || '<li>No recipes yet.</li>'}</ul>
+  <ul class="cards">${recipes.map((r) => {
+    const p = r.payload as { title?: string } & Record<string, unknown>;
+    const key = recipePhotoKey(p, 'thumb');
+    const thumb = key ? `<img class="recipe-thumb" data-photo-key="${esc(key)}" alt="" loading="lazy" hidden />` : '';
+    return `<li class="recipe-card">${thumb}<a href="${href('/recipes/' + r.id)}">${esc(p.title ?? r.id)}</a></li>`;
+  }).join('') || '<li>No recipes yet.</li>'}</ul>
   <p><a href="${href('/ingest')}">Clip a recipe</a> · <a href="${href('/plan')}">Plan the week</a></p>`);
+  hydrateRecipePhotos();
 }
 
 // ---- Library ----
@@ -188,8 +238,10 @@ function libraryResultsHtml(query: string): string {
     return !q || (p.title ?? '').toLowerCase().includes(q) || (p.description ?? '').toLowerCase().includes(q);
   });
   return list.map((r) => {
-    const p = r.payload as { title?: string; servings?: number };
-    return `<li><a href="${href('/recipes/' + r.id)}">${esc(p.title ?? r.id)}</a> <span class="muted">serves ${esc(p.servings ?? 4)}</span> <a href="${href('/cook/' + r.id)}">Cook</a></li>`;
+    const p = r.payload as { title?: string; servings?: number } & Record<string, unknown>;
+    const key = recipePhotoKey(p, 'thumb');
+    const thumb = key ? `<img class="recipe-thumb" data-photo-key="${esc(key)}" alt="" loading="lazy" hidden />` : '';
+    return `<li class="recipe-card">${thumb}<span><a href="${href('/recipes/' + r.id)}">${esc(p.title ?? r.id)}</a> <span class="muted">serves ${esc(p.servings ?? 4)}</span> <a href="${href('/cook/' + r.id)}">Cook</a></span></li>`;
   }).join('') || '<li>No matches.</li>';
 }
 
@@ -204,8 +256,10 @@ function viewLibrary(q: string): void {
   // Update only the results list so the input keeps focus, value and caret.
   input.addEventListener('input', () => {
     document.getElementById('results')!.innerHTML = libraryResultsHtml(input.value);
+    hydrateRecipePhotos();
   });
   form.addEventListener('submit', (e) => e.preventDefault());
+  hydrateRecipePhotos();
 }
 
 interface RecipeFormPayload {
@@ -296,7 +350,12 @@ function viewRecipeDetail(id: string): void {
       : '';
   const ings = [...(p.ingredients ?? [])].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
   const steps = [...(p.steps ?? [])].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  const heroKey = recipePhotoKey(p, 'large');
+  const heroHtml = heroKey
+    ? `<p><img class="recipe-hero" data-photo-key="${esc(heroKey)}" alt="Photo of ${esc(p.title ?? 'recipe')}" loading="lazy" hidden /></p>`
+    : '';
   shell(`<h1>${esc(p.title ?? id)}</h1>
+  ${heroHtml}
   <p class="muted">Serves ${esc(p.servings ?? 4)} · updated ${esc(env.updatedAt)}${meta.length ? ' · ' + meta.join(' · ') : ''}</p>
   ${srcHtml}
   ${(p.categories ?? []).length ? `<p class="muted">Categories: ${esc((p.categories ?? []).join(', '))}</p>` : ''}
@@ -328,6 +387,7 @@ function viewRecipeDetail(id: string): void {
   <button type="submit">Add step (offline OK)</button></form>
   <p><a href="${href('/cook/' + id)}">Start cook mode</a> · <a href="${href('/recipes/' + id + '/edit')}">Edit details</a> · <a href="${href('/recipes')}">Back</a></p>
   <button id="del" type="button">Delete recipe</button>`);
+  hydrateRecipePhotos();
   // Stable child ids: existing rows keep their id so server updates match
   // them (no id regeneration); only brand-new rows mint an id.
   const saveIngredients = (next: RecipeIngredient[]) => {
@@ -424,9 +484,14 @@ function viewCook(id: string): void {
     shell(`<h1>Not found</h1><p><a href="${href('/recipes')}">Back to Library</a></p>`);
     return;
   }
-  const p = env.payload as { title?: string; servings?: number; ingredients?: { name: string; quantity?: number; unit?: string; display?: string }[]; steps?: { text: string; timers?: { seconds: number; label: string }[] }[] };
+  const p = env.payload as { title?: string; servings?: number; ingredients?: { name: string; quantity?: number; unit?: string; display?: string }[]; steps?: { text: string; timers?: { seconds: number; label: string }[] }[] } & Record<string, unknown>;
   const base = p.servings ?? 4;
+  const heroKey = recipePhotoKey(p, 'large');
+  const heroHtml = heroKey
+    ? `<p><img class="recipe-hero" data-photo-key="${esc(heroKey)}" alt="Photo of ${esc(p.title ?? 'recipe')}" loading="lazy" hidden /></p>`
+    : '';
   shell(`<h1>Cook: ${esc(p.title ?? id)}</h1>
+  ${heroHtml}
   <form id="scale"><label for="serv">Servings (base ${esc(base)})</label>
   <input id="serv" type="number" min="0.25" max="100" step="0.25" value="${esc(base)}" />
   <button type="submit">Scale</button></form>
@@ -435,6 +500,7 @@ function viewCook(id: string): void {
     `<li><label><input type="checkbox" data-step="${i}" /> <span>${esc(s.text)}</span></label>${(s.timers ?? []).map((t) => ` <button type="button" data-timer="${t.seconds}" data-label="${esc(t.label)}">Start ${esc(t.label)} (${t.seconds}s)</button>`).join('')}</li>`).join('')}</ol>
   <p id="timer" role="status" aria-live="polite"></p>
   <p><a href="${href('/recipes/' + id)}">Recipe detail</a></p>`);
+  hydrateRecipePhotos();
   const renderIngs = (target: number) => {
     document.getElementById('ings')!.innerHTML = (p.ingredients ?? []).map((ing) => {
       const q = scaleQuantity(ing.quantity, base, target);

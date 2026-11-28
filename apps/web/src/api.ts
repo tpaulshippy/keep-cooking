@@ -24,6 +24,7 @@ export interface PantryItem { id: string; updatedAt: string; name: string; quant
 export interface Plan { id: string; updatedAt: string; date: string; meal: string; recipeId?: string | null; note?: string; servings?: number; [k: string]: unknown; }
 export interface Menu { id: string; updatedAt: string; name: string; entries?: { dayOffset?: number; meal?: string; recipeId?: string; servings?: number }[]; [k: string]: unknown; }
 export interface ClipReport { strategy: string; confidence?: number; warnings?: string[]; recipe: RecipeInput; }
+export interface PhotoSignResponse { url: string; expiresAt: string; key: string; }
 export type ExportFormat = 'json' | 'md' | 'html' | 'paprikarecipes' | 'yaml';
 export type ExportExt = ExportFormat;
 export type ImportFormat =
@@ -349,6 +350,11 @@ export const api = {
   deleteRecipe: (id: string, base?: string) => req<void>('DELETE', `/recipes/${id}`, undefined, true, base ?? resolveApiBase()),
   scaleRecipe: (id: string, servings: number, base?: string) =>
     req<Recipe>('POST', `/recipes/${id}/scale`, { servings }, true, base ?? resolveApiBase()),
+  /** Mint a short-lived photo URL: GET /photos/sign?key=… (open, unsigned).
+   *  R2 keys (photos/…) resolve to signed /photos/dl URLs; the API 404s
+   *  when photo serving is not configured — callers hide the image then. */
+  photoSign: (key: string, base?: string) =>
+    req<PhotoSignResponse>('GET', `/photos/sign?key=${encodeURIComponent(key)}`, undefined, false, base ?? resolveApiBase()),
   clip: (input: { url?: string; caption?: string; source?: string }, base?: string) =>
     req<ClipReport>('POST', '/clip', input, true, base ?? resolveApiBase()),
   listLists: (base?: string) => req<ShoppingList[]>('GET', '/lists', undefined, false, base ?? resolveApiBase()),

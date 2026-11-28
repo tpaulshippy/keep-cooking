@@ -22,6 +22,26 @@ export function safeHttpUrl(url: unknown): string | null {
   return s;
 }
 
+/** Recipe photo variant: `thumb` for list rows, `large` for detail/cook hero. */
+export type PhotoVariant = 'thumb' | 'large';
+
+/** Preferred R2 photo key (or absolute http(s) image URL) for a recipe
+ *  payload. Reads `photoKeys` ({original, large1024, thumb}); thumb rows
+ *  prefer thumb → large1024 → original, detail prefers large1024 →
+ *  original → thumb. Returns null when no usable value is stored. */
+export function recipePhotoKey(payload: unknown, variant: PhotoVariant): string | null {
+  const p = payload as { photoKeys?: unknown } | null | undefined;
+  const keys = (p?.photoKeys ?? {}) as Record<string, unknown>;
+  const str = (v: unknown): string | null => {
+    const s = String(v ?? '').trim();
+    return s ? s : null;
+  };
+  const ordered = variant === 'thumb'
+    ? [str(keys.thumb), str(keys.large1024), str(keys.original)]
+    : [str(keys.large1024), str(keys.original), str(keys.thumb)];
+  return ordered.find((k) => k !== null) ?? null;
+}
+
 /** Ingredient row label: the name always survives. Seed/API `display`
  *  strings are quantity-only ("12 oz", "to taste"), so a truthy display
  *  prefixes the name; a blank display falls back to the derived

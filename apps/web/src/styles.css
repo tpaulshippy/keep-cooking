@@ -63,6 +63,10 @@ li > label:has(input:checked) { text-decoration: line-through; color: var(--mute
 .cards { list-style: none; padding-left: 0; display: grid; gap: 0.5rem; }
 .cards li { border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.6rem 0.75rem; background: #fff; margin: 0; }
 .cards li a:first-child { font-weight: 650; }
+/* Recipe cards with thumbnails: image left, text right. */
+.cards li.recipe-card { display: flex; gap: 0.75rem; align-items: center; }
+.recipe-thumb { width: 4rem; height: 4rem; object-fit: cover; border-radius: 0.375rem; flex: none; background: #f5f5f4; }
+.recipe-hero { max-width: 100%; max-height: 24rem; object-fit: cover; border-radius: 0.5rem; }
 button[type="submit"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 button[type="submit"]:hover { border-color: var(--accent); filter: brightness(0.92); }
 code { background: #f5f5f4; padding: 0.1em 0.3em; border-radius: 0.25rem; color: inherit; }
