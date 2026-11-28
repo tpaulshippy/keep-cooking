@@ -371,7 +371,7 @@ private fun PasteTab(
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("1 · Add text", style = MaterialTheme.typography.titleSmall)
                 Text("Paste recipe text below, then parse on-device or preview with the server.", style = MaterialTheme.typography.bodySmall)
-                OutlinedTextField(value = inputText, onValueChange = { inputText = it; if (report != null) reportStale = true }, label = { Text("Recipe text") }, modifier = Modifier.fillMaxWidth(), minLines = 6, enabled = !isLoading)
+                OutlinedTextField(value = inputText, onValueChange = { inputText = it; if (report != null) { report = null; reportStale = true } }, label = { Text("Recipe text") }, modifier = Modifier.fillMaxWidth(), minLines = 6, enabled = !isLoading)
                 livePreview?.let { Text("Preview:\n$it", style = MaterialTheme.typography.bodySmall) }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { parseLocal() }, enabled = inputText.isNotBlank()) { Text("Parse text") }
