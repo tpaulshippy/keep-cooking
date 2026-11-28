@@ -1,0 +1,90 @@
+api/src/import.ts
+  h_6bbd00fe0a456a 1-54,55-56,57-62,63-115,116-119,120-122,123-152,153,154-205,206-209,210-215,216,217-220,221-223,224-233,234-242,243,244-246,247,248,249-258,259,260
+api/src/index.ts
+  h_6bbd00fe0a456a 10-11,515-518,521,523-546,552-583,584-586,587-593,594,595-605,606,607-611,612,613-626,627,628
+api/src/paprika.ts
+  h_6bbd00fe0a456a 1-1090
+api/test/paprika.test.ts
+  h_6bbd00fe0a456a 1-311,312-382,383-409,410-411,412-417
+apps/android/app/src/main/java/com/keepcooking/app/export/RecipeExporter.kt
+  h_6bbd00fe0a456a 40-42,43-52,71-75,173-181,182,183-190,191,192-193,201-204,205-214,215,216-221,222-223,224-225,226-233,234-237,238-280,281-284,285-287,288,289-292,293-300,301-316,317-319,320-339
+apps/android/app/src/main/java/com/keepcooking/app/import/RecipeImporter.kt
+  h_6bbd00fe0a456a 1-27,28-31,32-790
+apps/android/app/src/main/java/com/keepcooking/app/navigation/NavGraph.kt
+  h_6bbd00fe0a456a 38,397,460
+apps/android/app/src/main/java/com/keepcooking/app/navigation/Routes.kt
+  h_6bbd00fe0a456a 33
+apps/android/app/src/main/java/com/keepcooking/app/network/ApiService.kt
+  h_6bbd00fe0a456a 80,81-85,86-92,93,94-95,96,97-98,99,150-176
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/ExportScreen.kt
+  h_6bbd00fe0a456a 13,73-76,117-119,139-142,160-173
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/ImportScreen.kt
+  h_6bbd00fe0a456a 1-46,47-48,49-52,53-55,56-58,59-60,61,62-63,64-65,66-80,81-84,85-104,105,106,107-143,141,144-146,147,148,149-150,151-158,159-163,164,165-166,167-258,259-280,281-289,290-294,295-300,301-302,303-308,309,310,311-313,314-316,317,318-321,322-325,326,327-335,336-338,339-340,341-343
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/MoreScreen.kt
+  h_6bbd00fe0a456a 30,38
+apps/android/app/src/test/java/com/keepcooking/app/RecipeExportImportTest.kt
+  h_6bbd00fe0a456a 1-17,18-24,25-73,74-105,106-224
+apps/ios/Export/ExportView.swift
+  h_6bbd00fe0a456a 22,29-38,46,47,76-77,81-88,132-133,139-143
+apps/ios/Export/README.md
+  h_6bbd00fe0a456a 12-14,15-17,18-105
+apps/ios/Export/RecipeExporter.swift
+  h_6bbd00fe0a456a 71-340
+apps/ios/Features/Ingest/ImportView.swift
+  h_6bbd00fe0a456a 1-352,353-354,355-476
+apps/ios/Features/Ingest/PaprikaImport.swift
+  h_6bbd00fe0a456a 1-82,83-85,86-1282,1283,1284,1285-1320,1321,1322,1323,1324-1330,1331-1333,1334-1337,1338-1340,1341,1342,1343-1412,1413-1453,1454,1455-1468
+apps/ios/Features/Library/README.md
+  h_6bbd00fe0a456a 43-50,62-63,79
+apps/web/src/api.ts
+  h_6bbd00fe0a456a 27-49,261-281,285-298
+apps/web/src/main.ts
+  h_6bbd00fe0a456a 3,11,879-884,890-938,977-1062,1091-1537,1552-1581,1650-1732
+packages/contracts/CHANGELOG.md
+  h_6bbd00fe0a456a 2-4,5,6,7-8
+packages/contracts/README.md
+  h_6bbd00fe0a456a 30-32,33-38,39-40,41-44,53
+packages/contracts/openapi.json
+  h_6bbd00fe0a456a 134,146-148,313-419,781-791,795-798,808-828,835-838,844-847,851-855,873-876,898-906,910-912,922-936,943-945,951-953,958-960,975-980,1289-1352,1419-1465,1491-1531,2748
+packages/contracts/openapi.yaml
+  h_6bbd00fe0a456a 107-142,564-627,922-925,929,942-967,988-999,1009,1018-1029
+apps/android/app/src/test/java/com/keepcooking/app/ImportServerFormatTest.kt
+  h_6bbd00fe0a456a 1-39
+api/src/clip.ts
+  h_6bbd00fe0a456a 234-236
+api/src/zod.ts
+  h_6bbd00fe0a456a 22
+api/test/clip.test.ts
+  h_6bbd00fe0a456a 3,98-140
+apps/android/app/build.gradle.kts
+  h_6bbd00fe0a456a 84-86
+apps/android/app/src/main/java/com/keepcooking/app/ingest/ClipModels.kt
+  h_6bbd00fe0a456a 20-21
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/IngestScreen.kt
+  h_6bbd00fe0a456a 3-4,20,35,37-39,60-62,110,117-118,324-329,331-465,472-473,484-509,517-523,526,540,558
+apps/android/app/src/test/java/com/keepcooking/app/ingest/PasteIngestTest.kt
+  h_6bbd00fe0a456a 1-42
+apps/ios/App/DemoFlows.swift
+  h_6bbd00fe0a456a 14,118,336,912-913,1656-1657
+apps/ios/App/KeepCookingApp.swift
+  h_6bbd00fe0a456a 857,866,924,982-986
+apps/ios/Features/Ingest/ClipModels.swift
+  h_6bbd00fe0a456a 21-22
+apps/ios/Features/Ingest/PasteImportView.swift
+  h_6bbd00fe0a456a 1-324
+apps/web/src/ingest.test.ts
+  h_6bbd00fe0a456a 1-66
+apps/web/src/ingest.ts
+  h_6bbd00fe0a456a 1-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "191168807e77d59b9783e4c18b2f8e8500897c54",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
