@@ -1,0 +1,14 @@
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/IngestScreen.kt
+  h_6bbd00fe0a456a 374
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "240f83d313556ceec147fd240e6995bb00d13e3f",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
