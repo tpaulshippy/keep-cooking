@@ -1,0 +1,20 @@
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/ExportScreen.kt
+  h_6bbd00fe0a456a 11,14,19,28,35,39-42,50-51,58-69,73,79-111,127-144,146-163,166,168-178
+apps/ios/Export/ExportView.swift
+  h_6bbd00fe0a456a 4-5,52,60-61,66-71,75-76,78-90,94-96,98-99,103-112,115-122,125-143,147-152,160-169
+apps/ios/Export/README.md
+  h_6bbd00fe0a456a 8-11
+apps/web/src/main.ts
+  h_6bbd00fe0a456a 894-895,899,901-903,905,911-914,984-986,1094-1095,1373,1386-1390,1486-1509,1511-1519,1521,1524,1527,1529-1536,1539
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b310071aed8d6f2d9e52019c6de455ab2ad9b89a",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
