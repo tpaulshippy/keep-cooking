@@ -1,0 +1,14 @@
+packages/contracts/openapi.json
+  h_6bbd00fe0a456a 134,137-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2051b5bb63dd2eb764c19e8a7961a3f0e0cbb19c",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
