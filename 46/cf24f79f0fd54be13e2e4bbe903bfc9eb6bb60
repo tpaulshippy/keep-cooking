@@ -1,0 +1,18 @@
+apps/ios/App/DemoFlows.swift
+  h_6bbd00fe0a456a 1763-1766,1779-1780
+apps/ios/App/KeepCookingApp.swift
+  h_6bbd00fe0a456a 867-870,1030
+apps/ios/App/MenusPaprikaViews.swift
+  h_6bbd00fe0a456a 199-202,322,330-332
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "46cf24f79f0fd54be13e2e4bbe903bfc9eb6bb60",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
