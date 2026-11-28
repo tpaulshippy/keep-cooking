@@ -46,6 +46,8 @@ struct KeepCookingApp: App {
 struct AdaptiveShell: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.modelContext) private var context
+    /// Set when a Files/Mail file tap stages an importable document.
+    @State private var showImport = false
 
     var body: some View {
         Group {
@@ -59,6 +61,12 @@ struct AdaptiveShell: View {
             PhoneTabView()
             #endif
         }
+        // Files/Mail taps of .paprikarecipes/.paprikarecipe/.yml/.yaml stage
+        // via ImportPendingStore; ImportView consumes the staged file on appear.
+        .modifier(ImportURLHandler(onFile: { url in
+            if ImportPendingStore.stage(url) { showImport = true }
+        }))
+        .sheet(isPresented: $showImport) { ImportView() }
         .task {
             // Airplane-mode demo: seeds load once, then sync when online.
             await SyncCoordinator.shared.seedIfNeeded(context: context)
@@ -237,7 +245,13 @@ struct ListsPlaceholder: View {
 struct MorePlaceholder: View {
     var body: some View {
         List {
+            Section("Add") {
+                NavigationLink("Import file") { ImportView() }
+                    .accessibilityIdentifier("more-import-file")
+            }
             Section("Library") {
+                NavigationLink("Export") { RecipeExportView() }
+                    .accessibilityIdentifier("more-export")
                 NavigationLink {
                     LibraryHomeView()
                 } label: {
@@ -791,6 +805,7 @@ enum DrawerSection: String, CaseIterable, Identifiable {
     case lists
     case pantry
     case library
+    case export
     case settings
 
     var id: String { rawValue }
@@ -803,6 +818,7 @@ enum DrawerSection: String, CaseIterable, Identifiable {
         case .lists: return "Shopping"
         case .pantry: return "Pantry"
         case .library: return "Library"
+        case .export: return "Export"
         case .settings: return "Settings"
         }
     }
@@ -815,6 +831,7 @@ enum DrawerSection: String, CaseIterable, Identifiable {
         case .lists: return "cart"
         case .pantry: return "refrigerator"
         case .library: return "square.stack.3d.up"
+        case .export: return "square.and.arrow.up"
         case .settings: return "gear"
         }
     }
@@ -826,6 +843,7 @@ enum DrawerSection: String, CaseIterable, Identifiable {
         case .plan, .menus: return "Planner"
         case .lists, .pantry: return "Shopping"
         case .library: return "Organize"
+        case .export: return "Organize"
         case .settings: return nil
         }
     }
@@ -835,6 +853,7 @@ enum QuickAddKind: String, Identifiable {
     case clip
     case scan
     case caption
+    case importFile
 
     var id: String { rawValue }
     var title: String {
@@ -842,6 +861,7 @@ enum QuickAddKind: String, Identifiable {
         case .clip: return "Clip recipe URL"
         case .scan: return "Scan cookbook"
         case .caption: return "Import caption"
+        case .importFile: return "Import file"
         }
     }
 }
@@ -898,6 +918,7 @@ struct DrawerShellView: View {
             case .clip: ClipView()
             case .scan: OCRScanView()
             case .caption: CaptionsImportView()
+            case .importFile: ImportView()
             }
         }
     }
@@ -949,6 +970,11 @@ struct DrawerShellView: View {
                     quickAdd = .caption
                 } label: {
                     Label("Import caption", systemImage: "captions.bubble")
+                }
+                Button {
+                    quickAdd = .importFile
+                } label: {
+                    Label("Import file", systemImage: "tray.and.arrow.down")
                 }
             } label: {
                 Image(systemName: "plus")
@@ -1034,6 +1060,8 @@ struct DrawerShellView: View {
                 PantryTabView()
             case .library:
                 LibraryHomeView()
+            case .export:
+                RecipeExportView()
             case .settings:
                 SettingsView()
             }
@@ -1073,6 +1101,7 @@ struct DrawerShellView: View {
                     drawerRow(.pantry)
                     drawerGroupHeader("Organize")
                     drawerRow(.library)
+                    drawerRow(.export)
                     Divider().padding(.vertical, 8)
                     drawerRow(.settings)
                 }

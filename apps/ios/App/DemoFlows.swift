@@ -1652,8 +1652,12 @@ struct MoreTabView: View {
                         .accessibilityIdentifier("more-caption")
                     NavigationLink("Scan cookbook (OCR)") { OCRScanView() }
                         .accessibilityIdentifier("more-ocr")
+                    NavigationLink("Import file") { ImportView() }
+                        .accessibilityIdentifier("more-import-file")
                 }
                 Section("Library") {
+                    NavigationLink("Export") { RecipeExportView() }
+                        .accessibilityIdentifier("more-export")
                     NavigationLink {
                         PantryTabView()
                     } label: {
