@@ -48,8 +48,12 @@ export async function signKey(
   );
   const sig = toHex(await crypto.subtle.sign('HMAC', cryptoKey, data));
   const base = opts.baseUrl.replace(/\/$/, '');
+  // Single-serve: the byte route is mounted at /api/photos/dl. A prod base
+  // already ends in /api; a bare origin (dev/test) needs the prefix so the
+  // minted URL hits the serving route in every environment.
+  const prefix = base.endsWith('/api') ? '' : '/api';
   return {
-    url: `${base}/photos/dl?key=${encodeURIComponent(key)}&exp=${exp}&sig=${sig}`,
+    url: `${base}${prefix}/photos/dl?key=${encodeURIComponent(key)}&exp=${exp}&sig=${sig}`,
     expiresAt: new Date(exp * 1000).toISOString(),
     key,
   };

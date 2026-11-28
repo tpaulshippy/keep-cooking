@@ -2367,7 +2367,7 @@
   },
   "servers": [
     {
-      "url": "https://api.keepcooking.local"
+      "url": "https://keepcooking.app/api"
     }
   ]
 }

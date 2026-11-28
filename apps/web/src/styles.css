@@ -1,0 +1,74 @@
+:root {
+  --bg: #fffdf8;
+  --fg: #1c1917;
+  --accent: #9a3412;
+  --accent-fg: #ffffff;
+  --muted: #57534e;
+  /* stone-500 family: 4.8:1 vs white (≥3:1 for control boundaries). */
+  --border: #78716c;
+  --focus: #1d4ed8;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.5;
+}
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: #fff7ed;
+}
+.brand { font-weight: 700; font-size: 1.25rem; color: var(--accent); text-decoration: none; }
+nav { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; }
+nav a { padding: 0.25rem 0.5rem; border-radius: 0.375rem; color: var(--fg); }
+nav a[aria-current="page"] { background: var(--accent); color: var(--accent-fg); }
+.view { max-width: 48rem; margin: 0 auto; padding: 1rem; }
+.muted { color: var(--muted); font-size: 0.9em; }
+a { color: var(--accent); }
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+button, input, select, textarea { font: inherit; }
+button { padding: 0.375rem 0.75rem; border: 1px solid var(--border); border-radius: 0.375rem; background: #fff; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+form { margin: 1rem 0; display: grid; gap: 0.5rem; max-width: 32rem; }
+label { display: grid; gap: 0.25rem; font-weight: 600; }
+input, select, textarea { padding: 0.375rem 0.5rem; border: 1px solid var(--border); border-radius: 0.375rem; font-weight: 400; }
+ul, ol { padding-left: 1.25rem; }
+li { margin: 0.25rem 0; }
+/* Checkbox rows (cook cross-off, shop check-off): the global form-label grid
+   would stack box over text — flex keeps a 44px-friendly target beside it. */
+input[type="checkbox"] { width: 1.25rem; height: 1.25rem; accent-color: var(--accent); flex: none; }
+li > label { display: flex; align-items: flex-start; gap: 0.6rem; font-weight: 400; cursor: pointer; }
+li > label input[type="checkbox"] { margin-top: 0.2rem; }
+/* Checked-off items strike the whole label (name + quantity/aisle span),
+   not just the name span next to the checkbox. */
+li > label:has(input:checked) { text-decoration: line-through; color: var(--muted); }
+#ings { list-style: none; padding-left: 0; display: grid; gap: 0.35rem; }
+/* Scale form: input + button share one row instead of two full-width blocks. */
+#scale { display: flex; align-items: flex-end; gap: 0.5rem; }
+#scale label { flex: 1; }
+/* Recipe lists read as cards, not bullets. */
+.cards { list-style: none; padding-left: 0; display: grid; gap: 0.5rem; }
+.cards li { border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.6rem 0.75rem; background: #fff; margin: 0; }
+.cards li a:first-child { font-weight: 650; }
+button[type="submit"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+button[type="submit"]:hover { border-color: var(--accent); filter: brightness(0.92); }
+code { background: #f5f5f4; padding: 0.1em 0.3em; border-radius: 0.25rem; }
+@media (max-width: 40rem) {
+  .view { padding: 0.75rem; }
+  h1 { font-size: 1.4rem; }
+  /* One-row header with sideways-scroll nav instead of a 3-row wrap. */
+  .topbar { flex-wrap: nowrap; gap: 0.5rem; }
+  .brand { font-size: 1.05rem; white-space: nowrap; }
+  nav { flex-wrap: nowrap; overflow-x: auto; gap: 0.25rem; }
+  nav a { white-space: nowrap; }
+}

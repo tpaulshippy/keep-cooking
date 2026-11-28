@@ -56,13 +56,13 @@ describe('e2e v1 blind blob pipe', () => {
       entity: 'recipe',
       payload: { title: 'Plaintext Soup' },
     };
-    const push = await req(app, 'PUT', `/v2/sync/${HASH}`, { body: [plain] });
+    const push = await req(app, 'PUT', `/api/v2/sync/${HASH}`, { body: [plain] });
     expect(push.status).toBe(400);
     // Non-array bodies are rejected too.
-    const notArray = await req(app, 'PUT', `/v2/sync/${HASH}`, { body: { id: uid(2) } });
+    const notArray = await req(app, 'PUT', `/api/v2/sync/${HASH}`, { body: { id: uid(2) } });
     expect(notArray.status).toBe(400);
     // Nothing persisted.
-    const pull = await req(app, 'GET', `/v2/sync/${HASH}`);
+    const pull = await req(app, 'GET', `/api/v2/sync/${HASH}`);
     expect(pull.status).toBe(200);
     expect(await pull.json()).toEqual([]);
   });
@@ -79,52 +79,52 @@ describe('e2e v1 blind blob pipe', () => {
       { ciphertext: b64('fifteen-bytes!!') }, // 15 bytes
     ];
     for (const [i, c] of cases.entries()) {
-      const res = await req(app, 'PUT', `/v2/sync/${HASH}`, { body: [env({ id: uid(200 + i), ...c })] });
+      const res = await req(app, 'PUT', `/api/v2/sync/${HASH}`, { body: [env({ id: uid(200 + i), ...c })] });
       expect(res.status).toBe(400);
     }
     // Boundary shapes pass: 12-byte nonce + exactly-16-byte ciphertext.
-    const ok = await req(app, 'PUT', `/v2/sync/${HASH}`, {
+    const ok = await req(app, 'PUT', `/api/v2/sync/${HASH}`, {
       body: [env({ id: uid(210), nonce: b64('0123456789ab'), ciphertext: b64('0123456789abcdef') })],
     });
     expect(ok.status).toBe(200);
     expect(await ok.json()).toEqual({ stored: [uid(210)] });
-    expect(await (await req(app, 'GET', `/v2/sync/${HASH}`)).json()).toHaveLength(1);
+    expect(await (await req(app, 'GET', `/api/v2/sync/${HASH}`)).json()).toHaveLength(1);
   });
 
   it('rejects standalone ingredient/step envelopes with 422', async () => {
     const { app } = await makeApp({ seed: false });
-    const ing = await req(app, 'PUT', `/v2/sync/${HASH}`, {
+    const ing = await req(app, 'PUT', `/api/v2/sync/${HASH}`, {
       body: [{ ...env({ id: uid(11) }), entity: 'ingredient' }],
     });
     expect(ing.status).toBe(422);
-    const step = await req(app, 'PUT', `/v2/sync/${HASH}`, {
+    const step = await req(app, 'PUT', `/api/v2/sync/${HASH}`, {
       body: [{ ...env({ id: uid(12) }), entity: 'step' }],
     });
     expect(step.status).toBe(422);
-    expect(await (await req(app, 'GET', `/v2/sync/${HASH}`)).json()).toEqual([]);
+    expect(await (await req(app, 'GET', `/api/v2/sync/${HASH}`)).json()).toEqual([]);
   });
 
   it('validates the entire batch before writing any (no partial batches)', async () => {
     const { app } = await makeApp({ seed: false });
     const good = env({ id: uid(55) });
     // Second envelope has a householdHash mismatch: whole batch rejected.
-    const mismatch = await req(app, 'PUT', `/v2/sync/${HASH}`, {
+    const mismatch = await req(app, 'PUT', `/api/v2/sync/${HASH}`, {
       body: [good, env({ id: uid(56), householdHash: OTHER_HASH })],
     });
     expect(mismatch.status).toBe(400);
-    expect(await (await req(app, 'GET', `/v2/sync/${HASH}`)).json()).toEqual([]);
+    expect(await (await req(app, 'GET', `/api/v2/sync/${HASH}`)).json()).toEqual([]);
     // Second envelope is a forbidden entity: 422, still nothing written.
-    const forbidden = await req(app, 'PUT', `/v2/sync/${HASH}`, {
+    const forbidden = await req(app, 'PUT', `/api/v2/sync/${HASH}`, {
       body: [good, { ...env({ id: uid(57) }), entity: 'ingredient' }],
     });
     expect(forbidden.status).toBe(422);
-    expect(await (await req(app, 'GET', `/v2/sync/${HASH}`)).json()).toEqual([]);
+    expect(await (await req(app, 'GET', `/api/v2/sync/${HASH}`)).json()).toEqual([]);
     // Second envelope fails schema: 400, still nothing written.
-    const broken = await req(app, 'PUT', `/v2/sync/${HASH}`, {
+    const broken = await req(app, 'PUT', `/api/v2/sync/${HASH}`, {
       body: [good, { ...env({ id: uid(58) }), nonce: 'short' }],
     });
     expect(broken.status).toBe(400);
-    expect(await (await req(app, 'GET', `/v2/sync/${HASH}`)).json()).toEqual([]);
+    expect(await (await req(app, 'GET', `/api/v2/sync/${HASH}`)).json()).toEqual([]);
   });
 
   it('upserts LWW by updatedAt (stale loses, ties idempotent)', async () => {
@@ -132,14 +132,14 @@ describe('e2e v1 blind blob pipe', () => {
     const id = uid(21);
     const newer = env({ id, updatedAt: '2026-11-22T12:00:00.000Z', ciphertext: ct('CIPHERTEXT-NEW') });
     const older = env({ id, updatedAt: '2026-11-20T12:00:00.000Z', ciphertext: ct('CIPHERTEXT-OLD') });
-    expect((await (await req(app, 'PUT', `/v2/sync/${HASH}`, { body: [newer] })).json())).toEqual({ stored: [id] });
-    const stale = await req(app, 'PUT', `/v2/sync/${HASH}`, { body: [older] });
+    expect((await (await req(app, 'PUT', `/api/v2/sync/${HASH}`, { body: [newer] })).json())).toEqual({ stored: [id] });
+    const stale = await req(app, 'PUT', `/api/v2/sync/${HASH}`, { body: [older] });
     expect(stale.status).toBe(200);
     expect(await stale.json()).toEqual({ stored: [] });
     // Equal timestamps: idempotent, still a single winner.
-    const again = await req(app, 'PUT', `/v2/sync/${HASH}`, { body: [newer] });
+    const again = await req(app, 'PUT', `/api/v2/sync/${HASH}`, { body: [newer] });
     expect(await again.json()).toEqual({ stored: [] });
-    const list = (await (await req(app, 'GET', `/v2/sync/${HASH}`)).json()) as EncryptedEnvelope[];
+    const list = (await (await req(app, 'GET', `/api/v2/sync/${HASH}`)).json()) as EncryptedEnvelope[];
     expect(list).toHaveLength(1);
     expect(list[0]!.ciphertext).toBe(ct('CIPHERTEXT-NEW'));
   });
@@ -165,13 +165,13 @@ describe('e2e v1 blind blob pipe', () => {
   it('propagates deleted=true tombstones on pull', async () => {
     const { app } = await makeApp({ seed: false });
     const id = uid(31);
-    await req(app, 'PUT', `/v2/sync/${HASH}`, {
+    await req(app, 'PUT', `/api/v2/sync/${HASH}`, {
       body: [env({ id, updatedAt: '2026-11-20T12:00:00.000Z', ciphertext: ct('CIPHERTEXT-LIVE') })],
     });
-    await req(app, 'PUT', `/v2/sync/${HASH}`, {
+    await req(app, 'PUT', `/api/v2/sync/${HASH}`, {
       body: [env({ id, updatedAt: '2026-11-21T12:00:00.000Z', deleted: true, ciphertext: ct('CIPHERTEXT-TOMB') })],
     });
-    const list = (await (await req(app, 'GET', `/v2/sync/${HASH}?since=2026-11-20T13:00:00.000Z`)).json()) as EncryptedEnvelope[];
+    const list = (await (await req(app, 'GET', `/api/v2/sync/${HASH}?since=2026-11-20T13:00:00.000Z`)).json()) as EncryptedEnvelope[];
     expect(list).toHaveLength(1);
     expect(list[0]!.deleted).toBe(true);
     expect(list[0]!.ciphertext).toBe(ct('CIPHERTEXT-TOMB'));
@@ -179,27 +179,27 @@ describe('e2e v1 blind blob pipe', () => {
 
   it('filters by ?since on header updatedAt (pullSince semantics)', async () => {
     const { app } = await makeApp({ seed: false });
-    await req(app, 'PUT', `/v2/sync/${HASH}`, {
+    await req(app, 'PUT', `/api/v2/sync/${HASH}`, {
       body: [
         env({ id: uid(41), updatedAt: '2026-11-20T12:00:00.000Z', entity: 'plan', ciphertext: ct('C1') }),
         env({ id: uid(42), updatedAt: '2026-11-25T12:00:00.000Z', entity: 'plan', ciphertext: ct('C2') }),
       ],
     });
     const pull = (await (
-      await req(app, 'GET', `/v2/sync/${HASH}?since=2026-11-22T00:00:00.000Z`)
+      await req(app, 'GET', `/api/v2/sync/${HASH}?since=2026-11-22T00:00:00.000Z`)
     ).json()) as EncryptedEnvelope[];
     expect(pull.map((e) => e.id)).toEqual([uid(42)]);
     // Non-canonical but valid dates are normalized, not rejected.
-    const offset = await req(app, 'GET', `/v2/sync/${HASH}?since=2026-11-22T00:00:00%2B00:00`);
+    const offset = await req(app, 'GET', `/api/v2/sync/${HASH}?since=2026-11-22T00:00:00%2B00:00`);
     expect(offset.status).toBe(200);
     expect(((await offset.json()) as EncryptedEnvelope[]).map((e) => e.id)).toEqual([uid(42)]);
-    const badSince = await req(app, 'GET', `/v2/sync/${HASH}?since=not-a-date`);
+    const badSince = await req(app, 'GET', `/api/v2/sync/${HASH}?since=not-a-date`);
     expect(badSince.status).toBe(400);
   });
 
   it('rejects householdHash mismatch (400)', async () => {
     const { app } = await makeApp({ seed: false });
-    const res = await req(app, 'PUT', `/v2/sync/${HASH}`, {
+    const res = await req(app, 'PUT', `/api/v2/sync/${HASH}`, {
       body: [env({ id: uid(51), householdHash: OTHER_HASH })],
     });
     expect(res.status).toBe(400);
@@ -207,30 +207,30 @@ describe('e2e v1 blind blob pipe', () => {
 
   it('DELETE wipes the whole bucket', async () => {
     const { app } = await makeApp({ seed: false });
-    await req(app, 'PUT', `/v2/sync/${HASH}`, {
+    await req(app, 'PUT', `/api/v2/sync/${HASH}`, {
       body: [
         env({ id: uid(61), updatedAt: '2026-11-20T12:00:00.000Z', ciphertext: ct('C1') }),
         env({ id: uid(62), updatedAt: '2026-11-21T12:00:00.000Z', entity: 'list', ciphertext: ct('C2') }),
       ],
     });
-    const wipe = await req(app, 'DELETE', `/v2/sync/${HASH}`);
+    const wipe = await req(app, 'DELETE', `/api/v2/sync/${HASH}`);
     expect(wipe.status).toBe(200);
     expect(await wipe.json()).toEqual({ wiped: 2 });
-    expect(await (await req(app, 'GET', `/v2/sync/${HASH}`)).json()).toEqual([]);
+    expect(await (await req(app, 'GET', `/api/v2/sync/${HASH}`)).json()).toEqual([]);
     // Wiping an empty/unknown bucket is a no-op, not an error.
-    const again = await req(app, 'DELETE', `/v2/sync/${HASH}`);
+    const again = await req(app, 'DELETE', `/api/v2/sync/${HASH}`);
     expect(await again.json()).toEqual({ wiped: 0 });
   });
 
   it('bad hashes are 400; unknown well-formed hash pulls empty (200)', async () => {
     const { app } = await makeApp({ seed: false });
     for (const bad of ['not-hex', '0'.repeat(63), '0'.repeat(65), 'g'.repeat(64), 'ABCDEF1234']) {
-      expect((await req(app, 'GET', `/v2/sync/${bad}`)).status).toBe(400);
-      expect((await req(app, 'PUT', `/v2/sync/${bad}`, { body: [] })).status).toBe(400);
-      expect((await req(app, 'DELETE', `/v2/sync/${bad}`)).status).toBe(400);
+      expect((await req(app, 'GET', `/api/v2/sync/${bad}`)).status).toBe(400);
+      expect((await req(app, 'PUT', `/api/v2/sync/${bad}`, { body: [] })).status).toBe(400);
+      expect((await req(app, 'DELETE', `/api/v2/sync/${bad}`)).status).toBe(400);
     }
     const unknown = 'f'.repeat(64);
-    const pull = await req(app, 'GET', `/v2/sync/${unknown}`);
+    const pull = await req(app, 'GET', `/api/v2/sync/${unknown}`);
     expect(pull.status).toBe(200);
     expect(await pull.json()).toEqual([]);
   });
@@ -243,7 +243,7 @@ describe('e2e v1 blind blob pipe', () => {
     const raw = new Uint8Array(spki.subarray(spki.length - 32));
     await store.enrollDevice({ deviceId, publicKeyB64: Buffer.from(raw).toString('base64') });
     const app = createApp(store, {
-      baseUrl: 'https://keep-cooking-api.pshippy-245.workers.dev',
+      baseUrl: 'https://keepcooking.app/api',
       secret: 'test-secret',
     });
     // Same canonical signing as api/test/beta-gate.test.ts:
@@ -260,7 +260,7 @@ describe('e2e v1 blind blob pipe', () => {
       };
     };
     const anon = { 'content-type': 'application/json' };
-    const putPath = `/v2/sync/${HASH}`;
+    const putPath = `/api/v2/sync/${HASH}`;
     // Reads stay open without any signature.
     expect((await app.request(putPath, { headers: anon })).status).toBe(200);
     // Unsigned writes are rejected (legacy bearer tokens don't help either).
@@ -300,11 +300,11 @@ describe('e2e v1 blind blob pipe', () => {
     try {
       const ctRaw = 'SECRET-CIPHERTEXT-9f8e7d6c5b4a';
       const nonceRaw = 'SECRET-NONCE'; // exactly 12 bytes
-      await req(app, 'PUT', `/v2/sync/${HASH}`, {
+      await req(app, 'PUT', `/api/v2/sync/${HASH}`, {
         body: [env({ id: uid(71), ciphertext: b64(ctRaw), nonce: b64(nonceRaw) })],
       });
-      await req(app, 'GET', `/v2/sync/${HASH}`);
-      await req(app, 'DELETE', `/v2/sync/${HASH}`);
+      await req(app, 'GET', `/api/v2/sync/${HASH}`);
+      await req(app, 'DELETE', `/api/v2/sync/${HASH}`);
     } finally {
       console.log = orig;
     }
@@ -319,7 +319,7 @@ describe('e2e v1 blind blob pipe', () => {
 
   it('legacy /sync/* plaintext pipe is untouched', async () => {
     const { app } = await makeApp({ seed: false });
-    const push = await req(app, 'POST', '/sync/push', {
+    const push = await req(app, 'POST', '/api/sync/push', {
       body: [
         {
           id: uid(81),
@@ -423,7 +423,7 @@ describe('e2e v1 D1-backed pipe (faithful FakeD1)', () => {
   it('PUT/LWW/pull/wipe round-trip through D1 (header-only routing + opaque ciphertext)', async () => {
     const { app, fake } = await makeD1App(new FakeD1());
     const id = uid(301);
-    const put = await req(app, 'PUT', `/v2/sync/${HASH}`, {
+    const put = await req(app, 'PUT', `/api/v2/sync/${HASH}`, {
       body: [env({ id, updatedAt: '2026-11-20T12:00:00.000Z', ciphertext: ct('D1-CIPHERTEXT-1!') })],
     });
     expect(put.status).toBe(200);
@@ -438,19 +438,19 @@ describe('e2e v1 D1-backed pipe (faithful FakeD1)', () => {
     expect(header['nonce']).toBe(NONCE);
     expect(header).not.toHaveProperty('ciphertext');
     // Stale loses; pull returns the winner.
-    const stale = await req(app, 'PUT', `/v2/sync/${HASH}`, {
+    const stale = await req(app, 'PUT', `/api/v2/sync/${HASH}`, {
       body: [env({ id, updatedAt: '2026-11-19T12:00:00.000Z', ciphertext: ct('D1-CIPHERTEXT-0!') })],
     });
     expect(await stale.json()).toEqual({ stored: [] });
     expect(fake.blobs.get(`${HASH}|${id}`)!.ciphertext).toBe(ct('D1-CIPHERTEXT-1!'));
-    const pull = (await (await req(app, 'GET', `/v2/sync/${HASH}`)).json()) as EncryptedEnvelope[];
+    const pull = (await (await req(app, 'GET', `/api/v2/sync/${HASH}`)).json()) as EncryptedEnvelope[];
     expect(pull).toHaveLength(1);
     expect(pull[0]!.ciphertext).toBe(ct('D1-CIPHERTEXT-1!'));
     // Wipe clears D1 and reports the reconciled count.
-    const wipe = await req(app, 'DELETE', `/v2/sync/${HASH}`);
+    const wipe = await req(app, 'DELETE', `/api/v2/sync/${HASH}`);
     expect(await wipe.json()).toEqual({ wiped: 1 });
     expect(fake.blobs.size).toBe(0);
-    expect(await (await req(app, 'GET', `/v2/sync/${HASH}`)).json()).toEqual([]);
+    expect(await (await req(app, 'GET', `/api/v2/sync/${HASH}`)).json()).toEqual([]);
   });
 
   it('LWW holds across isolates and the upsert carries the conflict predicate', async () => {
@@ -460,7 +460,7 @@ describe('e2e v1 D1-backed pipe (faithful FakeD1)', () => {
     const id = uid(302);
     // B's cache is empty and hydrate() never bulk-loads blobs; its write
     // path lazy-loads the hash from D1.
-    await req(a.app, 'PUT', `/v2/sync/${HASH}`, {
+    await req(a.app, 'PUT', `/api/v2/sync/${HASH}`, {
       body: [env({ id, updatedAt: '2026-11-22T12:00:00.000Z', ciphertext: ct('D1-CIPHERTEXT-NEW') })],
     });
     expect(await b.store.e2ePut(HASH, env({ id, updatedAt: '2026-11-20T12:00:00.000Z', ciphertext: ct('D1-STALE!!!!!!') }))).toBe(false);
@@ -505,25 +505,25 @@ describe('e2e v1 D1-backed pipe (faithful FakeD1)', () => {
     const fake = new FakeD1();
     const a = await makeD1App(fake);
     const b = await makeD1App(fake);
-    await req(a.app, 'PUT', `/v2/sync/${HASH}`, {
+    await req(a.app, 'PUT', `/api/v2/sync/${HASH}`, {
       body: [
         env({ id: uid(304), updatedAt: '2026-11-20T12:00:00.000Z', ciphertext: ct('WIPE-ME-1!!!!!!') }),
         env({ id: uid(305), updatedAt: '2026-11-21T12:00:00.000Z', ciphertext: ct('WIPE-ME-2!!!!!!') }),
       ],
     });
-    expect(await (await req(a.app, 'GET', `/v2/sync/${HASH}`)).json()).toHaveLength(2);
-    expect(await (await req(b.app, 'DELETE', `/v2/sync/${HASH}`)).json()).toEqual({ wiped: 2 });
+    expect(await (await req(a.app, 'GET', `/api/v2/sync/${HASH}`)).json()).toHaveLength(2);
+    expect(await (await req(b.app, 'DELETE', `/api/v2/sync/${HASH}`)).json()).toEqual({ wiped: 2 });
     expect(fake.blobs.size).toBe(0);
     // A's cache still holds the rows, but its next read reconciles against
     // D1 and drops them instead of resurrecting.
-    expect(await (await req(a.app, 'GET', `/v2/sync/${HASH}`)).json()).toEqual([]);
+    expect(await (await req(a.app, 'GET', `/api/v2/sync/${HASH}`)).json()).toEqual([]);
   });
 
   it('propagates D1 persistence failures instead of acking memory-only', async () => {
     const fake = new FakeD1();
     const { app } = await makeD1App(fake);
     fake.failRun = new Error('D1 unavailable');
-    const res = await req(app, 'PUT', `/v2/sync/${HASH}`, { body: [env({ id: uid(306) })] });
+    const res = await req(app, 'PUT', `/api/v2/sync/${HASH}`, { body: [env({ id: uid(306) })] });
     expect(res.status).toBe(500);
   });
 

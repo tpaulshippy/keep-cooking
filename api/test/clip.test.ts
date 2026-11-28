@@ -80,7 +80,7 @@ describe('clip pipeline (12 fixtures)', () => {
 
   it('POST /clip with caption (no network)', async () => {
     const { app } = await makeApp();
-    const res = await req(app, 'POST', '/clip', {
+    const res = await req(app, 'POST', '/api/clip', {
       body: { caption: 'Gochujang Noodles\n2 packs ramen\nBoil 3 min.' },
     });
     expect(res.status).toBe(200);
@@ -91,7 +91,7 @@ describe('clip pipeline (12 fixtures)', () => {
 
   it('POST /clip requires url or caption', async () => {
     const { app } = await makeApp();
-    const res = await req(app, 'POST', '/clip', { body: {} });
+    const res = await req(app, 'POST', '/api/clip', { body: {} });
     expect(res.status).toBe(400);
   });
 });

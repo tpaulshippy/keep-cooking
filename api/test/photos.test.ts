@@ -27,9 +27,9 @@ describe('photos', () => {
 
   it('GET /photos/sign + /photos/variants', async () => {
     const { app } = await makeApp({ seed: false });
-    const v = await req(app, 'GET', '/photos/variants?recipeId=r1');
+    const v = await req(app, 'GET', '/api/photos/variants?recipeId=r1');
     expect((await v.json()) as object).toHaveProperty('thumb', 'photos/r1/thumb.jpg');
-    const s = await req(app, 'GET', '/photos/sign?key=photos%2Fr1%2Fthumb.jpg');
+    const s = await req(app, 'GET', '/api/photos/sign?key=photos%2Fr1%2Fthumb.jpg');
     expect(s.status).toBe(200);
     const body = (await s.json()) as { url: string; expiresAt: string };
     expect(new Date(body.expiresAt).getTime() - Date.now()).toBeLessThan(15 * 60 * 1000);

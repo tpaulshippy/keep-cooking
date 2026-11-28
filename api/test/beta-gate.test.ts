@@ -11,7 +11,7 @@ import { MemoryStore } from '../src/store';
 //   user.id = verified deviceId. Legacy bearer tokens are ignored.
 // Dev (local baseUrl) keeps the x-role header stub: unsigned writes pass.
 
-const PROD_URL = 'https://keep-cooking-api.pshippy-245.workers.dev';
+const PROD_URL = 'https://keepcooking.app/api';
 const HASH = 'a'.repeat(64);
 
 function makeDevice() {
@@ -86,19 +86,19 @@ function encEnv(id: string, deviceId: string) {
 }
 
 describe('device-signature gate (prod)', () => {
-  it('/health stays unauthenticated', async () => {
+  it('/api/health stays unauthenticated', async () => {
     const { app } = await prodApp();
-    const res = await app.request('/health', { method: 'GET' });
+    const res = await app.request('/api/health', { method: 'GET' });
     expect(res.status).toBe(200);
   });
 
   it('reads stay open without any signature', async () => {
     const { app } = await prodApp();
     for (const [m, p] of [
-      ['GET', '/recipes'],
-      ['GET', '/sync/pull?since=1970-01-01T00:00:00Z'],
-      ['GET', '/openapi.json'],
-      ['GET', `/v2/sync/${HASH}`],
+      ['GET', '/api/recipes'],
+      ['GET', '/api/sync/pull?since=1970-01-01T00:00:00Z'],
+      ['GET', '/api/openapi.json'],
+      ['GET', `/api/v2/sync/${HASH}`],
     ] as const) {
       const res = await app.request(p, { method: m });
       expect(res.status).toBe(200);
@@ -109,21 +109,21 @@ describe('device-signature gate (prod)', () => {
     const { app, store } = await prodApp();
     await store.setMembership('hh-demo', 'u1', 'owner');
     const anon = { 'content-type': 'application/json', 'x-user-id': 'u1', 'x-role': 'owner' };
-    const r1 = await app.request('/recipes', { method: 'POST', headers: anon, body: recipeBody });
+    const r1 = await app.request('/api/recipes', { method: 'POST', headers: anon, body: recipeBody });
     expect(r1.status).toBe(401);
-    const r2 = await app.request(`/v2/sync/${HASH}`, {
+    const r2 = await app.request(`/api/v2/sync/${HASH}`, {
       method: 'PUT',
       headers: anon,
       body: JSON.stringify([]),
     });
     expect(r2.status).toBe(401);
-    const r3 = await app.request(`/v2/sync/${HASH}`, { method: 'DELETE', headers: anon });
+    const r3 = await app.request(`/api/v2/sync/${HASH}`, { method: 'DELETE', headers: anon });
     expect(r3.status).toBe(401);
   });
 
   it('a legacy bearer token is ignored: writes without a sig still 401', async () => {
     const { app } = await prodApp();
-    const res = await app.request('/recipes', {
+    const res = await app.request('/api/recipes', {
       method: 'POST',
       headers: {
         Authorization: 'Bearer legacy-secret',
@@ -138,20 +138,20 @@ describe('device-signature gate (prod)', () => {
 
   it('stale timestamps, bad signatures, and unknown devices -> 401', async () => {
     const { app, dev } = await prodApp();
-    const base = { deviceId: dev.id, privateKey: dev.privateKey, method: 'POST', path: '/recipes', body: recipeBody };
-    const stale = await app.request('/recipes', {
+    const base = { deviceId: dev.id, privateKey: dev.privateKey, method: 'POST', path: '/api/recipes', body: recipeBody };
+    const stale = await app.request('/api/recipes', {
       method: 'POST',
       headers: signedHeaders({ ...base, ts: (Date.now() - 10 * 60_000).toString() }),
       body: recipeBody,
     });
     expect(stale.status).toBe(401);
-    const tampered = await app.request('/recipes', {
+    const tampered = await app.request('/api/recipes', {
       method: 'POST',
       headers: signedHeaders(base),
       body: JSON.stringify({ title: 'tampered', servings: 1, householdId: 'hh-demo' }),
     });
     expect(tampered.status).toBe(401);
-    const unknown = await app.request('/recipes', {
+    const unknown = await app.request('/api/recipes', {
       method: 'POST',
       headers: signedHeaders({ ...base, deviceId: crypto.randomUUID() }),
       body: recipeBody,
@@ -162,20 +162,20 @@ describe('device-signature gate (prod)', () => {
   it('valid signature -> v1 write 201 and v2 sync write 200', async () => {
     const { app, store, dev } = await prodApp();
     await store.setMembership('hh-demo', dev.id, 'owner');
-    const write = await app.request('/recipes', {
+    const write = await app.request('/api/recipes', {
       method: 'POST',
-      headers: signedHeaders({ deviceId: dev.id, privateKey: dev.privateKey, method: 'POST', path: '/recipes', body: recipeBody }),
+      headers: signedHeaders({ deviceId: dev.id, privateKey: dev.privateKey, method: 'POST', path: '/api/recipes', body: recipeBody }),
       body: recipeBody,
     });
     expect(write.status).toBe(201);
     const envBody = JSON.stringify([encEnv(crypto.randomUUID(), dev.id)]);
-    const put = await app.request(`/v2/sync/${HASH}`, {
+    const put = await app.request(`/api/v2/sync/${HASH}`, {
       method: 'PUT',
       headers: signedHeaders({
         deviceId: dev.id,
         privateKey: dev.privateKey,
         method: 'PUT',
-        path: `/v2/sync/${HASH}`,
+        path: `/api/v2/sync/${HASH}`,
         body: envBody,
       }),
       body: envBody,
@@ -189,22 +189,22 @@ describe('device-signature gate (prod)', () => {
     // Owner device writes even when x-user-id/x-role headers say otherwise.
     await store.setMembership('hh-demo', dev.id, 'owner');
     const headers = {
-      ...signedHeaders({ deviceId: dev.id, privateKey: dev.privateKey, method: 'POST', path: '/recipes', body: recipeBody }),
+      ...signedHeaders({ deviceId: dev.id, privateKey: dev.privateKey, method: 'POST', path: '/api/recipes', body: recipeBody }),
       'x-user-id': 'someone-else',
       'x-role': 'viewer',
     };
-    const res = await app.request('/recipes', { method: 'POST', headers, body: recipeBody });
+    const res = await app.request('/api/recipes', { method: 'POST', headers, body: recipeBody });
     expect(res.status).toBe(201);
     // Viewer device with a valid sig still gets 403 on writes.
     const viewer = await enrollDevice(store);
     await store.setMembership('hh-demo', viewer.id, 'viewer');
-    const denied = await app.request('/recipes', {
+    const denied = await app.request('/api/recipes', {
       method: 'POST',
       headers: signedHeaders({
         deviceId: viewer.id,
         privateKey: viewer.privateKey,
         method: 'POST',
-        path: '/recipes',
+        path: '/api/recipes',
         body: recipeBody,
       }),
       body: recipeBody,
@@ -216,27 +216,27 @@ describe('device-signature gate (prod)', () => {
     const { app } = await prodApp();
     const fresh = makeDevice();
     const enrollBody = JSON.stringify({ deviceId: fresh.id, publicKey: fresh.publicKeyB64 });
-    const first = await app.request('/v2/devices', {
+    const first = await app.request('/api/v2/devices', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: enrollBody,
     });
     expect(first.status).toBe(201);
     expect(await first.json()).toEqual({ deviceId: fresh.id, enrolledAt: expect.any(String) });
-    const again = await app.request('/v2/devices', {
+    const again = await app.request('/api/v2/devices', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: enrollBody,
     });
     expect(again.status).toBe(200);
     const other = makeDevice();
-    const conflict = await app.request('/v2/devices', {
+    const conflict = await app.request('/api/v2/devices', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ deviceId: fresh.id, publicKey: other.publicKeyB64 }),
     });
     expect(conflict.status).toBe(409);
-    const invalid = await app.request('/v2/devices', {
+    const invalid = await app.request('/api/v2/devices', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ deviceId: 'not-a-uuid', publicKey: 'AA==' }),
@@ -246,7 +246,7 @@ describe('device-signature gate (prod)', () => {
 
   it('dev stub unchanged: unsigned writes work with x-role owner', async () => {
     const { app } = devApp();
-    const res = await app.request('/recipes', {
+    const res = await app.request('/api/recipes', {
       method: 'POST',
       headers: { 'x-user-id': 'dev-user', 'x-role': 'owner', 'content-type': 'application/json' },
       body: JSON.stringify({ title: 'Dev Stew', servings: 2 }),
@@ -256,7 +256,7 @@ describe('device-signature gate (prod)', () => {
 
   it('enroll with JSON null body -> 400 (not a 500 TypeError)', async () => {
     const { app } = await prodApp();
-    const res = await app.request('/v2/devices', {
+    const res = await app.request('/api/v2/devices', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: 'null',
@@ -267,14 +267,14 @@ describe('device-signature gate (prod)', () => {
   it('re-enrolling a revoked device -> 410 (same or different key)', async () => {
     const { app, store, dev } = await prodApp();
     await store.setMembership('hh-demo', dev.id, 'owner');
-    const path = `/v2/devices/${dev.id}/revoke`;
+    const path = `/api/v2/devices/${dev.id}/revoke`;
     const revoked = await app.request(path, {
       method: 'POST',
       headers: signedHeaders({ deviceId: dev.id, privateKey: dev.privateKey, method: 'POST', path, body: '' }),
     });
     expect(revoked.status).toBe(200);
 
-    const sameKey = await app.request('/v2/devices', {
+    const sameKey = await app.request('/api/v2/devices', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ deviceId: dev.id, publicKey: dev.publicKeyB64 }),
@@ -283,7 +283,7 @@ describe('device-signature gate (prod)', () => {
     expect(await sameKey.json()).toEqual({ error: expect.stringContaining('fresh deviceId') });
 
     const other = makeDevice();
-    const diffKey = await app.request('/v2/devices', {
+    const diffKey = await app.request('/api/v2/devices', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ deviceId: dev.id, publicKey: other.publicKeyB64 }),
@@ -296,9 +296,9 @@ describe('device-signature gate (prod)', () => {
     const hh = `hh-first-claim-${crypto.randomUUID()}`;
     const body = JSON.stringify({ title: 'First Stew', servings: 2, householdId: hh });
 
-    const first = await app.request('/recipes', {
+    const first = await app.request('/api/recipes', {
       method: 'POST',
-      headers: signedHeaders({ deviceId: dev.id, privateKey: dev.privateKey, method: 'POST', path: '/recipes', body }),
+      headers: signedHeaders({ deviceId: dev.id, privateKey: dev.privateKey, method: 'POST', path: '/api/recipes', body }),
       body,
     });
     expect(first.status).toBe(201);
@@ -306,13 +306,13 @@ describe('device-signature gate (prod)', () => {
 
     const second = await enrollDevice(store);
     const body2 = JSON.stringify({ title: 'Second Stew', servings: 2, householdId: hh });
-    const denied = await app.request('/recipes', {
+    const denied = await app.request('/api/recipes', {
       method: 'POST',
       headers: signedHeaders({
         deviceId: second.id,
         privateKey: second.privateKey,
         method: 'POST',
-        path: '/recipes',
+        path: '/api/recipes',
         body: body2,
       }),
       body: body2,
@@ -322,7 +322,7 @@ describe('device-signature gate (prod)', () => {
 
   it('gate scoping: non-POST /v2/devices still needs a signature', async () => {
     const { app } = await prodApp();
-    const res = await app.request('/v2/devices', {
+    const res = await app.request('/api/v2/devices', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({}),
@@ -333,7 +333,7 @@ describe('device-signature gate (prod)', () => {
   it('revoke exemption: unknown target -> 404 even with missing/bad signature', async () => {
     const { app, dev } = await prodApp();
     const target = crypto.randomUUID();
-    const path = `/v2/devices/${target}/revoke`;
+    const path = `/api/v2/devices/${target}/revoke`;
     const missing = await app.request(path, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

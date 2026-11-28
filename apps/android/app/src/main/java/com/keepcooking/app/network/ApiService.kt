@@ -142,7 +142,7 @@ data class ShareLinkDto(
 )
 
 fun createApiService(
-    baseUrl: String = "https://keep-cooking-api.pshippy-245.workers.dev/",
+    baseUrl: String = "https://keepcooking.app/api/",
     deviceAuth: Interceptor? = null,
 ): ApiService {
     val logging = HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC }

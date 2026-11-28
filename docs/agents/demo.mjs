@@ -5,14 +5,17 @@
 // Usage (from a clean machine, nothing to install — Node 18+ only):
 //   export KEEPCOOKING_KEY='<paste syncCode from the app recovery kit>'
 //   export KEEPCOOKING_HOUSEHOLD='<householdId from the invite bundle>'
-//   BASE=https://<your-worker> node docs/agents/demo.mjs
+//   BASE=https://<your-worker>/api node docs/agents/demo.mjs
 //
-// Local check: BASE=http://127.0.0.1:8787 node docs/agents/demo.mjs
+// Local check: BASE=http://127.0.0.1:8787/api node docs/agents/demo.mjs
 // (with `wrangler dev` running in api/). Uses a scratch household label so
 // it never touches real data. Exits non-zero on any unexpected status.
 import { deriveAll, encryptEnvelope, decryptEnvelope, enroll, agentFetch, canonicalE2EUpdatedAt } from './lib.mjs';
 
-const BASE = (process.env.BASE || 'http://127.0.0.1:8787').replace(/\/$/, '');
+const RAW_BASE = (process.env.BASE || 'http://127.0.0.1:8787').replace(/\/$/, '');
+// Single-serve: every route lives under /api — accept a bare worker origin
+// or an already-prefixed base.
+const BASE = RAW_BASE.endsWith('/api') ? RAW_BASE : `${RAW_BASE}/api`;
 const KEY = process.env.KEEPCOOKING_KEY;
 const HOUSEHOLD = process.env.KEEPCOOKING_HOUSEHOLD || 'hh-agent-demo';
 if (!KEY) {

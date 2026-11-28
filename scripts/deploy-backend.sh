@@ -131,14 +131,18 @@ if [ -z "$WORKER_URL" ]; then
   echo "    could not determine the published Worker URL from deploy output" >&2
   exit 1
 fi
-echo "    GET $WORKER_URL/health"
-curl -fsS "$WORKER_URL/health" || {
+# Single-serve: every route (including /health) lives under /api. Normalize a
+# bare worker origin to the API base; an already-prefixed base passes through.
+API_BASE="$WORKER_URL"
+case "$API_BASE" in */api) ;; *) API_BASE="$API_BASE/api";; esac
+echo "    GET $API_BASE/health"
+curl -fsS "$API_BASE/health" || {
   echo "    health check failed — verify the Worker URL and bindings" >&2
   exit 1
 }
 
 echo ""
 echo "================================================================"
-echo "  Backend is live: $WORKER_URL"
+echo "  Backend is live: $API_BASE"
 echo "  Paste it into the app: Settings → Server (BYO backend) → Test"
 echo "================================================================"

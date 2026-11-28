@@ -45,11 +45,12 @@ const VERSION = '0.1.0';
 // E2E blindness: the access log must never carry a full household hash
 // (prefix only) and envelope bodies (ciphertext/nonce) are never logged
 // anywhere — handlers below log nothing per-envelope.
+// All routes are served under /api only (no backward-compat root mount).
 export function redactE2EPath(path: string): string {
-  const m = path.match(/^(\/v2\/sync\/)([0-9a-fA-F]{16,})(.*)$/);
+  const m = path.match(/^(\/api\/v2\/sync\/)([0-9a-fA-F]{16,})(.*)$/);
   if (m) return `${m[1]}${m[2]!.slice(0, HASH_LOG_PREFIX_LEN)}…`;
   // Device ids are user ids in prod (see auth.ts) — never log them.
-  const d = path.match(/^(\/v2\/devices\/)[^/?#]+(.*)$/);
+  const d = path.match(/^(\/api\/v2\/devices\/)[^/?#]+(.*)$/);
   if (d) return `${d[1]}…${d[2]}`;
   return path;
 }
@@ -102,9 +103,10 @@ export function createApp(
   // syncCode, never a device signing key).
   app.use('*', agentAttach(store));
   // Device-signature gate.
-  // Open (no sig): GET/HEAD/OPTIONS on any route, plus /health,
-  // /openapi.json, and POST /v2/devices (enrollment — how devices join).
-  // POST /v2/devices/:id/revoke is also exempt here so devicesRevoke can
+  // All routes live under /api (single-serve; old root-path clients 404).
+  // Open (no sig): GET/HEAD/OPTIONS on any route, plus /api/health,
+  // /api/openapi.json, and POST /api/v2/devices (enrollment — how devices join).
+  // POST /api/v2/devices/:id/revoke is also exempt here so devicesRevoke can
   // return 404 for unknown targets before auth (it re-verifies the
   // signature itself, keeping dev/prod consistent).
   // Agent-token requests (agentAttach above) skip the device signature:
@@ -118,15 +120,16 @@ export function createApp(
     const pathname = new URL(c.req.url).pathname;
     const m = c.req.method;
     if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return next();
-    if (pathname === '/health' || pathname === '/openapi.json') return next();
-    if (pathname === '/v2/devices' && m === 'POST') return next();
-    if (m === 'POST' && /^\/v2\/devices\/[^/]+\/revoke$/.test(pathname)) return next();
-    // Key-only agent surface (#26): open enrollment (how agents join — same
-    // trust as the unguessable /v2 bucket) and the MCP endpoint, whose
-    // per-method auth lives in handleMcp (agent calls carry x-agent-token;
-    // initialize/notifications stay usable for handshake).
-    if (pathname === '/agent/enroll' && m === 'POST') return next();
-    if (pathname === '/mcp' && m === 'POST') return next();
+    if (pathname === '/api/health' || pathname === '/api/openapi.json') return next();
+    if (pathname === '/api/v2/devices' && m === 'POST') return next();
+    if (m === 'POST' && /^\/api\/v2\/devices\/[^/]+\/revoke$/.test(pathname)) return next();
+    // Key-only agent surface (#26), served under /api like everything else:
+    // open enrollment (how agents join — same trust as the unguessable /v2
+    // bucket) and the MCP endpoint, whose per-method auth lives in handleMcp
+    // (agent calls carry x-agent-token; initialize/notifications stay usable
+    // for handshake).
+    if (pathname === '/api/agent/enroll' && m === 'POST') return next();
+    if (pathname === '/api/mcp' && m === 'POST') return next();
     if (!prod) return next(); // dev header stub
     if (getAgent(c)) return next(); // agent token already verified (#26)
     await authenticateDevice(c, store); // throws 401
@@ -147,22 +150,25 @@ export function createApp(
 
   const getStore = (): Store => store;
 
+  // All routes live on this sub-app, mounted once at /api below.
+  const api = new Hono<{ Variables: { store: Store } }>();
+
   // ---------- device enrollment (public; no sig — this is how devices join) ----------
   // devicesEnroll is owned by the enroll-store lane (api/src/devices.ts):
   // POST { deviceId: UUIDv4, publicKey: base64(32B), displayName? } ->
   // 201 first enroll / 200 idempotent re-enroll / 409 key conflict.
-  app.post('/v2/devices', async (c) => devicesEnroll(c, getStore()));
+  api.post('/v2/devices', async (c) => devicesEnroll(c, getStore()));
 
   // ---------- device self-revoke (sig verified by the handler, not the
   // gate: the '/v2/devices/:id/revoke' exemption above lets devicesRevoke
   // check existence first — 404 unknown :id -> 401 missing/bad/stale sig
   // -> 403 signer != :id -> 200 { deviceId, revokedAt }). Revoked devices
   // fail all later writes with 401 via authenticateDevice.
-  app.post('/v2/devices/:id/revoke', async (c) => devicesRevoke(c, getStore()));
+  api.post('/v2/devices/:id/revoke', async (c) => devicesRevoke(c, getStore()));
 
   // ---------- health / openapi ----------
-  app.get('/health', (c) => c.json({ ok: true, version }));
-  app.get('/openapi.json', (c) => c.json(openApiJson));
+  api.get('/health', (c) => c.json({ ok: true, version }));
+  api.get('/openapi.json', (c) => c.json(openApiJson));
 
   // ---------- key-only agent auth (#26) ----------
   // POST /agent/enroll binds {householdHash, householdId, verifier}. Open for
@@ -176,7 +182,7 @@ export function createApp(
   // A proven re-bind to a different hash additionally revokes the old
   // hash's enrollment, so the previous token stops authenticating.
   // Never receives key material — only hashes/labels.
-  app.post('/agent/enroll', async (c) => {
+  api.post('/agent/enroll', async (c) => {
     const body = parseOrThrow(agentEnrollSchema, await c.req.json().catch(() => ({})));
     const bound = await getStore().agentGetByLabel(body.householdId);
     // Re-binding a label to a DIFFERENT hash revokes the old hash's
@@ -203,7 +209,7 @@ export function createApp(
       201,
     );
   });
-  app.get('/agent/status', async (c) => {
+  api.get('/agent/status', async (c) => {
     const a = getAgent(c);
     if (!a) {
       const err = new Error(`missing or unknown ${AGENT_TOKEN_HEADER} (enroll with POST /agent/enroll)`) as Error & { status?: number };
@@ -214,16 +220,16 @@ export function createApp(
   });
 
   // ---------- MCP (stateless JSON-RPC on this Worker; x-agent-token required) ----------
-  app.post('/mcp', async (c) => {
+  api.post('/mcp', async (c) => {
     const body = await c.req.json().catch(() => null);
     const { status, body: out } = await handleMcp(getStore(), { secret, baseUrl }, body, getAgent(c));
     // Notifications (202) carry no body per Streamable HTTP.
     return out === null || out === undefined ? c.body(null, status) : c.json(out, status);
   });
-  app.get('/mcp', (c) => c.json({ error: 'use POST /mcp with a JSON-RPC 2.0 body' }, 405));
+  api.get('/mcp', (c) => c.json({ error: 'use POST /mcp with a JSON-RPC 2.0 body' }, 405));
 
   // ---------- clip ----------
-  app.post('/clip', async (c) => {
+  api.post('/clip', async (c) => {
     const body = parseOrThrow(clipRequestSchema, await c.req.json().catch(() => ({})));
     const result = await clipRecipe({ url: body.url, caption: body.caption, source: body.source });
     const { log: _log, ...report } = result;
@@ -232,7 +238,7 @@ export function createApp(
   });
 
   // ---------- recipes ----------
-  app.get('/recipes', async (c) => {
+  api.get('/recipes', async (c) => {
     const householdId = c.req.query('householdId');
     const a = getAgent(c);
     if (a) {
@@ -245,7 +251,7 @@ export function createApp(
     }
     return c.json(await getStore().listRecipes(householdId));
   });
-  app.post('/recipes', async (c) => {
+  api.post('/recipes', async (c) => {
     const body = parseOrThrow(recipeInputSchema, await c.req.json().catch(() => ({})));
     requireAgentScope(c, body.householdId);
     await requireWriteRole(c, getStore(), body.householdId);
@@ -253,14 +259,14 @@ export function createApp(
     const r = await getStore().createRecipe(body, { deviceId: user.deviceId });
     return c.json(r, 201);
   });
-  app.get('/recipes/:id', async (c) => {
+  api.get('/recipes/:id', async (c) => {
     const r = await getStore().getRecipe(c.req.param('id'));
     if (!r) return c.json({ error: 'not found' }, 404);
     const a = getAgent(c);
     if (a && r.householdId !== a.householdId) return c.json({ error: 'not found' }, 404);
     return c.json(r);
   });
-  app.put('/recipes/:id', async (c) => {
+  api.put('/recipes/:id', async (c) => {
     const id = c.req.param('id');
     const cur = await getStore().getRecipe(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
@@ -273,7 +279,7 @@ export function createApp(
     const r = await getStore().updateRecipe(id, body, { deviceId: user.deviceId });
     return c.json(r);
   });
-  app.delete('/recipes/:id', async (c) => {
+  api.delete('/recipes/:id', async (c) => {
     const id = c.req.param('id');
     const cur = await getStore().getRecipe(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
@@ -285,7 +291,7 @@ export function createApp(
     await getStore().deleteRecipe(id, user.deviceId);
     return c.body(null, 204);
   });
-  app.post('/recipes/:id/scale', async (c) => {
+  api.post('/recipes/:id/scale', async (c) => {
     const id = c.req.param('id');
     const r = await getStore().getRecipe(id);
     if (!r) return c.json({ error: 'not found' }, 404);
@@ -297,26 +303,26 @@ export function createApp(
   });
 
   // ---------- lists ----------
-  app.get('/lists', async (c) => {
+  api.get('/lists', async (c) => {
     const all = await getStore().listLists();
     const a = getAgent(c);
     return c.json(a ? all.filter((l) => l.householdId === a.householdId) : all);
   });
-  app.post('/lists', async (c) => {
+  api.post('/lists', async (c) => {
     const body = parseOrThrow(shoppingListInputSchema, await c.req.json().catch(() => ({})));
     requireAgentScope(c, body.householdId);
     await requireWriteRole(c, getStore(), body.householdId);
     const user = getUser(c);
     return c.json(await getStore().createList(body, { deviceId: user.deviceId }), 201);
   });
-  app.get('/lists/:id', async (c) => {
+  api.get('/lists/:id', async (c) => {
     const l = await getStore().getList(c.req.param('id'));
     if (!l) return c.json({ error: 'not found' }, 404);
     const a = getAgent(c);
     if (a && l.householdId !== a.householdId) return c.json({ error: 'not found' }, 404);
     return c.json(l);
   });
-  app.put('/lists/:id', async (c) => {
+  api.put('/lists/:id', async (c) => {
     const id = c.req.param('id');
     const cur = await getStore().getList(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
@@ -328,7 +334,7 @@ export function createApp(
     const user = getUser(c);
     return c.json(await getStore().updateList(id, body, { deviceId: user.deviceId }));
   });
-  app.delete('/lists/:id', async (c) => {
+  api.delete('/lists/:id', async (c) => {
     const id = c.req.param('id');
     const cur = await getStore().getList(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
@@ -342,19 +348,19 @@ export function createApp(
   });
 
   // ---------- pantry ----------
-  app.get('/pantry', async (c) => {
+  api.get('/pantry', async (c) => {
     const all = await getStore().listPantry();
     const a = getAgent(c);
     return c.json(a ? all.filter((p) => p.householdId === a.householdId) : all);
   });
-  app.post('/pantry', async (c) => {
+  api.post('/pantry', async (c) => {
     const body = parseOrThrow(pantryInputSchema, await c.req.json().catch(() => ({})));
     requireAgentScope(c, body.householdId);
     await requireWriteRole(c, getStore(), body.householdId);
     const user = getUser(c);
     return c.json(await getStore().createPantry(body, { deviceId: user.deviceId }), 201);
   });
-  app.put('/pantry/:id', async (c) => {
+  api.put('/pantry/:id', async (c) => {
     const id = c.req.param('id');
     const cur = await getStore().getPantry(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
@@ -366,7 +372,7 @@ export function createApp(
     const user = getUser(c);
     return c.json(await getStore().updatePantry(id, body, { deviceId: user.deviceId }));
   });
-  app.delete('/pantry/:id', async (c) => {
+  api.delete('/pantry/:id', async (c) => {
     const id = c.req.param('id');
     const cur = await getStore().getPantry(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
@@ -380,7 +386,7 @@ export function createApp(
   });
 
   // ---------- plans feed (before :id) ----------
-  app.get('/plans/feed.ics', async (c) => {
+  api.get('/plans/feed.ics', async (c) => {
     const allPlans = await getStore().listPlans();
     const a = getAgent(c);
     const plans = a ? allPlans.filter((p) => p.householdId === a.householdId) : allPlans;
@@ -390,26 +396,26 @@ export function createApp(
   });
 
   // ---------- plans ----------
-  app.get('/plans', async (c) => {
+  api.get('/plans', async (c) => {
     const all = await getStore().listPlans();
     const a = getAgent(c);
     return c.json(a ? all.filter((p) => p.householdId === a.householdId) : all);
   });
-  app.post('/plans', async (c) => {
+  api.post('/plans', async (c) => {
     const body = parseOrThrow(planInputSchema, await c.req.json().catch(() => ({})));
     requireAgentScope(c, body.householdId);
     await requireWriteRole(c, getStore(), body.householdId);
     const user = getUser(c);
     return c.json(await getStore().createPlan(body, { deviceId: user.deviceId }), 201);
   });
-  app.get('/plans/:id', async (c) => {
+  api.get('/plans/:id', async (c) => {
     const p = await getStore().getPlan(c.req.param('id'));
     if (!p) return c.json({ error: 'not found' }, 404);
     const a = getAgent(c);
     if (a && p.householdId !== a.householdId) return c.json({ error: 'not found' }, 404);
     return c.json(p);
   });
-  app.put('/plans/:id', async (c) => {
+  api.put('/plans/:id', async (c) => {
     const id = c.req.param('id');
     const cur = await getStore().getPlan(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
@@ -421,7 +427,7 @@ export function createApp(
     const user = getUser(c);
     return c.json(await getStore().updatePlan(id, body, { deviceId: user.deviceId }));
   });
-  app.delete('/plans/:id', async (c) => {
+  api.delete('/plans/:id', async (c) => {
     const id = c.req.param('id');
     const cur = await getStore().getPlan(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
@@ -435,26 +441,26 @@ export function createApp(
   });
 
   // ---------- menus ----------
-  app.get('/menus', async (c) => {
+  api.get('/menus', async (c) => {
     const all = await getStore().listMenus();
     const a = getAgent(c);
     return c.json(a ? all.filter((m) => m.householdId === a.householdId) : all);
   });
-  app.post('/menus', async (c) => {
+  api.post('/menus', async (c) => {
     const body = parseOrThrow(menuInputSchema, await c.req.json().catch(() => ({})));
     requireAgentScope(c, body.householdId);
     await requireWriteRole(c, getStore(), body.householdId);
     const user = getUser(c);
     return c.json(await getStore().createMenu(body, { deviceId: user.deviceId }), 201);
   });
-  app.get('/menus/:id', async (c) => {
+  api.get('/menus/:id', async (c) => {
     const m = await getStore().getMenu(c.req.param('id'));
     if (!m) return c.json({ error: 'not found' }, 404);
     const a = getAgent(c);
     if (a && m.householdId !== a.householdId) return c.json({ error: 'not found' }, 404);
     return c.json(m);
   });
-  app.put('/menus/:id', async (c) => {
+  api.put('/menus/:id', async (c) => {
     const id = c.req.param('id');
     const cur = await getStore().getMenu(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
@@ -466,7 +472,7 @@ export function createApp(
     const user = getUser(c);
     return c.json(await getStore().updateMenu(id, body, { deviceId: user.deviceId }));
   });
-  app.delete('/menus/:id', async (c) => {
+  api.delete('/menus/:id', async (c) => {
     const id = c.req.param('id');
     const cur = await getStore().getMenu(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
@@ -480,7 +486,7 @@ export function createApp(
   });
 
   // ---------- share ----------
-  app.post('/share/cookbook', async (c) => {
+  api.post('/share/cookbook', async (c) => {
     const body = parseOrThrow(shareRequestSchema, await c.req.json().catch(() => ({})));
     requireAgentScope(c, body.householdId);
     await requireOwnerRole(c, getStore(), body.householdId);
@@ -505,7 +511,7 @@ export function createApp(
   // Note: hono does not reliably match `:id.json`-style suffix patterns, so a
   // single `:file` param is split into id + extension here. Behavior matches
   // openapi.yaml /export/{id}.(json|md|html) exactly.
-  app.get('/export/:file', async (c) => {
+  api.get('/export/:file', async (c) => {
     const file = c.req.param('file') ?? '';
     const m = file.match(/^(.+)\.(json|md|html)$/);
     if (!m) return c.json({ error: 'not found' }, 404);
@@ -520,11 +526,11 @@ export function createApp(
   });
 
   // ---------- photos (signed URLs; variants per PHOTO_VARIANTS.md) ----------
-  app.get('/photos/variants', (c) => {
+  api.get('/photos/variants', (c) => {
     const recipeId = c.req.query('recipeId') ?? 'unknown';
     return c.json(variantKeys(recipeId));
   });
-  app.get('/photos/sign', async (c) => {
+  api.get('/photos/sign', async (c) => {
     const key = c.req.query('key') ?? '';
     if (!key) return c.json({ error: 'key is required' }, 400);
     // Agent scope (best-effort): a key naming a recipe of another household
@@ -546,7 +552,7 @@ export function createApp(
   // on bad/expired — then the object streams with its stored contentType
   // (image/jpeg for recipe photos). 404 when no
   // fetcher is wired (dev without R2) or the key does not exist.
-  app.get('/photos/dl', async (c) => {
+  api.get('/photos/dl', async (c) => {
     const key = c.req.query('key') ?? '';
     const expRaw = c.req.query('exp') ?? '';
     const sig = c.req.query('sig') ?? '';
@@ -560,7 +566,7 @@ export function createApp(
   });
 
   // ---------- sync ----------
-  app.get('/sync/pull', async (c) => {
+  api.get('/sync/pull', async (c) => {
     const since = c.req.query('since') ?? '1970-01-01T00:00:00Z';
     const all = await getStore().pullSince(since);
     const a = getAgent(c);
@@ -571,7 +577,7 @@ export function createApp(
       all.filter((e) => (e.payload as { householdId?: unknown } | undefined)?.householdId === a.householdId),
     );
   });
-  app.post('/sync/push', async (c) => {
+  api.post('/sync/push', async (c) => {
     const raw = await c.req.json().catch(() => null);
     if (!Array.isArray(raw)) return c.json({ error: 'expected an array of SyncEnvelopes' }, 400);
     const conflicts: SyncEnvelopeWire[] = [];
@@ -681,7 +687,7 @@ export function createApp(
   // stay inline in ciphertext for pass 1 — no dedicated photo route.
   // Agent bucket scope (#26): a token authenticates exactly one bucket.
   // Cross-bucket reads 404 (no existence oracle); cross-bucket writes 403.
-  app.get('/v2/sync/:hash', async (c) => {
+  api.get('/v2/sync/:hash', async (c) => {
     const hash = c.req.param('hash') ?? '';
     if (!E2E_HASH_RE.test(hash)) return c.json({ error: 'invalid household hash' }, 400);
     const raw = c.req.query('since') ?? '1970-01-01T00:00:00.000Z';
@@ -691,7 +697,7 @@ export function createApp(
     if (a && hash !== a.householdHash) return c.json({ error: 'not found' }, 404);
     return c.json(await getStore().e2eList(hash, parsed.toISOString()));
   });
-  app.put('/v2/sync/:hash', async (c) => {
+  api.put('/v2/sync/:hash', async (c) => {
     const hash = c.req.param('hash') ?? '';
     if (!E2E_HASH_RE.test(hash)) return c.json({ error: 'invalid household hash' }, 400);
     const a = getAgent(c);
@@ -715,7 +721,7 @@ export function createApp(
     }
     return c.json({ stored });
   });
-  app.delete('/v2/sync/:hash', async (c) => {
+  api.delete('/v2/sync/:hash', async (c) => {
     const hash = c.req.param('hash') ?? '';
     if (!E2E_HASH_RE.test(hash)) return c.json({ error: 'invalid household hash' }, 400);
     const a = getAgent(c);
@@ -728,6 +734,12 @@ export function createApp(
     const wiped = await getStore().e2eWipe(hash);
     return c.json({ wiped });
   });
+
+  // #28: keepcooking.app/api origin. All routes are mounted once, at /api.
+  // Old root-path clients (workers.dev installs) 404 — acceptable: pre-launch,
+  // single tester. Clients sign exactly what they send (full /api path+query).
+  // Still 1 Worker + 1 D1 + 1 R2, no new infra.
+  app.route('/api', api);
 
   return app;
 }

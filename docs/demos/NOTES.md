@@ -129,3 +129,23 @@ the same flow on iOS + Android against Room/SwiftData offline-first:
    meal (breakfast/lunch/dinner/snack, else dinner) at apply time, since
    plans only allow those four; entries with an empty meal or
    `dayOffset` outside 0–27 are ignored by Apply and reported.
+
+## Backend origin (issue 28)
+
+- Canonical API origin is now `https://keepcooking.app/api` (custom domain
+  in front of the same single Worker + D1 + R2 — no new infra). One-time
+  prerequisite: a Cloudflare Worker Route `keepcooking.app/api/*` → the
+  `keep-cooking-api` Worker (plus DNS for `keepcooking.app`) must exist
+  before this base URL works — until then keep using the workers.dev origin
+  with the same `/api` prefix (`https://keep-cooking-api.<account>.workers.dev/api`,
+  not the bare origin: this Worker serves `/api/…` only, so root paths 404).
+- The Worker serves `/api/…` only (no root-path fallback). Old
+  `https://keep-cooking-api.<account>.workers.dev` root-path clients 404 —
+  expected: pre-launch, single tester, just update the base URL.
+- Any demo command that used the workers.dev origin can swap the base URL
+  to `https://keepcooking.app/api` with no other change (auth is
+  header-signature over the full path, not cookies) — EXCEPT manually
+  signed curl commands: the signature canonical string covers the full
+  path as sent, so re-derive it from the serialized request URL
+  (`METHOD + "\n" + /api/...path+query + "\n" + ts + "\n" + hex(SHA256(body))`).
+  Swapping only the host while signing the old root path yields 401.

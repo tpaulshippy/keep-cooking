@@ -335,7 +335,7 @@ export function agentAttach(store: Store) {
     // Missing header → non-agent path. A PRESENT header (even empty) must
     // verify or 401 — an empty value is not "no header" (fail closed).
     if (tok === undefined) return next();
-    if (new URL(c.req.url).pathname === '/health') return next();
+    if (new URL(c.req.url).pathname === '/api/health') return next();
     const verifier = await agentVerifierFor(tok);
     const enr = verifier ? await store.agentGetByVerifier(verifier) : null;
     if (!enr) {

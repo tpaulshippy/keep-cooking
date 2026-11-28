@@ -24,7 +24,7 @@ array of that file (plus static cache hints `ttlMs: 3600000`,
 `cacheScope: "private"`).
 
 ```bash
-BASE=https://<your-worker>
+BASE=https://<your-worker>/api   # API base: worker origin + /api prefix
 TOKEN=<key-derived token, see rest.md>
 M=(-H "x-agent-token: $TOKEN" -H 'content-type: application/json')
 

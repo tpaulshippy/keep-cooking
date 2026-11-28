@@ -152,7 +152,7 @@ function prodAgentApp() {
 const agentHeaders = (token: string) => ({ [AGENT_TOKEN_HEADER]: token, 'content-type': 'application/json' });
 
 async function enroll(app: ReturnType<typeof createApp>, householdHashHex: string, householdId: string, verifier: string) {
-  return app.request('/agent/enroll', {
+  return app.request('/api/agent/enroll', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ householdHash: householdHashHex, householdId, verifier }),
@@ -201,13 +201,13 @@ describe('agent KDF vectors (docs/agents parity)', () => {
     }
     // HTTP surface: 413, nothing persisted.
     const { app } = agentApp();
-    const res = await app.request(`/v2/sync/${d.householdHash}`, {
+    const res = await app.request(`/api/v2/sync/${d.householdHash}`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(overCap),
     });
     expect(res.status).toBe(413);
-    expect(await (await app.request(`/v2/sync/${d.householdHash}`)).json()).toEqual([]);
+    expect(await (await app.request(`/api/v2/sync/${d.householdHash}`)).json()).toEqual([]);
   });
 
   it('lib.mjs and the test helpers interoperate (AD-bound payload-only format)', async () => {
@@ -301,7 +301,7 @@ describe('agent enroll + key-only REST', () => {
     const res = await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
     expect(res.status).toBe(201);
     expect(await res.json()).toEqual({ ok: true, householdId: HH, householdHash: HOUSEHOLD_HASH, hashPrefix8: HOUSEHOLD_HASH.slice(0, 8) });
-    const st = await app.request('/agent/status', { headers: agentHeaders(AGENT_TOKEN) });
+    const st = await app.request('/api/agent/status', { headers: agentHeaders(AGENT_TOKEN) });
     expect(st.status).toBe(200);
     const body = (await st.json()) as { householdId: string; hashPrefix8: string };
     expect(body.householdId).toBe(HH);
@@ -316,7 +316,7 @@ describe('agent enroll + key-only REST', () => {
       { householdHash: HOUSEHOLD_HASH, householdId: HH, verifier: 'short' },
       {},
     ]) {
-      const res = await app.request('/agent/enroll', {
+      const res = await app.request('/api/agent/enroll', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(bad),
@@ -330,7 +330,7 @@ describe('agent enroll + key-only REST', () => {
     await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
     const h = agentHeaders(AGENT_TOKEN);
     // create recipe
-    const created = await app.request('/recipes', {
+    const created = await app.request('/api/recipes', {
       method: 'POST',
       headers: h,
       body: JSON.stringify({ title: 'Agent Gumbo', servings: 4, householdId: HH }),
@@ -338,37 +338,37 @@ describe('agent enroll + key-only REST', () => {
     expect(created.status).toBe(201);
     const recipe = (await created.json()) as { id: string };
     // list is scoped to the enrolled household
-    const list = (await (await app.request('/recipes', { headers: h })).json()) as { id: string }[];
+    const list = (await (await app.request('/api/recipes', { headers: h })).json()) as { id: string }[];
     expect(list.map((r) => r.id)).toEqual([recipe.id]);
     // plan a week entry
-    const plan = await app.request('/plans', {
+    const plan = await app.request('/api/plans', {
       method: 'POST',
       headers: h,
       body: JSON.stringify({ date: '2026-12-01', meal: 'dinner', recipeId: recipe.id, householdId: HH }),
     });
     expect(plan.status).toBe(201);
     // grocery list from the recipe
-    const gl = await app.request('/lists', {
+    const gl = await app.request('/api/lists', {
       method: 'POST',
       headers: h,
       body: JSON.stringify({ name: 'Week groceries', householdId: HH, items: [{ name: 'okra' }] }),
     });
     expect(gl.status).toBe(201);
     // update + delete
-    const upd = await app.request(`/recipes/${recipe.id}`, {
+    const upd = await app.request(`/api/recipes/${recipe.id}`, {
       method: 'PUT',
       headers: h,
       body: JSON.stringify({ title: 'Agent Gumbo v2', servings: 4, householdId: HH }),
     });
     expect(upd.status).toBe(200);
-    const del = await app.request(`/recipes/${recipe.id}`, { method: 'DELETE', headers: h });
+    const del = await app.request(`/api/recipes/${recipe.id}`, { method: 'DELETE', headers: h });
     expect(del.status).toBe(204);
   });
 
   it('agent works in prod (no header-role escalation path needed)', async () => {
     const { app } = prodAgentApp();
     await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
-    const res = await app.request('/recipes', {
+    const res = await app.request('/api/recipes', {
       method: 'POST',
       headers: agentHeaders(AGENT_TOKEN),
       body: JSON.stringify({ title: 'Prod Agent Soup', servings: 2, householdId: HH }),
@@ -379,14 +379,14 @@ describe('agent enroll + key-only REST', () => {
   it('unknown or malformed token is 401 (fail closed)', async () => {
     const { app } = agentApp();
     await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
-    const unknown = await app.request('/recipes', {
+    const unknown = await app.request('/api/recipes', {
       method: 'POST',
       headers: agentHeaders(await randomToken()),
       body: JSON.stringify({ title: 'x', householdId: HH }),
     });
     expect(unknown.status).toBe(401);
     for (const bad of ['short', 'Bearer abc', 'x'.repeat(43)]) {
-      const res = await app.request('/recipes', {
+      const res = await app.request('/api/recipes', {
         method: 'POST',
         headers: agentHeaders(bad),
         body: JSON.stringify({ title: 'x', householdId: HH }),
@@ -394,20 +394,20 @@ describe('agent enroll + key-only REST', () => {
       expect(res.status).toBe(401);
     }
     // /health stays open even with a bad token (liveness probe).
-    expect((await app.request('/health', { headers: agentHeaders('short') })).status).toBe(200);
+    expect((await app.request('/api/health', { headers: agentHeaders('short') })).status).toBe(200);
   });
 
   it('an empty x-agent-token is 401, not anonymous (fail closed)', async () => {
     const { app } = agentApp();
     await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
-    const res = await app.request('/recipes', {
+    const res = await app.request('/api/recipes', {
       method: 'POST',
       headers: { [AGENT_TOKEN_HEADER]: '', 'content-type': 'application/json' },
       body: JSON.stringify({ title: 'x', householdId: HH }),
     });
     expect(res.status).toBe(401);
     // …while a missing header still takes the anonymous dev path.
-    expect((await app.request('/recipes')).status).toBe(200);
+    expect((await app.request('/api/recipes')).status).toBe(200);
   });
 
   it('cross-household access is rejected (403 writes, 404 reads)', async () => {
@@ -415,37 +415,37 @@ describe('agent enroll + key-only REST', () => {
     await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
     const h = agentHeaders(AGENT_TOKEN);
     // write naming another household
-    const bad = await app.request('/recipes', {
+    const bad = await app.request('/api/recipes', {
       method: 'POST',
       headers: h,
       body: JSON.stringify({ title: 'sneaky', householdId: 'hh-other' }),
     });
     expect(bad.status).toBe(403);
     // seed a foreign-household recipe via the dev stub, then try to read it
-    const seeded = await app.request('/recipes', {
+    const seeded = await app.request('/api/recipes', {
       method: 'POST',
       headers: { 'x-role': 'owner', 'content-type': 'application/json' },
       body: JSON.stringify({ title: 'Foreign Stew', householdId: 'hh-other' }),
     });
     const fid = ((await seeded.json()) as { id: string }).id;
-    expect((await app.request(`/recipes/${fid}`, { headers: h })).status).toBe(404);
+    expect((await app.request(`/api/recipes/${fid}`, { headers: h })).status).toBe(404);
     // read-only transforms of foreign recipes are hidden too (no oracle)
-    const scale = await app.request(`/recipes/${fid}/scale`, {
+    const scale = await app.request(`/api/recipes/${fid}/scale`, {
       method: 'POST',
       headers: h,
       body: JSON.stringify({ servings: 8 }),
     });
     expect(scale.status).toBe(404);
-    const exp = await app.request(`/export/${fid}.md`, { headers: h });
+    const exp = await app.request(`/api/export/${fid}.md`, { headers: h });
     expect(exp.status).toBe(404);
     // collections hide the foreign household
-    const lists = await app.request('/lists', {
+    const lists = await app.request('/api/lists', {
       method: 'POST',
       headers: { 'x-role': 'owner', 'content-type': 'application/json' },
       body: JSON.stringify({ name: 'foreign', householdId: 'hh-other' }),
     });
     expect(lists.status).toBe(201);
-    expect(await (await app.request('/lists', { headers: h })).json()).toEqual([]);
+    expect(await (await app.request('/api/lists', { headers: h })).json()).toEqual([]);
   });
 
   it('a label-squatter without the syncCode gets 409; bootstrap stays open', async () => {
@@ -456,7 +456,7 @@ describe('agent enroll + key-only REST', () => {
     const squat = await enroll(app, 'a'.repeat(64), HH, 'b'.repeat(64));
     expect(squat.status).toBe(409);
     // Victim binding untouched: the real token still verifies.
-    expect((await app.request('/agent/status', { headers: agentHeaders(AGENT_TOKEN) })).status).toBe(200);
+    expect((await app.request('/api/agent/status', { headers: agentHeaders(AGENT_TOKEN) })).status).toBe(200);
   });
 
   it('re-binding a bound label with the existing token succeeds (rotation with proof)', async () => {
@@ -466,25 +466,25 @@ describe('agent enroll + key-only REST', () => {
     const token2 = await randomToken();
     const verifier2 = createHash('sha256').update(Buffer.from(token2, 'base64url')).digest('hex');
     // Same label, different hash, but the existing token is presented → 201.
-    const rebind = await app.request('/agent/enroll', {
+    const rebind = await app.request('/api/agent/enroll', {
       method: 'POST',
       headers: { ...agentHeaders(AGENT_TOKEN), 'content-type': 'application/json' },
       body: JSON.stringify({ householdHash: newHash, householdId: HH, verifier: verifier2 }),
     });
     expect(rebind.status).toBe(201);
-    expect((await app.request('/agent/status', { headers: agentHeaders(token2) })).status).toBe(200);
+    expect((await app.request('/api/agent/status', { headers: agentHeaders(token2) })).status).toBe(200);
   });
 
   it('rotating the verifier revokes the old token', async () => {
     const { app } = agentApp();
     await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
-    expect((await app.request('/agent/status', { headers: agentHeaders(AGENT_TOKEN) })).status).toBe(200);
+    expect((await app.request('/api/agent/status', { headers: agentHeaders(AGENT_TOKEN) })).status).toBe(200);
     const token2 = await randomToken();
     const verifier2 = createHash('sha256').update(Buffer.from(token2, 'base64url')).digest('hex');
     const re = await enroll(app, HOUSEHOLD_HASH, HH, verifier2);
     expect(re.status).toBe(201);
-    expect((await app.request('/agent/status', { headers: agentHeaders(AGENT_TOKEN) })).status).toBe(401);
-    expect((await app.request('/agent/status', { headers: agentHeaders(token2) })).status).toBe(200);
+    expect((await app.request('/api/agent/status', { headers: agentHeaders(AGENT_TOKEN) })).status).toBe(401);
+    expect((await app.request('/api/agent/status', { headers: agentHeaders(token2) })).status).toBe(200);
   });
 
   it('re-binding a label to a new hash revokes the old token', async () => {
@@ -494,15 +494,15 @@ describe('agent enroll + key-only REST', () => {
     const token2 = await randomToken();
     const verifier2 = createHash('sha256').update(Buffer.from(token2, 'base64url')).digest('hex');
     // Proven re-bind (existing token presented) succeeds and moves the label.
-    const rebind = await app.request('/agent/enroll', {
+    const rebind = await app.request('/api/agent/enroll', {
       method: 'POST',
       headers: { ...agentHeaders(AGENT_TOKEN), 'content-type': 'application/json' },
       body: JSON.stringify({ householdHash: newHash, householdId: HH, verifier: verifier2 }),
     });
     expect(rebind.status).toBe(201);
     // Old token no longer authenticates; new one does.
-    expect((await app.request('/agent/status', { headers: agentHeaders(AGENT_TOKEN) })).status).toBe(401);
-    expect((await app.request('/agent/status', { headers: agentHeaders(token2) })).status).toBe(200);
+    expect((await app.request('/api/agent/status', { headers: agentHeaders(AGENT_TOKEN) })).status).toBe(401);
+    expect((await app.request('/api/agent/status', { headers: agentHeaders(token2) })).status).toBe(200);
     // No trace of the old binding: verifier, hash, and label indexes moved.
     expect(await store.agentGetByVerifier(AGENT_VERIFIER)).toBeNull();
     expect(await store.agentGetByLabel(HH)).toMatchObject({ householdHash: newHash, verifier: verifier2 });
@@ -539,27 +539,27 @@ describe('agent enroll + key-only REST', () => {
     await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
     const h = agentHeaders(AGENT_TOKEN);
     // push without a household label is rejected (explicit scope required)
-    const noHh = await app.request('/sync/push', {
+    const noHh = await app.request('/api/sync/push', {
       method: 'POST',
       headers: h,
       body: JSON.stringify([{ id: '12345678-1234-4234-8234-000000000001', updatedAt: '2026-11-27T12:00:00.000Z', deviceId: 'a', entity: 'recipe', payload: { title: 'x' } }]),
     });
     expect(noHh.status).toBe(403);
     // push for another household is rejected
-    const other = await app.request('/sync/push', {
+    const other = await app.request('/api/sync/push', {
       method: 'POST',
       headers: h,
       body: JSON.stringify([{ id: '12345678-1234-4234-8234-000000000002', updatedAt: '2026-11-27T12:00:00.000Z', deviceId: 'a', entity: 'recipe', payload: { title: 'x', householdId: 'hh-other' } }]),
     });
     expect(other.status).toBe(403);
     // matching push works and pulls back scoped
-    const ok = await app.request('/sync/push', {
+    const ok = await app.request('/api/sync/push', {
       method: 'POST',
       headers: h,
       body: JSON.stringify([{ id: '12345678-1234-4234-8234-000000000003', updatedAt: '2026-11-27T12:00:00.000Z', deviceId: 'a', entity: 'recipe', payload: { title: 'Scoped', householdId: HH, ingredients: [], steps: [] } }]),
     });
     expect(ok.status).toBe(200);
-    const pull = (await (await app.request('/sync/pull?since=1970-01-01T00:00:00.000Z', { headers: h })).json()) as { payload: { householdId: string } }[];
+    const pull = (await (await app.request('/api/sync/pull?since=1970-01-01T00:00:00.000Z', { headers: h })).json()) as { payload: { householdId: string } }[];
     expect(pull.length).toBeGreaterThan(0);
     for (const e of pull) expect(e.payload.householdId).toBe(HH);
   });
@@ -573,21 +573,21 @@ describe('agent enroll + key-only REST', () => {
       payload: { title: 'Foreign', householdId: 'hh-other', ingredients: [], steps: [] },
     };
     // Seed the foreign row via the anonymous dev path (no agent header).
-    const seed = await app.request('/sync/push', {
+    const seed = await app.request('/api/sync/push', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify([foreign]),
     });
     expect(seed.status).toBe(200);
     // Same id with the agent's own label → 403, row untouched.
-    const overwrite = await app.request('/sync/push', {
+    const overwrite = await app.request('/api/sync/push', {
       method: 'POST',
       headers: agentHeaders(AGENT_TOKEN),
       body: JSON.stringify([{ ...foreign, updatedAt: '2026-11-28T12:00:00.000Z', payload: { ...foreign.payload, householdId: HH } }]),
     });
     expect(overwrite.status).toBe(403);
     // Same id with a matching label still merges (no false positive).
-    const own = await app.request('/sync/push', {
+    const own = await app.request('/api/sync/push', {
       method: 'POST',
       headers: agentHeaders(AGENT_TOKEN),
       body: JSON.stringify([{ ...foreign, id: '33333333-3333-4333-8333-333333333333', payload: { ...foreign.payload, householdId: HH } }]),
@@ -625,7 +625,7 @@ describe('agent enroll + key-only REST', () => {
     const h = agentHeaders(AGENT_TOKEN);
     const other = 'e'.repeat(64); // well-formed but not the enrolled bucket
     // Cross-bucket read → 404 (no existence oracle).
-    expect((await app.request(`/v2/sync/${other}`, { headers: h })).status).toBe(404);
+    expect((await app.request(`/api/v2/sync/${other}`, { headers: h })).status).toBe(404);
     // Cross-bucket PUT → 403, nothing stored anywhere.
     const d = await deriveAll(SYNC_CODE, HH);
     const env = await encryptEnvelope(d.dataKey, {
@@ -636,19 +636,19 @@ describe('agent enroll + key-only REST', () => {
       title: 'Cross Bucket Broth',
     });
     expect(
-      (await app.request(`/v2/sync/${other}`, { method: 'PUT', headers: h, body: JSON.stringify([env]) })).status,
+      (await app.request(`/api/v2/sync/${other}`, { method: 'PUT', headers: h, body: JSON.stringify([env]) })).status,
     ).toBe(403);
     expect(await store.e2eList(other, new Date(0).toISOString())).toEqual([]);
     expect(await store.e2eList(HOUSEHOLD_HASH, new Date(0).toISOString())).toEqual([]);
     // Seed the OWN bucket, then cross-bucket DELETE → 403, own bucket intact.
     expect(
-      (await app.request(`/v2/sync/${HOUSEHOLD_HASH}`, { method: 'PUT', headers: h, body: JSON.stringify([env]) })).status,
+      (await app.request(`/api/v2/sync/${HOUSEHOLD_HASH}`, { method: 'PUT', headers: h, body: JSON.stringify([env]) })).status,
     ).toBe(200);
-    expect((await app.request(`/v2/sync/${other}`, { method: 'DELETE', headers: h })).status).toBe(403);
+    expect((await app.request(`/api/v2/sync/${other}`, { method: 'DELETE', headers: h })).status).toBe(403);
     expect(await store.e2eList(HOUSEHOLD_HASH, new Date(0).toISOString())).toHaveLength(1);
     // Own bucket still works with the token: read 200, wipe 200.
-    expect((await app.request(`/v2/sync/${HOUSEHOLD_HASH}`, { headers: h })).status).toBe(200);
-    expect((await app.request(`/v2/sync/${HOUSEHOLD_HASH}`, { method: 'DELETE', headers: h })).status).toBe(200);
+    expect((await app.request(`/api/v2/sync/${HOUSEHOLD_HASH}`, { headers: h })).status).toBe(200);
+    expect((await app.request(`/api/v2/sync/${HOUSEHOLD_HASH}`, { method: 'DELETE', headers: h })).status).toBe(200);
     expect(await store.e2eList(HOUSEHOLD_HASH, new Date(0).toISOString())).toEqual([]);
   });
 
@@ -657,13 +657,13 @@ describe('agent enroll + key-only REST', () => {
     await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
     const h = agentHeaders(AGENT_TOKEN);
     const own = (await (
-      await app.request('/recipes', {
+      await app.request('/api/recipes', {
         method: 'POST',
         headers: h,
         body: JSON.stringify({ title: 'Own Shareable', householdId: HH }),
       })
     ).json()) as { id: string };
-    const seeded = await app.request('/recipes', {
+    const seeded = await app.request('/api/recipes', {
       method: 'POST',
       headers: { 'x-role': 'owner', 'content-type': 'application/json' },
       body: JSON.stringify({ title: 'Foreign', householdId: 'hh-other' }),
@@ -671,14 +671,14 @@ describe('agent enroll + key-only REST', () => {
     expect(seeded.status).toBe(201);
     const foreignId = ((await seeded.json()) as { id: string }).id;
     // Foreign recipe in an agent share → 404, nothing created.
-    const bad = await app.request('/share/cookbook', {
+    const bad = await app.request('/api/share/cookbook', {
       method: 'POST',
       headers: h,
       body: JSON.stringify({ householdId: HH, recipeIds: [foreignId] }),
     });
     expect(bad.status).toBe(404);
     // Own recipe shares fine.
-    const ok = await app.request('/share/cookbook', {
+    const ok = await app.request('/api/share/cookbook', {
       method: 'POST',
       headers: h,
       body: JSON.stringify({ householdId: HH, recipeIds: [own.id] }),
@@ -705,17 +705,17 @@ describe('blind server: real AES-GCM round-trip, server learns nothing', () => {
     const orig = console.log;
     console.log = (...args: unknown[]) => { lines.push(args.map((a) => String(a)).join(' ')); };
     try {
-      const put = await app.request(`/v2/sync/${HOUSEHOLD_HASH}`, {
+      const put = await app.request(`/api/v2/sync/${HOUSEHOLD_HASH}`, {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify([env]),
       });
       expect(put.status).toBe(200);
       expect(await put.json()).toEqual({ stored: [env.id] });
-      const pull = (await (await app.request(`/v2/sync/${HOUSEHOLD_HASH}`)).json()) as EncryptedEnvelope[];
+      const pull = (await (await app.request(`/api/v2/sync/${HOUSEHOLD_HASH}`)).json()) as EncryptedEnvelope[];
       expect(pull).toHaveLength(1);
       expect(await decryptTitle(d.dataKey, pull[0]!)).toBe(`Agent ${MARKER} Soup`);
-      const wipe = await app.request(`/v2/sync/${HOUSEHOLD_HASH}`, { method: 'DELETE' });
+      const wipe = await app.request(`/api/v2/sync/${HOUSEHOLD_HASH}`, { method: 'DELETE' });
       expect(wipe.status).toBe(200);
     } finally {
       console.log = orig;
@@ -741,7 +741,7 @@ describe('blind server: real AES-GCM round-trip, server learns nothing', () => {
     await enroll(app, HOUSEHOLD_HASH, HH, AGENT_VERIFIER);
     const wrong = await deriveAll('test-only-vector-sync-code-9999', HH);
     // Different key → different bucket → empty pull (no oracle for victims).
-    const pull = await app.request(`/v2/sync/${wrong.householdHash}`);
+    const pull = await app.request(`/api/v2/sync/${wrong.householdHash}`);
     expect(pull.status).toBe(200);
     expect(await pull.json()).toEqual([]);
     // The wrong key cannot enroll the victim's label either: its hash differs
@@ -749,14 +749,14 @@ describe('blind server: real AES-GCM round-trip, server learns nothing', () => {
     const squat = await enroll(app, wrong.householdHash, HH, wrong.verifier);
     expect(squat.status).toBe(409);
     // …and 401 carrying its own (unknown) token, rejected before the handler.
-    const squatAuth = await app.request('/agent/enroll', {
+    const squatAuth = await app.request('/api/agent/enroll', {
       method: 'POST',
       headers: agentHeaders(wrong.token),
       body: JSON.stringify({ householdHash: wrong.householdHash, householdId: HH, verifier: wrong.verifier }),
     });
     expect(squatAuth.status).toBe(401);
     // The wrong-key token is unknown to the server → 401 on every v1 route.
-    for (const [m, p] of [['GET', '/recipes'], ['POST', '/recipes'], ['GET', '/agent/status']] as const) {
+    for (const [m, p] of [['GET', '/api/recipes'], ['POST', '/api/recipes'], ['GET', '/api/agent/status']] as const) {
       const res = await app.request(p, {
         method: m,
         headers: agentHeaders(wrong.token),
@@ -775,7 +775,7 @@ describe('MCP on the same Worker', () => {
     ...(params !== undefined ? { params } : {}),
   });
   async function call(app: ReturnType<typeof createApp>, body: unknown, token?: string) {
-    return app.request('/mcp', {
+    return app.request('/api/mcp', {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...(token ? { [AGENT_TOKEN_HEADER]: token } : {}) },
       body: JSON.stringify(body),
@@ -995,7 +995,7 @@ describe('MCP on the same Worker', () => {
       expect(bad.result.isError).toBe(true);
     }
     // A recipe from another household cannot be shared into this one.
-    const seeded = await app.request('/recipes', {
+    const seeded = await app.request('/api/recipes', {
       method: 'POST',
       headers: { 'x-role': 'owner', 'content-type': 'application/json' },
       body: JSON.stringify({ title: 'Foreign', householdId: 'hh-other' }),
@@ -1009,7 +1009,7 @@ describe('MCP on the same Worker', () => {
 
   it('GET /mcp is 405', async () => {
     const { app } = agentApp();
-    expect((await app.request('/mcp')).status).toBe(405);
+    expect((await app.request('/api/mcp')).status).toBe(405);
   });
 
   it('D1 unique bindings (label + verifier) surface as 409; rotations still land', async () => {
@@ -1093,32 +1093,32 @@ describe('MCP on the same Worker', () => {
     const app = createApp(store, { baseUrl: 'https://api.keepcooking.local', secret, photosFetcher });
     // Mint via /photos/sign (dev: no token needed), then download.
     const signed = (await (
-      await app.request(`/photos/sign?key=${encodeURIComponent('photos/r1/thumb.jpg')}`)
+      await app.request(`/api/photos/sign?key=${encodeURIComponent('photos/r1/thumb.jpg')}`)
     ).json()) as { url: string };
-    expect(signed.url).toContain('/photos/dl?');
-    expect(signed.url).not.toContain('/photos/sign?');
+    expect(signed.url).toContain('/api/photos/dl?');
+    expect(signed.url).not.toContain('/api/photos/sign?');
     const q = new URL(signed.url).search;
-    const good = await app.request(`/photos/dl${q}`);
+    const good = await app.request(`/api/photos/dl${q}`);
     expect(good.status).toBe(200);
     expect(good.headers.get('content-type')).toContain('image/jpeg');
     expect(await good.text()).toBe('fake-jpeg-bytes');
     // Tampered sig → 403; missing params → 400.
     const tampered = q.replace(/sig=[^&]*/, 'sig=deadbeef');
-    expect((await app.request(`/photos/dl${tampered}`)).status).toBe(403);
-    expect((await app.request('/photos/dl?key=x')).status).toBe(400);
+    expect((await app.request(`/api/photos/dl${tampered}`)).status).toBe(403);
+    expect((await app.request('/api/photos/dl?key=x')).status).toBe(400);
     // Signed key with no object → 404.
     const missing = await signKey('photos/nope/thumb.jpg', { secret, baseUrl: 'https://api.keepcooking.local' });
-    expect((await app.request(`/photos/dl${new URL(missing.url).search}`)).status).toBe(404);
+    expect((await app.request(`/api/photos/dl${new URL(missing.url).search}`)).status).toBe(404);
     // Expired signature → 403 (minted in the past).
     const old = await signKey('photos/r1/thumb.jpg', {
       secret,
       baseUrl: 'https://api.keepcooking.local',
       nowMs: Date.now() - 3600_000,
     });
-    expect((await app.request(`/photos/dl${new URL(old.url).search}`)).status).toBe(403);
+    expect((await app.request(`/api/photos/dl${new URL(old.url).search}`)).status).toBe(403);
     // No fetcher wired (dev without R2) → 404 even with a valid signature.
     const bare = createApp(new MemoryStore(), { baseUrl: 'https://api.keepcooking.local', secret });
-    expect((await bare.request(`/photos/dl${q}`)).status).toBe(404);
+    expect((await bare.request(`/api/photos/dl${q}`)).status).toBe(404);
   });
 
   it('MCP photos_sign targets the /photos/dl byte route', async () => {
@@ -1128,8 +1128,8 @@ describe('MCP on the same Worker', () => {
       await call(app, rpc('tools/call', { name: 'photos_sign', arguments: { key: 'photos/x/thumb.jpg' } }), AGENT_TOKEN)
     ).json()) as { result: { content: { text: string }[] } };
     const signed = JSON.parse(out.result.content[0]!.text) as { url: string };
-    expect(signed.url).toContain('/photos/dl?');
-    expect(signed.url).not.toContain('/photos/sign?');
+    expect(signed.url).toContain('/api/photos/dl?');
+    expect(signed.url).not.toContain('/api/photos/sign?');
   });
 });
 

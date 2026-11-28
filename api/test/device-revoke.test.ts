@@ -10,7 +10,7 @@ import { D1Store } from '../src/d1store';
 // - 404 for unknown :id (checked before auth), 401 for missing/bad sig,
 //   403 for cross-device revoke (signer != :id). No admin override, no UI.
 
-const PROD_URL = 'https://keep-cooking-api.pshippy-245.workers.dev';
+const PROD_URL = 'https://keepcooking.app/api';
 
 function makeDevice() {
   const id = crypto.randomUUID();
@@ -58,7 +58,7 @@ describe('device self-revoke', () => {
   it('self-revoke -> 200, then revoked device fails writes with 401', async () => {
     const { app, store, dev } = await prodApp();
     await store.setMembership('hh-demo', dev.id, 'owner');
-    const path = `/v2/devices/${dev.id}/revoke`;
+    const path = `/api/v2/devices/${dev.id}/revoke`;
     const res = await app.request(path, {
       method: 'POST',
       headers: signedHeaders({ deviceId: dev.id, privateKey: dev.privateKey, method: 'POST', path, body: '' }),
@@ -66,9 +66,9 @@ describe('device self-revoke', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ deviceId: dev.id, revokedAt: expect.any(String) });
 
-    const write = await app.request('/recipes', {
+    const write = await app.request('/api/recipes', {
       method: 'POST',
-      headers: signedHeaders({ deviceId: dev.id, privateKey: dev.privateKey, method: 'POST', path: '/recipes', body: recipeBody }),
+      headers: signedHeaders({ deviceId: dev.id, privateKey: dev.privateKey, method: 'POST', path: '/api/recipes', body: recipeBody }),
       body: recipeBody,
     });
     expect(write.status).toBe(401);
@@ -77,7 +77,7 @@ describe('device self-revoke', () => {
   it('unknown device id -> 404', async () => {
     const { app, dev } = await prodApp();
     const target = crypto.randomUUID();
-    const path = `/v2/devices/${target}/revoke`;
+    const path = `/api/v2/devices/${target}/revoke`;
     const res = await app.request(path, {
       method: 'POST',
       headers: signedHeaders({ deviceId: dev.id, privateKey: dev.privateKey, method: 'POST', path, body: '' }),
@@ -87,7 +87,7 @@ describe('device self-revoke', () => {
 
   it('missing signature -> 401', async () => {
     const { app, dev } = await prodApp();
-    const res = await app.request(`/v2/devices/${dev.id}/revoke`, {
+    const res = await app.request(`/api/v2/devices/${dev.id}/revoke`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
     });
@@ -99,20 +99,20 @@ describe('device self-revoke', () => {
     const other = makeDevice();
     await store.enrollDevice({ deviceId: other.id, publicKeyB64: other.publicKeyB64 });
     await store.setMembership('hh-demo', other.id, 'owner');
-    const path = `/v2/devices/${other.id}/revoke`;
+    const path = `/api/v2/devices/${other.id}/revoke`;
     const res = await app.request(path, {
       method: 'POST',
       headers: signedHeaders({ deviceId: dev.id, privateKey: dev.privateKey, method: 'POST', path, body: '' }),
     });
     expect(res.status).toBe(403);
 
-    const write = await app.request('/recipes', {
+    const write = await app.request('/api/recipes', {
       method: 'POST',
       headers: signedHeaders({
         deviceId: other.id,
         privateKey: other.privateKey,
         method: 'POST',
-        path: '/recipes',
+        path: '/api/recipes',
         body: recipeBody,
       }),
       body: recipeBody,
@@ -122,7 +122,7 @@ describe('device self-revoke', () => {
 
   it('second self-revoke after revocation -> 401 (revoked signer)', async () => {
     const { app, dev } = await prodApp();
-    const path = `/v2/devices/${dev.id}/revoke`;
+    const path = `/api/v2/devices/${dev.id}/revoke`;
     const first = await app.request(path, {
       method: 'POST',
       headers: signedHeaders({ deviceId: dev.id, privateKey: dev.privateKey, method: 'POST', path, body: '' }),
@@ -137,7 +137,7 @@ describe('device self-revoke', () => {
 
   it('revokedAt is stable: a concurrent revoke keeps the first timestamp', async () => {
     const { app, store, dev } = await prodApp();
-    const path = `/v2/devices/${dev.id}/revoke`;
+    const path = `/api/v2/devices/${dev.id}/revoke`;
     const first = await app.request(path, {
       method: 'POST',
       headers: signedHeaders({ deviceId: dev.id, privateKey: dev.privateKey, method: 'POST', path, body: '' }),
