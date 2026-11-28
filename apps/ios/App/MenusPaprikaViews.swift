@@ -16,19 +16,19 @@
 //      meal label (purple) + divider bar + recipe title rows. Tap edits via
 //      the Add Meal flow; swipe deletes. Days stepper, slot renames, and the
 //      Apply-to-week section live in the "..." options sheet.
-//   3. MenuAddMealFlow — 3-step sheet: kind (Recipe/Note/Ingredient) →
-//      recipe picker (search, count pill, thumb cards, stars) or note editor
-//      → Choose Type (Breakfast/Lunch/Dinner/Snacks + None + Scale) with
-//      progress dots and Next/Save.
+//   3. MenuAddMealFlow — 2-step sheet: recipe picker (search, count pill,
+//      thumb cards, stars) → Choose Type (Breakfast/Lunch/Dinner/Snacks +
+//      None + Scale) with progress dots and Next/Save. Note/ingredient
+//      kinds are absent: the v0.1.0 MenuEntry schema carries only
+//      dayOffset/meal/recipeId/servings, so unwritable note text and
+//      unavailable ingredient items would be dead ends.
 //
 // Persistence semantics are unchanged: entries via `menu.entries` +
 // updatedAt bump (last-write-wins), tombstone deletes, "<name> copy"
 // duplicates, rename guard, and apply/skip-filled/overwrite through
 // MenuPlanning helpers (expandMenuEntries, planMealForMenuSlot,
-// occupiedKeys, filterSkipped). Note-only saves use recipeId "" (empty
-// recipeIds survive expansion and apply as nil-recipeId plans); MenuEntry
-// has no note-text field in the v0.1.0 schema, so note text is not
-// round-tripped — the step says so.
+// occupiedKeys, filterSkipped). Legacy empty-recipeId entries still
+// render as "(Note)" and apply as nil-recipeId plans.
 //
 // Accessibility identifiers preserved from the old UI:
 //   menus-view, menu-create, menu-row-<id>, menu-apply-<id>,
@@ -300,7 +300,6 @@ struct PaprikaMenusScreen<Detail: View>: View {
                 onCreate(createName)
                 createName = ""
             }
-            .accessibilityIdentifier("menu-create")
         }
         .alert("Rename menu", isPresented: Binding(
             get: { renameTarget != nil },
@@ -338,6 +337,7 @@ struct PaprikaMenusScreen<Detail: View>: View {
             PaprikaCircleButton(systemImage: "plus", tint: MenusPaprikaStyle.accent, label: "New menu") {
                 showCreate = true
             }
+            .accessibilityIdentifier("menu-create")
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
@@ -727,7 +727,7 @@ private struct MenuOptionsSheet: View {
                 Section {
                     Button("Duplicate menu") {
                         let copy = Menu(householdId: menu.householdId, name: menu.name + " copy",
-                            entries: menu.entries, deviceId: menu.deviceId)
+                            entries: menu.entries, deviceId: DeviceAuth.currentDeviceId())
                         context.insert(copy)
                         try? context.save()
                         dismiss()
@@ -830,15 +830,12 @@ private struct MenuSlotRenameRow: View {
 
 // MARK: - 3. Add Meal flow
 
-private enum MenuMealKind: String {
-    case recipe
-    case note
-    case ingredient
-}
-
-/// 3-step Add Meal sheet for one menu day: kind → recipe picker / note
-/// editor → Choose Type + scale. Editing an existing entry starts at the
-/// Choose Type step with its values prefilled and saves in place.
+/// 2-step Add Meal sheet for one menu day: recipe picker → Choose Type +
+/// scale. Editing an existing entry starts at the picker with its recipe
+/// preselected, so the recipe can be replaced; Back returns to the picker.
+/// Note/ingredient kinds are intentionally absent: MenuEntry (v1 schema)
+/// carries only dayOffset/meal/recipeId/servings, so unwritable note text
+/// and unavailable ingredient items would be dead ends.
 struct MenuAddMealFlow: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -849,9 +846,7 @@ struct MenuAddMealFlow: View {
     let editingEntry: MenuEntry?
 
     @State private var step: Int
-    @State private var kind: MenuMealKind
     @State private var pickedRecipeId: String?
-    @State private var noteText: String
     @State private var meal: String
     @State private var servings: Double
     @State private var scaleText: String
@@ -866,10 +861,8 @@ struct MenuAddMealFlow: View {
         self.editingEntry = editingEntry
         let entryMeal = editingEntry.map { normalizeMeal($0.meal) } ?? "dinner"
         let entryServings = editingEntry?.servings ?? 2
-        _step = State(initialValue: editingEntry == nil ? 0 : 2)
-        _kind = State(initialValue: (editingEntry?.recipeId.isEmpty ?? false) ? .note : .recipe)
+        _step = State(initialValue: 0)
         _pickedRecipeId = State(initialValue: editingEntry?.recipeId)
-        _noteText = State(initialValue: "")
         _meal = State(initialValue: entryMeal)
         _servings = State(initialValue: entryServings)
         _scaleText = State(initialValue: "")
@@ -885,7 +878,7 @@ struct MenuAddMealFlow: View {
     }
 
     private var canSave: Bool {
-        !normalizeMeal(meal).isEmpty && (kind == .note || pickedRecipeId != nil)
+        !normalizeMeal(meal).isEmpty && pickedRecipeId != nil
     }
 
     var body: some View {
@@ -895,8 +888,7 @@ struct MenuAddMealFlow: View {
                 topBar
                 Group {
                     switch step {
-                    case 0: kindStep
-                    case 1: kindBody
+                    case 0: recipeStep
                     default: typeStep
                     }
                 }
@@ -909,7 +901,7 @@ struct MenuAddMealFlow: View {
 
     private var topBar: some View {
         HStack {
-            if step > (isEditing ? 2 : 0) {
+            if step > 0 {
                 PaprikaCircleButton(systemImage: "chevron.left", tint: MenusPaprikaStyle.accent, label: "Back") {
                     step -= 1
                 }
@@ -928,65 +920,7 @@ struct MenuAddMealFlow: View {
         .padding(.vertical, 8)
     }
 
-    // MARK: Step 0 — kind
-
-    private var kindStep: some View {
-        VStack {
-            VStack(spacing: 0) {
-                kindRow(icon: "fork.knife", title: "Recipe", id: "menu-meal-kind-recipe") {
-                    kind = .recipe
-                    step = 1
-                }
-                Divider().padding(.leading, 56)
-                kindRow(icon: "note.text", title: "Note", id: "menu-meal-kind-note") {
-                    kind = .note
-                    step = 1
-                }
-                Divider().padding(.leading, 56)
-                kindRow(icon: "leaf", title: "Add Ingredient", id: "menu-meal-kind-ingredient") {
-                    kind = .ingredient
-                    step = 1
-                }
-            }
-            .background(RoundedRectangle(cornerRadius: 20).fill(MenusPaprikaStyle.card(for: scheme)))
-            .padding(.horizontal)
-            .padding(.top, 24)
-            Spacer()
-        }
-    }
-
-    private func kindRow(icon: String, title: String, id: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 16) {
-                Image(systemName: icon)
-                    .font(.title2)
-                    .foregroundStyle(MenusPaprikaStyle.accent)
-                    .frame(width: 32)
-                Text(title)
-                    .font(.body)
-                    .foregroundStyle(.primary)
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(id)
-    }
-
-    // MARK: Step 1a — recipe picker
-
-    @ViewBuilder
-    private var kindBody: some View {
-        switch kind {
-        case .recipe: recipeStep
-        case .note: noteStep
-        case .ingredient: ingredientStep
-        }
-    }
+    // MARK: Step 0 — recipe picker
 
     private var recipeStep: some View {
         VStack(spacing: 12) {
@@ -1079,42 +1013,7 @@ struct MenuAddMealFlow: View {
         }
     }
 
-    // MARK: Step 1b — note editor
-
-    private var noteStep: some View {
-        VStack(spacing: 12) {
-            TextEditor(text: $noteText)
-                .frame(minHeight: 140)
-                .padding(8)
-                .background(RoundedRectangle(cornerRadius: 16).fill(MenusPaprikaStyle.card(for: scheme)))
-                .accessibilityIdentifier("menu-meal-note")
-                .padding(.horizontal)
-                .padding(.top, 16)
-            Text("Menu notes save as placeholders without a recipe (the menu schema has no note-text field yet).")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 24)
-            Spacer()
-        }
-    }
-
-    // MARK: Step 1c — ingredient (soon)
-
-    private var ingredientStep: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "tray")
-                .font(.largeTitle)
-                .foregroundStyle(.secondary)
-                .padding(.top, 40)
-            Text("Ingredient-level menu items aren't available yet.")
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 24)
-            Spacer()
-        }
-    }
-
-    // MARK: Step 2 — choose type + scale
+    // MARK: Step 1 — choose type + scale
 
     private var typeStep: some View {
         VStack(spacing: 16) {
@@ -1148,15 +1047,21 @@ struct MenuAddMealFlow: View {
             .padding(.horizontal)
             .padding(.top, 16)
             HStack {
-                Text("None")
-                    .font(.subheadline)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 8)
-                    .background(Capsule().fill(normalizeMeal(meal).isEmpty ? MenusPaprikaStyle.accent.opacity(0.25) : Color(.secondarySystemBackground)))
-                    .overlay(Capsule().stroke(Color.primary.opacity(0.12), lineWidth: 1))
-                    .onTapGesture { meal = "" }
-                    .accessibilityIdentifier("menu-meal-type-none")
-                    .accessibilityLabel("No meal type")
+                Button {
+                    meal = ""
+                } label: {
+                    Text("None")
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 8)
+                        .background(Capsule().fill(normalizeMeal(meal).isEmpty ? MenusPaprikaStyle.accent.opacity(0.25) : Color(.secondarySystemBackground)))
+                        .overlay(Capsule().stroke(Color.primary.opacity(0.12), lineWidth: 1))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("menu-meal-type-none")
+                .accessibilityLabel("No meal type")
                 Spacer()
             }
             .padding(.horizontal, 24)
@@ -1196,15 +1101,12 @@ struct MenuAddMealFlow: View {
     private var footer: some View {
         HStack {
             Spacer()
-            PaprikaDots(total: 3, current: min(step, 2))
+            PaprikaDots(total: 2, current: min(step, 1))
             Spacer()
-            if step < 2 {
-                Button("Next") {
-                    if kind == .ingredient { return }
-                    step += 1
-                }
+            if step < 1 {
+                Button("Next") { step += 1 }
                 .buttonStyle(.borderedProminent)
-                .disabled(!canAdvance)
+                .disabled(pickedRecipeId == nil)
                 .accessibilityIdentifier("menu-meal-next")
             } else {
                 Button("Save") {
@@ -1219,26 +1121,8 @@ struct MenuAddMealFlow: View {
         .padding(.vertical, 12)
     }
 
-    private var canAdvance: Bool {
-        switch step {
-        case 0: return true
-        case 1:
-            switch kind {
-            case .recipe: return pickedRecipeId != nil
-            case .note: return true
-            case .ingredient: return false
-            }
-        default: return true
-        }
-    }
-
     private func save() {
-        guard canSave else { return }
-        let recipeId: String
-        switch kind {
-        case .recipe: recipeId = pickedRecipeId ?? ""
-        case .note, .ingredient: recipeId = ""
-        }
+        guard canSave, let recipeId = pickedRecipeId else { return }
         var entries = menu.entries
         let fresh = MenuEntry(dayOffset: dayOffset, meal: normalizeMeal(meal),
             recipeId: recipeId, servings: servings)
