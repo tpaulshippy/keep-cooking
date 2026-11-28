@@ -105,7 +105,7 @@ function checkBehavioral(agg) {
 // 6. Optional API probe (informational only, never fails offline). The abort
 // timeout stays armed until the body is consumed (slow bodies can hang); it
 // is always cleared in `finally`.
-const base = process.env.API_BASE_URL ?? 'http://localhost:8787';
+const base = process.env.API_BASE_URL ?? 'http://localhost:8787/api';
 {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), 3000);

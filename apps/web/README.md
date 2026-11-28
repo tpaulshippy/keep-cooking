@@ -42,7 +42,7 @@ is **not currently wired in this repo's Worker** (`api/wrangler.toml` has no
 Resolution order:
 
 1. `localStorage` override `kc.apiBase` (editable in Settings).
-2. `http://localhost:8787` when the page is served from `localhost`/`127.0.0.1`.
+2. `http://localhost:8787/api` when the page is served from `localhost`/`127.0.0.1`.
 3. Default `https://keepcooking.app/api`.
 
 ## How `/app` + `/api` + `/` coexist

@@ -36,16 +36,13 @@ const VERSION = '0.1.0';
 // E2E blindness: the access log must never carry a full household hash
 // (prefix only) and envelope bodies (ciphertext/nonce) are never logged
 // anywhere — handlers below log nothing per-envelope.
+// All routes are served under /api only (no backward-compat root mount).
 export function redactE2EPath(path: string): string {
-  // #28 dual-serve: a single leading /api is the mount prefix, not part of
-  // the route — preserve it, redact the rest exactly as before.
-  const prefix = path === '/api' || path.startsWith('/api/') ? '/api' : '';
-  const rest = prefix ? path.slice(4) || '/' : path;
-  const m = rest.match(/^(\/v2\/sync\/)([0-9a-fA-F]{16,})(.*)$/);
-  if (m) return `${prefix}${m[1]}${m[2]!.slice(0, HASH_LOG_PREFIX_LEN)}…`;
+  const m = path.match(/^(\/api\/v2\/sync\/)([0-9a-fA-F]{16,})(.*)$/);
+  if (m) return `${m[1]}${m[2]!.slice(0, HASH_LOG_PREFIX_LEN)}…`;
   // Device ids are user ids in prod (see auth.ts) — never log them.
-  const d = rest.match(/^(\/v2\/devices\/)[^/?#]+(.*)$/);
-  if (d) return `${prefix}${d[1]}…${d[2]}`;
+  const d = path.match(/^(\/api\/v2\/devices\/)[^/?#]+(.*)$/);
+  if (d) return `${d[1]}…${d[2]}`;
   return path;
 }
 
@@ -90,9 +87,10 @@ export function createApp(
     console.log(JSON.stringify({ m: c.req.method, p: path, s: c.res.status, ms: Date.now() - t0 }));
   });
   // Device-signature gate.
-  // Open (no sig): GET/HEAD/OPTIONS on any route, plus /health,
-  // /openapi.json, and POST /v2/devices (enrollment — how devices join).
-  // POST /v2/devices/:id/revoke is also exempt here so devicesRevoke can
+  // All routes live under /api (single-serve; old root-path clients 404).
+  // Open (no sig): GET/HEAD/OPTIONS on any route, plus /api/health,
+  // /api/openapi.json, and POST /api/v2/devices (enrollment — how devices join).
+  // POST /api/v2/devices/:id/revoke is also exempt here so devicesRevoke can
   // return 404 for unknown targets before auth (it re-verifies the
   // signature itself, keeping dev/prod consistent).
   // Everything else: dev (!prod) passes through to the getUser() header
@@ -102,16 +100,11 @@ export function createApp(
   app.use('*', async (c, next) => {
     c.set('prod' as never, prod as never);
     const pathname = new URL(c.req.url).pathname;
-    // #28 dual-serve: strip a single leading /api so these open-route checks
-    // apply to both `/x` and `/api/x`. Device signatures still cover the FULL
-    // path+query (authenticateDevice uses url.pathname), so native .route()
-    // mounting needs no auth change — clients sign exactly what they send.
-    const open = pathname === '/api' || pathname.startsWith('/api/') ? pathname.slice(4) || '/' : pathname;
     const m = c.req.method;
     if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return next();
-    if (open === '/health' || open === '/openapi.json') return next();
-    if (open === '/v2/devices' && m === 'POST') return next();
-    if (m === 'POST' && /^\/v2\/devices\/[^/]+\/revoke$/.test(open)) return next();
+    if (pathname === '/api/health' || pathname === '/api/openapi.json') return next();
+    if (pathname === '/api/v2/devices' && m === 'POST') return next();
+    if (m === 'POST' && /^\/api\/v2\/devices\/[^/]+\/revoke$/.test(pathname)) return next();
     if (!prod) return next(); // dev header stub
     await authenticateDevice(c, store); // throws 401
     return next();
@@ -131,7 +124,7 @@ export function createApp(
 
   const getStore = (): Store => store;
 
-  // All routes live on this sub-app so it can be mounted twice below.
+  // All routes live on this sub-app, mounted once at /api below.
   const api = new Hono<{ Variables: { store: Store } }>();
 
   // ---------- device enrollment (public; no sig — this is how devices join) ----------
@@ -505,12 +498,10 @@ export function createApp(
     return c.json({ wiped });
   });
 
-  // #28: keepcooking.app/api origin. Every route above is mounted twice — at
-  // `/` (backward compat: existing workers.dev clients keep working) and at
-  // `/api` (custom-domain origin) — via native Hono .route(), so the device
-  // signature canonical string (full path+query) verifies unchanged and no
-  // auth change is needed. Still 1 Worker + 1 D1 + 1 R2, no new infra.
-  app.route('/', api);
+  // #28: keepcooking.app/api origin. All routes are mounted once, at /api.
+  // Old root-path clients (workers.dev installs) 404 — acceptable: pre-launch,
+  // single tester. Clients sign exactly what they send (full /api path+query).
+  // Still 1 Worker + 1 D1 + 1 R2, no new infra.
   app.route('/api', api);
 
   return app;

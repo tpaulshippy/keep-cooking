@@ -12,7 +12,8 @@ PUBLIC_BASE_URL = "https://keepcooking.app/api"
 # `wrangler route add keepcooking.app/api/* keep-cooking-api`):
 #   routes = [{ pattern = "keepcooking.app/api/*", zone_name = "keepcooking.app" }]
 # (kept commented so local/staging deploys without that zone still work).
-# The workers.dev URL stays enabled as fallback — do NOT set workers_dev = false.
+# Single-serve: the Worker mounts routes only at /api (old root-path
+# workers.dev clients 404 — pre-launch, single tester, just update base URL).
 
 [[d1_databases]]
 binding = "DB"

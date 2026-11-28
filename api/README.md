@@ -120,12 +120,13 @@ curl -s -X POST $BASE/recipes \
                # granted owner/member, 403 as viewer (needs a grant)
 ```
 
-## Cutover / rollback (issue #28: keepcooking.app/api origin)
+## Cutover (issue #28: keepcooking.app/api origin)
 
-- The Worker dual-serves every route at both `/…` and `/api/…`
-  (see `api/src/index.ts` — native Hono `.route()` mount, smallest diff).
-  Backward-compat window: old `*.workers.dev` clients keep working on the
-  root paths; new clients use `https://keepcooking.app/api`.
+- The Worker serves every route once, under `/api/…` only
+  (see `api/src/index.ts` — single `app.route('/api', api)` mount).
+  No backward-compat window: pre-launch, single tester — old
+  `*.workers.dev` root-path clients 404 and must update their base URL
+  to `https://keepcooking.app/api`.
 - Auth is header-signature (`x-device-id` / `x-device-ts` / `x-device-sig`
   over the full path+query), not cookies — so no CORS/cookie code change
   was needed beyond the base URL. CORS allows the custom domain; device-key
@@ -133,8 +134,6 @@ curl -s -X POST $BASE/recipes \
 - Pre-deploy check from `api/`: `npx wrangler deploy --dry-run`.
 - Rollback is a single deploy: `git revert` the `PUBLIC_BASE_URL` bump (or
   re-deploy the previous commit) — one Worker, one deploy, no migration.
-  The old origin never stops serving during the window, so clients pinned
-  to either base URL stay green.
 
 ## Endpoints (exactly packages/contracts/openapi.yaml, plus 2 photo helpers)
 

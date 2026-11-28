@@ -24,8 +24,8 @@ describe('signingPathFor', () => {
     }
   });
 
-  it('works for root-mounted bases too', () => {
-    expect(signingPathFor('http://localhost:8787', '/recipes')).toBe('/recipes');
+  it('works for local dev bases too', () => {
+    expect(signingPathFor('http://localhost:8787/api', '/recipes')).toBe('/api/recipes');
   });
 });
 

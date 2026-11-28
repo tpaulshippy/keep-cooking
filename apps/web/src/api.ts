@@ -27,7 +27,7 @@ export interface ClipReport { strategy: string; confidence?: number; warnings?: 
 
 const LS_OVERRIDE_KEY = 'kc.apiBase';
 export const DEFAULT_API_BASE = 'https://keepcooking.app/api';
-const LOCAL_API_BASE = 'http://localhost:8787';
+const LOCAL_API_BASE = 'http://localhost:8787/api';
 
 export function resolveApiBase(): string {
   try {
