@@ -70,7 +70,7 @@ settings:
   # Prod API URL seam (lane 1 ios-packaging): Info-App.plist exposes this as
   # SMIDGEN_API_BASE_URL. Default is the production Worker; override
   # per-config (or via `xcodebuild SMIDGEN_API_BASE_URL=...`) for local dev.
-  SMIDGEN_API_BASE_URL: https://keep-cooking-api.pshippy-245.workers.dev
+  SMIDGEN_API_BASE_URL: https://keepcooking.app/api
 
 targets:
   KeepCooking:

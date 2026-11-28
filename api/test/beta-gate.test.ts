@@ -11,7 +11,7 @@ import { MemoryStore } from '../src/store';
 //   user.id = verified deviceId. Legacy bearer tokens are ignored.
 // Dev (local baseUrl) keeps the x-role header stub: unsigned writes pass.
 
-const PROD_URL = 'https://keep-cooking-api.pshippy-245.workers.dev';
+const PROD_URL = 'https://keepcooking.app/api';
 const HASH = 'a'.repeat(64);
 
 function makeDevice() {

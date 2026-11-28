@@ -65,7 +65,7 @@ data class IngestDraft(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun IngestScreen(
-    baseUrl: String = "https://keep-cooking-api.pshippy-245.workers.dev/",
+    baseUrl: String = "https://keepcooking.app/api/",
     clipboardText: String? = null,
     onSaveRecipe: suspend (IngestDraft) -> String = { "Saved “${it.title}”" },
     // Fresh device-auth state per request (enroll may complete after

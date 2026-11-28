@@ -37,11 +37,15 @@ const VERSION = '0.1.0';
 // (prefix only) and envelope bodies (ciphertext/nonce) are never logged
 // anywhere — handlers below log nothing per-envelope.
 export function redactE2EPath(path: string): string {
-  const m = path.match(/^(\/v2\/sync\/)([0-9a-fA-F]{16,})(.*)$/);
-  if (m) return `${m[1]}${m[2]!.slice(0, HASH_LOG_PREFIX_LEN)}…`;
+  // #28 dual-serve: a single leading /api is the mount prefix, not part of
+  // the route — preserve it, redact the rest exactly as before.
+  const prefix = path === '/api' || path.startsWith('/api/') ? '/api' : '';
+  const rest = prefix ? path.slice(4) || '/' : path;
+  const m = rest.match(/^(\/v2\/sync\/)([0-9a-fA-F]{16,})(.*)$/);
+  if (m) return `${prefix}${m[1]}${m[2]!.slice(0, HASH_LOG_PREFIX_LEN)}…`;
   // Device ids are user ids in prod (see auth.ts) — never log them.
-  const d = path.match(/^(\/v2\/devices\/)[^/?#]+(.*)$/);
-  if (d) return `${d[1]}…${d[2]}`;
+  const d = rest.match(/^(\/v2\/devices\/)[^/?#]+(.*)$/);
+  if (d) return `${prefix}${d[1]}…${d[2]}`;
   return path;
 }
 
@@ -98,11 +102,16 @@ export function createApp(
   app.use('*', async (c, next) => {
     c.set('prod' as never, prod as never);
     const pathname = new URL(c.req.url).pathname;
+    // #28 dual-serve: strip a single leading /api so these open-route checks
+    // apply to both `/x` and `/api/x`. Device signatures still cover the FULL
+    // path+query (authenticateDevice uses url.pathname), so native .route()
+    // mounting needs no auth change — clients sign exactly what they send.
+    const open = pathname === '/api' || pathname.startsWith('/api/') ? pathname.slice(4) || '/' : pathname;
     const m = c.req.method;
     if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return next();
-    if (pathname === '/health' || pathname === '/openapi.json') return next();
-    if (pathname === '/v2/devices' && m === 'POST') return next();
-    if (m === 'POST' && /^\/v2\/devices\/[^/]+\/revoke$/.test(pathname)) return next();
+    if (open === '/health' || open === '/openapi.json') return next();
+    if (open === '/v2/devices' && m === 'POST') return next();
+    if (m === 'POST' && /^\/v2\/devices\/[^/]+\/revoke$/.test(open)) return next();
     if (!prod) return next(); // dev header stub
     await authenticateDevice(c, store); // throws 401
     return next();
@@ -122,25 +131,28 @@ export function createApp(
 
   const getStore = (): Store => store;
 
+  // All routes live on this sub-app so it can be mounted twice below.
+  const api = new Hono<{ Variables: { store: Store } }>();
+
   // ---------- device enrollment (public; no sig — this is how devices join) ----------
   // devicesEnroll is owned by the enroll-store lane (api/src/devices.ts):
   // POST { deviceId: UUIDv4, publicKey: base64(32B), displayName? } ->
   // 201 first enroll / 200 idempotent re-enroll / 409 key conflict.
-  app.post('/v2/devices', async (c) => devicesEnroll(c, getStore()));
+  api.post('/v2/devices', async (c) => devicesEnroll(c, getStore()));
 
   // ---------- device self-revoke (sig verified by the handler, not the
   // gate: the '/v2/devices/:id/revoke' exemption above lets devicesRevoke
   // check existence first — 404 unknown :id -> 401 missing/bad/stale sig
   // -> 403 signer != :id -> 200 { deviceId, revokedAt }). Revoked devices
   // fail all later writes with 401 via authenticateDevice.
-  app.post('/v2/devices/:id/revoke', async (c) => devicesRevoke(c, getStore()));
+  api.post('/v2/devices/:id/revoke', async (c) => devicesRevoke(c, getStore()));
 
   // ---------- health / openapi ----------
-  app.get('/health', (c) => c.json({ ok: true, version }));
-  app.get('/openapi.json', (c) => c.json(openApiJson));
+  api.get('/health', (c) => c.json({ ok: true, version }));
+  api.get('/openapi.json', (c) => c.json(openApiJson));
 
   // ---------- clip ----------
-  app.post('/clip', async (c) => {
+  api.post('/clip', async (c) => {
     const body = parseOrThrow(clipRequestSchema, await c.req.json().catch(() => ({})));
     const result = await clipRecipe({ url: body.url, caption: body.caption, source: body.source });
     const { log: _log, ...report } = result;
@@ -149,23 +161,23 @@ export function createApp(
   });
 
   // ---------- recipes ----------
-  app.get('/recipes', async (c) => {
+  api.get('/recipes', async (c) => {
     const householdId = c.req.query('householdId');
     return c.json(await getStore().listRecipes(householdId));
   });
-  app.post('/recipes', async (c) => {
+  api.post('/recipes', async (c) => {
     const body = parseOrThrow(recipeInputSchema, await c.req.json().catch(() => ({})));
     await requireWriteRole(c, getStore(), body.householdId);
     const user = getUser(c);
     const r = await getStore().createRecipe(body, { deviceId: user.deviceId });
     return c.json(r, 201);
   });
-  app.get('/recipes/:id', async (c) => {
+  api.get('/recipes/:id', async (c) => {
     const r = await getStore().getRecipe(c.req.param('id'));
     if (!r) return c.json({ error: 'not found' }, 404);
     return c.json(r);
   });
-  app.put('/recipes/:id', async (c) => {
+  api.put('/recipes/:id', async (c) => {
     const id = c.req.param('id');
     const cur = await getStore().getRecipe(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
@@ -175,7 +187,7 @@ export function createApp(
     const r = await getStore().updateRecipe(id, body, { deviceId: user.deviceId });
     return c.json(r);
   });
-  app.delete('/recipes/:id', async (c) => {
+  api.delete('/recipes/:id', async (c) => {
     const id = c.req.param('id');
     const cur = await getStore().getRecipe(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
@@ -184,7 +196,7 @@ export function createApp(
     await getStore().deleteRecipe(id, user.deviceId);
     return c.body(null, 204);
   });
-  app.post('/recipes/:id/scale', async (c) => {
+  api.post('/recipes/:id/scale', async (c) => {
     const id = c.req.param('id');
     const r = await getStore().getRecipe(id);
     if (!r) return c.json({ error: 'not found' }, 404);
@@ -194,19 +206,19 @@ export function createApp(
   });
 
   // ---------- lists ----------
-  app.get('/lists', async (c) => c.json(await getStore().listLists()));
-  app.post('/lists', async (c) => {
+  api.get('/lists', async (c) => c.json(await getStore().listLists()));
+  api.post('/lists', async (c) => {
     const body = parseOrThrow(shoppingListInputSchema, await c.req.json().catch(() => ({})));
     await requireWriteRole(c, getStore(), body.householdId);
     const user = getUser(c);
     return c.json(await getStore().createList(body, { deviceId: user.deviceId }), 201);
   });
-  app.get('/lists/:id', async (c) => {
+  api.get('/lists/:id', async (c) => {
     const l = await getStore().getList(c.req.param('id'));
     if (!l) return c.json({ error: 'not found' }, 404);
     return c.json(l);
   });
-  app.put('/lists/:id', async (c) => {
+  api.put('/lists/:id', async (c) => {
     const id = c.req.param('id');
     const cur = await getStore().getList(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
@@ -215,7 +227,7 @@ export function createApp(
     const user = getUser(c);
     return c.json(await getStore().updateList(id, body, { deviceId: user.deviceId }));
   });
-  app.delete('/lists/:id', async (c) => {
+  api.delete('/lists/:id', async (c) => {
     const id = c.req.param('id');
     const cur = await getStore().getList(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
@@ -226,14 +238,14 @@ export function createApp(
   });
 
   // ---------- pantry ----------
-  app.get('/pantry', async (c) => c.json(await getStore().listPantry()));
-  app.post('/pantry', async (c) => {
+  api.get('/pantry', async (c) => c.json(await getStore().listPantry()));
+  api.post('/pantry', async (c) => {
     const body = parseOrThrow(pantryInputSchema, await c.req.json().catch(() => ({})));
     await requireWriteRole(c, getStore(), body.householdId);
     const user = getUser(c);
     return c.json(await getStore().createPantry(body, { deviceId: user.deviceId }), 201);
   });
-  app.put('/pantry/:id', async (c) => {
+  api.put('/pantry/:id', async (c) => {
     const id = c.req.param('id');
     const cur = await getStore().getPantry(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
@@ -242,7 +254,7 @@ export function createApp(
     const user = getUser(c);
     return c.json(await getStore().updatePantry(id, body, { deviceId: user.deviceId }));
   });
-  app.delete('/pantry/:id', async (c) => {
+  api.delete('/pantry/:id', async (c) => {
     const id = c.req.param('id');
     const cur = await getStore().getPantry(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
@@ -253,7 +265,7 @@ export function createApp(
   });
 
   // ---------- plans feed (before :id) ----------
-  app.get('/plans/feed.ics', async (c) => {
+  api.get('/plans/feed.ics', async (c) => {
     const plans = await getStore().listPlans();
     const byId = new Map((await getStore().listRecipes()).map((r) => [r.id, r.title] as const));
     const ics = plansToIcs(plans, (rid) => byId.get(rid ?? '') ?? null);
@@ -261,19 +273,19 @@ export function createApp(
   });
 
   // ---------- plans ----------
-  app.get('/plans', async (c) => c.json(await getStore().listPlans()));
-  app.post('/plans', async (c) => {
+  api.get('/plans', async (c) => c.json(await getStore().listPlans()));
+  api.post('/plans', async (c) => {
     const body = parseOrThrow(planInputSchema, await c.req.json().catch(() => ({})));
     await requireWriteRole(c, getStore(), body.householdId);
     const user = getUser(c);
     return c.json(await getStore().createPlan(body, { deviceId: user.deviceId }), 201);
   });
-  app.get('/plans/:id', async (c) => {
+  api.get('/plans/:id', async (c) => {
     const p = await getStore().getPlan(c.req.param('id'));
     if (!p) return c.json({ error: 'not found' }, 404);
     return c.json(p);
   });
-  app.put('/plans/:id', async (c) => {
+  api.put('/plans/:id', async (c) => {
     const id = c.req.param('id');
     const cur = await getStore().getPlan(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
@@ -282,7 +294,7 @@ export function createApp(
     const user = getUser(c);
     return c.json(await getStore().updatePlan(id, body, { deviceId: user.deviceId }));
   });
-  app.delete('/plans/:id', async (c) => {
+  api.delete('/plans/:id', async (c) => {
     const id = c.req.param('id');
     const cur = await getStore().getPlan(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
@@ -293,19 +305,19 @@ export function createApp(
   });
 
   // ---------- menus ----------
-  app.get('/menus', async (c) => c.json(await getStore().listMenus()));
-  app.post('/menus', async (c) => {
+  api.get('/menus', async (c) => c.json(await getStore().listMenus()));
+  api.post('/menus', async (c) => {
     const body = parseOrThrow(menuInputSchema, await c.req.json().catch(() => ({})));
     await requireWriteRole(c, getStore(), body.householdId);
     const user = getUser(c);
     return c.json(await getStore().createMenu(body, { deviceId: user.deviceId }), 201);
   });
-  app.get('/menus/:id', async (c) => {
+  api.get('/menus/:id', async (c) => {
     const m = await getStore().getMenu(c.req.param('id'));
     if (!m) return c.json({ error: 'not found' }, 404);
     return c.json(m);
   });
-  app.put('/menus/:id', async (c) => {
+  api.put('/menus/:id', async (c) => {
     const id = c.req.param('id');
     const cur = await getStore().getMenu(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
@@ -314,7 +326,7 @@ export function createApp(
     const user = getUser(c);
     return c.json(await getStore().updateMenu(id, body, { deviceId: user.deviceId }));
   });
-  app.delete('/menus/:id', async (c) => {
+  api.delete('/menus/:id', async (c) => {
     const id = c.req.param('id');
     const cur = await getStore().getMenu(id);
     if (!cur) return c.json({ error: 'not found' }, 404);
@@ -325,7 +337,7 @@ export function createApp(
   });
 
   // ---------- share ----------
-  app.post('/share/cookbook', async (c) => {
+  api.post('/share/cookbook', async (c) => {
     const body = parseOrThrow(shareRequestSchema, await c.req.json().catch(() => ({})));
     await requireOwnerRole(c, getStore(), body.householdId);
     const id = newId();
@@ -339,7 +351,7 @@ export function createApp(
   // Note: hono does not reliably match `:id.json`-style suffix patterns, so a
   // single `:file` param is split into id + extension here. Behavior matches
   // openapi.yaml /export/{id}.(json|md|html) exactly.
-  app.get('/export/:file', async (c) => {
+  api.get('/export/:file', async (c) => {
     const file = c.req.param('file') ?? '';
     const m = file.match(/^(.+)\.(json|md|html)$/);
     if (!m) return c.json({ error: 'not found' }, 404);
@@ -352,11 +364,11 @@ export function createApp(
   });
 
   // ---------- photos (signed URLs; variants per PHOTO_VARIANTS.md) ----------
-  app.get('/photos/variants', (c) => {
+  api.get('/photos/variants', (c) => {
     const recipeId = c.req.query('recipeId') ?? 'unknown';
     return c.json(variantKeys(recipeId));
   });
-  app.get('/photos/sign', async (c) => {
+  api.get('/photos/sign', async (c) => {
     const key = c.req.query('key') ?? '';
     if (!key) return c.json({ error: 'key is required' }, 400);
     const ttl = Number(c.req.query('ttl') ?? DEFAULT_SIGNED_URL_TTL_SECONDS);
@@ -365,11 +377,11 @@ export function createApp(
   });
 
   // ---------- sync ----------
-  app.get('/sync/pull', async (c) => {
+  api.get('/sync/pull', async (c) => {
     const since = c.req.query('since') ?? '1970-01-01T00:00:00Z';
     return c.json(await getStore().pullSince(since));
   });
-  app.post('/sync/push', async (c) => {
+  api.post('/sync/push', async (c) => {
     const raw = await c.req.json().catch(() => null);
     if (!Array.isArray(raw)) return c.json({ error: 'expected an array of SyncEnvelopes' }, 400);
     const conflicts: SyncEnvelopeWire[] = [];
@@ -445,7 +457,7 @@ export function createApp(
   // PUT/GET /v2/sync/:hash — :hash is the hex householdHash deriving bucket
   // identity. Plaintext v1 envelopes fail schema validation (400). Photos
   // stay inline in ciphertext for pass 1 — no dedicated photo route.
-  app.get('/v2/sync/:hash', async (c) => {
+  api.get('/v2/sync/:hash', async (c) => {
     const hash = c.req.param('hash') ?? '';
     if (!E2E_HASH_RE.test(hash)) return c.json({ error: 'invalid household hash' }, 400);
     const raw = c.req.query('since') ?? '1970-01-01T00:00:00.000Z';
@@ -453,7 +465,7 @@ export function createApp(
     if (Number.isNaN(parsed.getTime())) return c.json({ error: 'invalid since' }, 400);
     return c.json(await getStore().e2eList(hash, parsed.toISOString()));
   });
-  app.put('/v2/sync/:hash', async (c) => {
+  api.put('/v2/sync/:hash', async (c) => {
     const hash = c.req.param('hash') ?? '';
     if (!E2E_HASH_RE.test(hash)) return c.json({ error: 'invalid household hash' }, 400);
     const raw = await c.req.json().catch(() => null);
@@ -483,7 +495,7 @@ export function createApp(
     }
     return c.json({ stored });
   });
-  app.delete('/v2/sync/:hash', async (c) => {
+  api.delete('/v2/sync/:hash', async (c) => {
     const hash = c.req.param('hash') ?? '';
     if (!E2E_HASH_RE.test(hash)) return c.json({ error: 'invalid household hash' }, 400);
     // Whole-bucket wipe. No household membership lookup is possible from an
@@ -492,6 +504,14 @@ export function createApp(
     const wiped = await getStore().e2eWipe(hash);
     return c.json({ wiped });
   });
+
+  // #28: keepcooking.app/api origin. Every route above is mounted twice — at
+  // `/` (backward compat: existing workers.dev clients keep working) and at
+  // `/api` (custom-domain origin) — via native Hono .route(), so the device
+  // signature canonical string (full path+query) verifies unchanged and no
+  // auth change is needed. Still 1 Worker + 1 D1 + 1 R2, no new infra.
+  app.route('/', api);
+  app.route('/api', api);
 
   return app;
 }

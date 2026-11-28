@@ -68,7 +68,7 @@ class SyncEngine(
         val KEY_BASE_URL = stringPreferencesKey("api_base_url")
         val KEY_USER_ID = stringPreferencesKey("user_id")
         val KEY_LAST_SYNC = stringPreferencesKey("last_sync_at")
-        const val PROD_BASE_URL = "https://keep-cooking-api.pshippy-245.workers.dev"
+        const val PROD_BASE_URL = "https://keepcooking.app/api"
     }
 
     /**

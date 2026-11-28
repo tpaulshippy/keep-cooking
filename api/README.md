@@ -93,7 +93,7 @@ Stay-free rules: signed photo URLs (<15 min TTL) instead of proxied bytes,
 ### Curl
 
 ```bash
-BASE=https://keep-cooking-api.pshippy-245.workers.dev
+BASE=https://keepcooking.app/api
 DEVICE_ID=$(uuidgen)   # persist one per device; the private half never leaves it
 
 # 1. enroll (open — the only unsigned write):
@@ -107,10 +107,11 @@ curl -s $BASE/health     # 200, proves boot
 curl -s $BASE/recipes    # 200, no signature
 
 # 3. writes are signed (TS = millis, SIG = Ed25519 over the canonical string;
-#    construction below is schematic — see deviceCanonicalString in api/src/auth.ts):
+#    construction below is schematic — see deviceCanonicalString in api/src/auth.ts).
+#    Canonical path is the FULL path as sent, including the /api prefix:
 BODY='{"title":"probe","servings":2}'
 TS=$(date +%s000)
-CANONICAL=$(printf 'POST\n/recipes\n%s\n%s' "$TS" "$(printf '%s' "$BODY" | sha256sum | cut -d' ' -f1)")
+CANONICAL=$(printf 'POST\n/api/recipes\n%s\n%s' "$TS" "$(printf '%s' "$BODY" | sha256sum | cut -d' ' -f1)")
 SIG=$(sign_ed25519 "$CANONICAL" device-private-key)   # Ed25519, base64 output
 curl -s -X POST $BASE/recipes \
   -H 'content-type: application/json' \
@@ -118,6 +119,22 @@ curl -s -X POST $BASE/recipes \
   -d "$BODY"   # 201 as first-claim owner on an empty household, else 201 as
                # granted owner/member, 403 as viewer (needs a grant)
 ```
+
+## Cutover / rollback (issue #28: keepcooking.app/api origin)
+
+- The Worker dual-serves every route at both `/…` and `/api/…`
+  (see `api/src/index.ts` — native Hono `.route()` mount, smallest diff).
+  Backward-compat window: old `*.workers.dev` clients keep working on the
+  root paths; new clients use `https://keepcooking.app/api`.
+- Auth is header-signature (`x-device-id` / `x-device-ts` / `x-device-sig`
+  over the full path+query), not cookies — so no CORS/cookie code change
+  was needed beyond the base URL. CORS allows the custom domain; device-key
+  enrollment, signed writes, and signed photo URLs work through it unchanged.
+- Pre-deploy check from `api/`: `npx wrangler deploy --dry-run`.
+- Rollback is a single deploy: `git revert` the `PUBLIC_BASE_URL` bump (or
+  re-deploy the previous commit) — one Worker, one deploy, no migration.
+  The old origin never stops serving during the window, so clients pinned
+  to either base URL stay green.
 
 ## Endpoints (exactly packages/contracts/openapi.yaml, plus 2 photo helpers)
 

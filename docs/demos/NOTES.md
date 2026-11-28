@@ -129,3 +129,14 @@ the same flow on iOS + Android against Room/SwiftData offline-first:
    meal (breakfast/lunch/dinner/snack, else dinner) at apply time, since
    plans only allow those four; entries with an empty meal or
    `dayOffset` outside 0–27 are ignored by Apply and reported.
+
+## Backend origin (issue 28)
+
+- Canonical API origin is now `https://keepcooking.app/api` (custom domain
+  in front of the same single Worker + D1 + R2 — no new infra).
+- The Worker dual-serves every route at both `/…` and `/api/…`, so the old
+  `https://keep-cooking-api.<account>.workers.dev` origin still works
+  (backward-compat window for existing clients/demos).
+- Any demo command that used the workers.dev origin can swap the base URL
+  to `https://keepcooking.app/api` with no other change (auth is
+  header-signature over the full path, not cookies).

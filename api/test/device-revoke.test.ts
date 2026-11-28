@@ -10,7 +10,7 @@ import { D1Store } from '../src/d1store';
 // - 404 for unknown :id (checked before auth), 401 for missing/bad sig,
 //   403 for cross-device revoke (signer != :id). No admin override, no UI.
 
-const PROD_URL = 'https://keep-cooking-api.pshippy-245.workers.dev';
+const PROD_URL = 'https://keepcooking.app/api';
 
 function makeDevice() {
   const id = crypto.randomUUID();

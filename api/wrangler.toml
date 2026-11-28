@@ -6,7 +6,13 @@ compatibility_date = "2026-11-01"
 APP_VERSION = "0.1.0"
 # Signing secret is NOT stored here — set via `wrangler secret put PHOTOS_SIGNING_SECRET`
 # (a name can't be both a var and a secret). Dev default lives in src/index.ts.
-PUBLIC_BASE_URL = "https://keep-cooking-api.pshippy-245.workers.dev"
+PUBLIC_BASE_URL = "https://keepcooking.app/api"
+# Custom-domain origin (issue #28): serve this Worker at keepcooking.app/api/*
+# via a Workers Route (dashboard > Workers Routes > Add route, or
+# `wrangler route add keepcooking.app/api/* keep-cooking-api`):
+#   routes = [{ pattern = "keepcooking.app/api/*", zone_name = "keepcooking.app" }]
+# (kept commented so local/staging deploys without that zone still work).
+# The workers.dev URL stays enabled as fallback — do NOT set workers_dev = false.
 
 [[d1_databases]]
 binding = "DB"

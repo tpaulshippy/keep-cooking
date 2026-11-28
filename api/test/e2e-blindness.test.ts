@@ -243,7 +243,7 @@ describe('e2e v1 blind blob pipe', () => {
     const raw = new Uint8Array(spki.subarray(spki.length - 32));
     await store.enrollDevice({ deviceId, publicKeyB64: Buffer.from(raw).toString('base64') });
     const app = createApp(store, {
-      baseUrl: 'https://keep-cooking-api.pshippy-245.workers.dev',
+      baseUrl: 'https://keepcooking.app/api',
       secret: 'test-secret',
     });
     // Same canonical signing as api/test/beta-gate.test.ts:

@@ -383,7 +383,7 @@ final class SyncCoordinator {
 // MARK: - Sync endpoint (out of the box; Advanced override only)
 
 enum SyncConfig {
-    static let prodBaseURL = "https://keep-cooking-api.pshippy-245.workers.dev"
+    static let prodBaseURL = "https://keepcooking.app/api"
 
     static var baseURL: URL? {
         if let o = UserDefaults.standard.string(forKey: "smidgen.apiBaseURL"),
