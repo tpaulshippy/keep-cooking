@@ -854,6 +854,7 @@ enum QuickAddKind: String, Identifiable {
     case scan
     case caption
     case importFile
+    case paste
 
     var id: String { rawValue }
     var title: String {
@@ -862,6 +863,7 @@ enum QuickAddKind: String, Identifiable {
         case .scan: return "Scan cookbook"
         case .caption: return "Import caption"
         case .importFile: return "Import file"
+        case .paste: return "Paste text"
         }
     }
 }
@@ -919,6 +921,7 @@ struct DrawerShellView: View {
             case .scan: OCRScanView()
             case .caption: CaptionsImportView()
             case .importFile: ImportView()
+            case .paste: PasteImportView()
             }
         }
     }
@@ -975,6 +978,11 @@ struct DrawerShellView: View {
                     quickAdd = .importFile
                 } label: {
                     Label("Import file", systemImage: "tray.and.arrow.down")
+                }
+                Button {
+                    quickAdd = .paste
+                } label: {
+                    Label("Paste text", systemImage: "doc.on.clipboard")
                 }
             } label: {
                 Image(systemName: "plus")
