@@ -473,10 +473,12 @@ private fun ScanTab(onSaveRecipe: suspend (IngestDraft) -> String) {
     var savedMessage by remember { mutableStateOf<String?>(null) }
     var isRecognizing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var draftValid by remember { mutableStateOf(false) }
 
     fun parse() {
         val draft = OcrSplitter.split(recognizedText.split("\n"))
         savedMessage = null
+        draftValid = true
         title = draft.title
         ingredientLines = draft.ingredientLines.joinToString("\n")
         stepLines = draft.stepLines.joinToString("\n")
@@ -485,7 +487,7 @@ private fun ScanTab(onSaveRecipe: suspend (IngestDraft) -> String) {
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        isRecognizing = true; error = null; savedMessage = null
+        isRecognizing = true; error = null; savedMessage = null; draftValid = false
         title = ""; ingredientLines = ""; stepLines = ""
         runCatching { InputImage.fromFilePath(context, uri) }.fold(
             onSuccess = { image ->
@@ -524,7 +526,7 @@ private fun ScanTab(onSaveRecipe: suspend (IngestDraft) -> String) {
                 Button(onClick = { picker.launch("image/*") }, enabled = !isRecognizing) {
                     Text(if (isRecognizing) "Reading…" else "Choose photo")
                 }
-                OutlinedTextField(value = recognizedText, onValueChange = { recognizedText = it }, label = { Text("Recognized text (editable)") }, modifier = Modifier.fillMaxWidth(), minLines = 4, enabled = !isRecognizing)
+                OutlinedTextField(value = recognizedText, onValueChange = { recognizedText = it; draftValid = false }, label = { Text("Recognized text (editable)") }, modifier = Modifier.fillMaxWidth(), minLines = 4, enabled = !isRecognizing)
                 Button(onClick = { parse() }, enabled = recognizedText.isNotBlank() && !isRecognizing) { Text("Parse text") }
             }
         }
@@ -560,9 +562,10 @@ private fun ScanTab(onSaveRecipe: suspend (IngestDraft) -> String) {
                             notice = null
                         }
                     },
-                    enabled = canSave && savedMessage == null && !isRecognizing,
+                    enabled = canSave && draftValid && savedMessage == null && !isRecognizing,
                 ) { Text("Save recipe") }
                 if (!canSave) Text("Add a title to save.", style = MaterialTheme.typography.bodySmall)
+                if (canSave && !draftValid && savedMessage == null) Text("Parse text again to refresh the draft before saving.", style = MaterialTheme.typography.bodySmall)
                 savedMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
             }
         }

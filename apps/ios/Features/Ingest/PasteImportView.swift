@@ -298,7 +298,7 @@ public struct PasteImportView: View {
         let recipe = Recipe(
             householdId: "hh-demo",
             title: trimmed.isEmpty ? (report?.recipe.title ?? trimmed) : trimmed,
-            source: "text",
+            source: report?.recipe.source ?? "clip",
             sourceUrl: "",
             deviceId: deviceId
         )

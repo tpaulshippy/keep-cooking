@@ -974,7 +974,34 @@ function viewIngest(): void {
       navigate('/recipes/' + env.id);
     }
   });
+  // Photo attachment is reference-only: bytes are never uploaded.
+  // Defined before the paste wiring so the photo preview Save handler and
+  // the route-teardown listener can release the object URL.
+  let photoObjectUrl: string | undefined;
+  const revokePhotoObjectUrl = (): void => {
+    if (photoObjectUrl === undefined) return;
+    try {
+      if (typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+        URL.revokeObjectURL(photoObjectUrl);
+      }
+    } catch { /* test/jsdom without revoke: ignore */ }
+    photoObjectUrl = undefined;
+  };
   // --- Shared paste/OCR preview + save wiring for Text/Photo tabs ---
+  // Extract an HTTP status from the api client error shape. req() throws
+  // `Error("METHOD path failed: STATUS")` with no .status field; signed
+  // transports may attach one. Absent status (TypeError from fetch) means
+  // the request never got a response — a genuine offline/network failure.
+  const clipHttpStatus = (err: unknown): number | undefined => {
+    if (typeof err === 'object' && err !== null && 'status' in err) {
+      const s = (err as { status?: unknown }).status;
+      if (typeof s === 'number' && Number.isFinite(s)) return s;
+      if (typeof s === 'string' && /^\d{3}$/.test(s.trim())) return Number(s.trim());
+    }
+    const msg = err instanceof Error ? err.message : String(err ?? '');
+    const m = msg.match(/\b(\d{3})\b/);
+    return m ? Number(m[1]) : undefined;
+  };
   const wirePasteTab = (opts: {
     formId: string; inputId: string; statusId: string; previewId: string;
     titleId: string; ingsId: string; stepsId: string; source: 'text' | 'photo';
@@ -982,8 +1009,18 @@ function viewIngest(): void {
   }) => {
     const form = document.getElementById(opts.formId) as HTMLFormElement;
     const preview = document.getElementById(opts.previewId) as HTMLFormElement;
+    const sourceInput = document.getElementById(opts.inputId) as HTMLTextAreaElement | null;
     let pendingDescription = '';
     let pendingReport: RecipeInput | undefined;
+    // Generation guard: editing the source invalidates the visible preview
+    // and any in-flight clip response captured before the edit.
+    let generation = 0;
+    sourceInput?.addEventListener('input', () => {
+      generation++;
+      pendingReport = undefined;
+      pendingDescription = '';
+      preview.hidden = true;
+    });
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(form);
@@ -994,35 +1031,58 @@ function viewIngest(): void {
         status.textContent = opts.emptyMessage;
         return;
       }
+      const gen = ++generation;
       // Title hint = first line (shown before the server responds).
       const hint = firstNonEmptyLine(caption);
       status.textContent = hint ? `Parsing “${hint.slice(0, 60)}”…` : 'Parsing…';
       try {
         const report = await api.clip({ caption, source: opts.source });
+        if (gen !== generation) return; // stale: source edited mid-flight
         const fields = recipeToPreviewFields(report.recipe);
         (document.getElementById(opts.titleId) as HTMLInputElement).value = fields.title;
         (document.getElementById(opts.ingsId) as HTMLTextAreaElement).value = fields.ingredientsText;
         (document.getElementById(opts.stepsId) as HTMLTextAreaElement).value = fields.stepsText;
         pendingReport = report.recipe;
         pendingDescription =
-          typeof report.recipe.description === 'string' ? report.recipe.description : caption;
+          typeof report.recipe.description === 'string' ? report.recipe.description.slice(0, 8000) : caption.slice(0, 8000);
         preview.hidden = false;
         status.textContent = `Preview ready via ${report.strategy}. Review and Save.`;
-      } catch {
+      } catch (err) {
+        if (gen !== generation) return; // stale: source edited mid-flight
+        // 4xx (esp. 413/422 validation) is a server verdict on this exact
+        // text — not an offline signal. Surface it; never save the
+        // oversized/invalid draft as if it parsed.
+        const httpStatus = clipHttpStatus(err);
+        if (httpStatus !== undefined && httpStatus >= 400 && httpStatus < 500) {
+          const detail = err instanceof Error ? err.message : String(err);
+          status.textContent = `Could not parse (${httpStatus}): ${detail} — edit the text and retry.`;
+          return;
+        }
         // Offline fallback: local parse, same RecipeInput shape as Link drafts.
+        // parsePastedText caps description (8000) and step text (8000) to the
+        // recipeInputSchema limits so the draft stays valid.
         const draft = parsePastedText(caption);
+        draft.source = 'clip';
         const fields = recipeToPreviewFields(draft);
         (document.getElementById(opts.titleId) as HTMLInputElement).value = fields.title;
         (document.getElementById(opts.ingsId) as HTMLTextAreaElement).value = fields.ingredientsText;
         (document.getElementById(opts.stepsId) as HTMLTextAreaElement).value = fields.stepsText;
         pendingReport = draft;
-        pendingDescription = caption;
+        pendingDescription = typeof draft.description === 'string' ? draft.description : caption.slice(0, 8000);
         preview.hidden = false;
         status.textContent = 'Offline — parsed locally. Review and Save.';
       }
     });
     preview.addEventListener('submit', (e) => {
       e.preventDefault();
+      const status = document.getElementById(opts.statusId)!;
+      // Save requires a fresh preview: editing the source hides it and
+      // clears pendingReport until the next Parse & preview.
+      if (!pendingReport || preview.hidden) {
+        status.textContent = 'Preview is stale — re-run Parse & preview.';
+        return;
+      }
+      if (opts.source === 'photo') revokePhotoObjectUrl();
       const input = previewToRecipeInput(
         {
           title: (document.getElementById(opts.titleId) as HTMLInputElement).value,
@@ -1047,14 +1107,10 @@ function viewIngest(): void {
     stepsId: 'photo-steps', source: 'photo', emptyMessage: 'Paste the visible text from the photo first.',
   });
   // Photo attachment is reference-only: bytes are never uploaded.
-  let photoObjectUrl: string | undefined;
   (document.getElementById('photo-file') as HTMLInputElement).addEventListener('change', (e) => {
     const file = (e.target as HTMLInputElement).files?.[0];
     const img = document.getElementById('photo-img') as HTMLImageElement;
-    if (photoObjectUrl) {
-      URL.revokeObjectURL(photoObjectUrl);
-      photoObjectUrl = undefined;
-    }
+    revokePhotoObjectUrl();
     if (!file) {
       img.hidden = true;
       img.removeAttribute('src');
@@ -1064,6 +1120,10 @@ function viewIngest(): void {
     img.src = photoObjectUrl;
     img.hidden = false;
   });
+  // Release the photo object URL on navigation away (router navigates via
+  // pushState + popstate). Once + guarded so jsdom/tests without
+  // revokeObjectURL stay safe.
+  window.addEventListener('popstate', revokePhotoObjectUrl, { once: true });
 }
 
 // ---- Settings ----

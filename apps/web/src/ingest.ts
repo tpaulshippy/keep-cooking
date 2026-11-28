@@ -14,27 +14,93 @@ export function firstNonEmptyLine(text: string): string {
 /**
  * Offline/local parse of pasted or transcribed text.
  * Same RecipeInput shape as the Link tab offline draft
- * ({ title, description, servings, ingredients, steps, sourceUrl? }).
+ * ({ title, description, servings, ingredients, steps, sourceUrl? }),
+ * plus source:'clip' mirroring the server caption fallback.
  * Title hint = first non-empty line (max 60 chars, matching Link drafts).
+ * Quantity-led lines (e.g. "2 cups flour", "1/2 tsp salt") become
+ * ingredients — mirroring api/src/clip.ts parseCaption — so the offline
+ * preview shows ingredients instead of dropping them into steps.
+ * Field caps mirror recipeInputSchema (description 8000, step text 8000,
+ * ingredient name 300 / display 120) so the local draft stays valid.
  */
+const PASTED_QTY_RE = /^(\d+(?:[./]\d+)?(?:\s+\d+\/\d+)?)\s*([a-zA-Z]*)\s+(.+)$/;
+const PASTED_STEP_VERB_RE = /^(add|mix|heat|bake|stir|cook|serve|top|pour|chop|diced|minced)/i;
+
+function parsePastedQtyIngredient(
+  line: string,
+  position: number,
+): { name: string; quantity?: number | null; unit?: string; display?: string; position?: number } | null {
+  const qm = line.match(PASTED_QTY_RE);
+  if (!qm) return null;
+  const qtyRaw = qm[1]!.trim();
+  let qty: number | null = null;
+  if (qtyRaw.includes('/')) {
+    const parts = qtyRaw.split(/\s+/);
+    let total = 0;
+    let ok = true;
+    for (const p of parts) {
+      if (p.includes('/')) {
+        const [a, b] = p.split('/').map(Number);
+        if (!b) {
+          ok = false;
+          break;
+        }
+        total += a! / b!;
+      } else {
+        total += Number(p);
+      }
+    }
+    qty = ok ? total : null;
+  } else {
+    qty = Number(qtyRaw);
+  }
+  return {
+    name: qm[3]!.trim().slice(0, 300),
+    quantity: Number.isFinite(qty) ? qty : null,
+    unit: (qm[2] ?? '').slice(0, 60),
+    display: line.slice(0, 120),
+    position,
+  };
+}
+
 export function parsePastedText(
   caption: string,
   opts?: { sourceUrl?: string },
 ): RecipeInput {
   const lines = caption
     .split(/\r?\n/)
-    .map((l) => l.trim())
+    .map((l) => l.trim().replace(/^([-*•]\s+|\d+[.)]\s+)/, '').trim())
     .filter(Boolean);
   const title = (lines[0] ?? '').slice(0, 60) || 'Pasted draft';
-  const steps =
-    lines.length <= 1
-      ? lines.map((text, position) => ({ text, position }))
-      : lines.slice(1).map((text, position) => ({ text, position }));
+  const ingredients: { name: string; quantity?: number | null; unit?: string; display?: string; position?: number }[] = [];
+  const steps: { text: string; position: number }[] = [];
+  if (lines.length === 1) {
+    // Single-line paste: keep the line as one step (nothing else to split).
+    steps.push({ text: lines[0]!.slice(0, 8000), position: 0 });
+  } else {
+    for (const line of lines.slice(1)) {
+      const ing = parsePastedQtyIngredient(line, ingredients.length);
+      if (ing) {
+        if (ingredients.length < 200) ingredients.push(ing);
+        continue;
+      }
+      if (line.length < 140 && PASTED_STEP_VERB_RE.test(line)) {
+        if (steps.length < 200) steps.push({ text: line.slice(0, 8000), position: steps.length });
+        continue;
+      }
+      if (ingredients.length === 0) {
+        ingredients.push({ name: line.slice(0, 300), display: line.slice(0, 120), position: 0 });
+        continue;
+      }
+      if (steps.length < 200) steps.push({ text: line.slice(0, 8000), position: steps.length });
+    }
+  }
   return {
     title,
-    description: caption.trim(),
+    description: caption.trim().slice(0, 8000),
     servings: 4,
-    ingredients: [],
+    source: 'clip',
+    ingredients,
     steps,
     ...(opts?.sourceUrl ? { sourceUrl: opts.sourceUrl } : {}),
   };

@@ -131,10 +131,11 @@
             ]
           }
         ],
-        "description": "Clip source hint. `text` = generic pasted text, `photo` = photo/OCR transcript; both use the caption parse path (caption required, no fetch unless `url` is also present).",
+        "description": "Clip source hint. `text` = generic pasted text, `photo` = photo/OCR transcript; request requires url or caption (caption max 20000); when url is supplied the JSON-LD -> reader pipeline runs first with caption as fallback.",
         "properties": {
           "caption": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 20000
           },
           "source": {
             "enum": [

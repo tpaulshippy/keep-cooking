@@ -20,19 +20,41 @@ describe('parsePastedText', () => {
     const r = parsePastedText('Pancakes\n2 eggs\nMix and cook');
     expect(r.title).toBe('Pancakes');
     expect(r.servings).toBe(4);
-    expect(r.ingredients).toEqual([]);
-    expect(r.steps?.map((s) => s.text)).toEqual(['2 eggs', 'Mix and cook']);
+    expect(r.ingredients?.map((i) => i.display ?? i.name)).toEqual(['2 eggs']);
+    expect(r.steps?.map((s) => s.text)).toEqual(['Mix and cook']);
     expect(r.description).toBe('Pancakes\n2 eggs\nMix and cook');
+  });
+  it('splits quantity-led lines into ingredients like the server caption fallback', () => {
+    const r = parsePastedText('Pancakes\n2 cups flour\n1/2 tsp salt\nMix and cook');
+    expect(r.ingredients?.map((i) => i.display ?? i.name)).toEqual([
+      '2 cups flour',
+      '1/2 tsp salt',
+    ]);
+    expect(r.ingredients?.[0]).toMatchObject({ quantity: 2, unit: 'cups' });
+    expect(r.ingredients?.[1]?.quantity).toBeCloseTo(0.5);
+    expect(r.steps?.map((s) => s.text)).toEqual(['Mix and cook']);
+  });
+  it('tags the offline draft with source clip', () => {
+    expect(parsePastedText('Soup\n2 cups water\nBoil').source).toBe('clip');
+  });
+  it('caps description and step text to the recipe limits', () => {
+    const long = 'x'.repeat(9000);
+    const r = parsePastedText(`Title\n${long}`);
+    expect((r.description ?? '').length).toBeLessThanOrEqual(8000);
+    for (const s of r.steps ?? []) expect(s.text.length).toBeLessThanOrEqual(8000);
+    // Single-line overflow still truncates rather than dropping.
+    const single = parsePastedText(long);
+    expect((single.description ?? '').length).toBeLessThanOrEqual(8000);
   });
   it('falls back to a draft title for blank text', () => {
     const r = parsePastedText('   ');
     expect(r.title).toBe('Pasted draft');
     expect(r.steps).toEqual([]);
   });
-  it('keeps the Link-tab offline draft shape', () => {
+  it('keeps the Link-tab offline draft shape (plus source clip)', () => {
     const r = parsePastedText('Soup\nBoil water');
     expect(Object.keys(r).sort()).toEqual(
-      ['description', 'ingredients', 'servings', 'steps', 'title'].sort(),
+      ['description', 'ingredients', 'servings', 'source', 'steps', 'title'].sort(),
     );
   });
   it('carries sourceUrl through when given', () => {
