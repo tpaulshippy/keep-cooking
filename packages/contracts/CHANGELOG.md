@@ -1,6 +1,6 @@
 # Changelog
 ## Unreleased — generic paste-text + photo-transcript clip sources
-- openapi.yaml/json: ClipRequest `source` enum gains `text` (generic pasted text) + `photo` (photo/OCR transcript); both use the caption parse path (caption required, no fetch unless `url` present; confidence unchanged; `recipe.source` stays `clip`)
+- openapi.yaml/json: ClipRequest `source` enum gains `text` (generic pasted text) + `photo` (photo/OCR transcript); request still requires `url` or `caption` (caption max 20000); when `url` is supplied the normal JSON-LD → reader pipeline runs first and `caption` is fallback/offline text; caption-only `text`/`photo` uses the caption parse path (confidence unchanged; `recipe.source` stays `clip`)
 - api/src/zod.ts: clipRequestSchema source enum gains `text` + `photo` (validation otherwise unchanged: url or caption required, caption max 20000)
 ## Unreleased — Paprika full-parity import/export (on top of #26)
 - openapi.yaml/json: POST /import (ImportRequest/ImportReport mirroring ClipRequest/ClipReport; format enum paprika-json|paprika-zip|paprika-recipe|yaml|html|mx2|mxp|mz2|mmf|fdx|fdxz|pepperplate-zip|pepperplate-db|copymethat-zip|yum-xml|ysr|mgourmet|dvo|mcb|recipe-manager-txt|hcb|myrecipebook-sqlite|rbox; payload base64 or payloadJson; importCookbooks; dryRun; response {imported, updated, warnings, dryRun?, cookbooksCreated?})

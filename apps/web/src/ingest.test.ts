@@ -42,25 +42,39 @@ describe('parsePastedText', () => {
 });
 
 describe('preview round-trip', () => {
-  it('flattens and rebuilds title/ingredients/steps', () => {
-    const fields = recipeToPreviewFields({
+  it('flattens and rebuilds title/ingredients/steps while preserving base metadata', () => {
+    const base = {
       title: 'Omelet',
-      servings: 4,
+      description: 'orig',
+      servings: 2,
+      source: 'grandma',
+      sourceUrl: 'https://example.com/omelet',
+      categories: ['breakfast'],
       ingredients: [{ name: '2 eggs', display: '2 eggs', position: 0 }],
       steps: [{ text: 'Beat eggs', position: 0 }],
-    });
+    };
+    const fields = recipeToPreviewFields(base);
     expect(fields).toEqual({
       title: 'Omelet',
       ingredientsText: '2 eggs',
       stepsText: 'Beat eggs',
     });
     const rebuilt = previewToRecipeInput(
-      { title: ' Omelet ', ingredientsText: '2 eggs\n', stepsText: 'Beat eggs\nServe' },
+      {
+        title: ` ${fields.title} `,
+        ingredientsText: `${fields.ingredientsText}\n`,
+        stepsText: `${fields.stepsText}\nServe`,
+      },
+      base,
       { description: 'orig' },
     );
     expect(rebuilt.title).toBe('Omelet');
     expect(rebuilt.ingredients?.map((i) => i.name)).toEqual(['2 eggs']);
     expect(rebuilt.steps?.map((s) => s.text)).toEqual(['Beat eggs', 'Serve']);
     expect(rebuilt.description).toBe('orig');
+    expect(rebuilt.servings).toBe(2);
+    expect(rebuilt.source).toBe('grandma');
+    expect(rebuilt.sourceUrl).toBe('https://example.com/omelet');
+    expect(rebuilt.categories).toEqual(['breakfast']);
   });
 });

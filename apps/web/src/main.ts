@@ -983,6 +983,7 @@ function viewIngest(): void {
     const form = document.getElementById(opts.formId) as HTMLFormElement;
     const preview = document.getElementById(opts.previewId) as HTMLFormElement;
     let pendingDescription = '';
+    let pendingReport: RecipeInput | undefined;
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(form);
@@ -1002,6 +1003,7 @@ function viewIngest(): void {
         (document.getElementById(opts.titleId) as HTMLInputElement).value = fields.title;
         (document.getElementById(opts.ingsId) as HTMLTextAreaElement).value = fields.ingredientsText;
         (document.getElementById(opts.stepsId) as HTMLTextAreaElement).value = fields.stepsText;
+        pendingReport = report.recipe;
         pendingDescription =
           typeof report.recipe.description === 'string' ? report.recipe.description : caption;
         preview.hidden = false;
@@ -1013,6 +1015,7 @@ function viewIngest(): void {
         (document.getElementById(opts.titleId) as HTMLInputElement).value = fields.title;
         (document.getElementById(opts.ingsId) as HTMLTextAreaElement).value = fields.ingredientsText;
         (document.getElementById(opts.stepsId) as HTMLTextAreaElement).value = fields.stepsText;
+        pendingReport = draft;
         pendingDescription = caption;
         preview.hidden = false;
         status.textContent = 'Offline — parsed locally. Review and Save.';
@@ -1026,6 +1029,7 @@ function viewIngest(): void {
           ingredientsText: (document.getElementById(opts.ingsId) as HTMLTextAreaElement).value,
           stepsText: (document.getElementById(opts.stepsId) as HTMLTextAreaElement).value,
         },
+        pendingReport,
         { description: pendingDescription },
       );
       const env = store.upsert('recipe', '', input);

@@ -342,6 +342,8 @@ private fun PasteTab(
     fun parseLocal() {
         val draft = OcrSplitter.split(inputText.split("\n"))
         savedMessage = null
+        report = null
+        reportStale = false
         title = draft.title
         ingredientLines = draft.ingredientLines.joinToString("\n")
         stepLines = draft.stepLines.joinToString("\n")
@@ -369,7 +371,7 @@ private fun PasteTab(
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("1 · Add text", style = MaterialTheme.typography.titleSmall)
                 Text("Paste recipe text below, then parse on-device or preview with the server.", style = MaterialTheme.typography.bodySmall)
-                OutlinedTextField(value = inputText, onValueChange = { inputText = it }, label = { Text("Recipe text") }, modifier = Modifier.fillMaxWidth(), minLines = 6, enabled = !isLoading)
+                OutlinedTextField(value = inputText, onValueChange = { inputText = it; if (report != null) reportStale = true }, label = { Text("Recipe text") }, modifier = Modifier.fillMaxWidth(), minLines = 6, enabled = !isLoading)
                 livePreview?.let { Text("Preview:\n$it", style = MaterialTheme.typography.bodySmall) }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { parseLocal() }, enabled = inputText.isNotBlank()) { Text("Parse text") }
@@ -484,9 +486,11 @@ private fun ScanTab(onSaveRecipe: suspend (IngestDraft) -> String) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         isRecognizing = true; error = null; savedMessage = null
+        title = ""; ingredientLines = ""; stepLines = ""
         runCatching { InputImage.fromFilePath(context, uri) }.fold(
             onSuccess = { image ->
-                TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS).process(image)
+                val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+                recognizer.process(image)
                     .addOnSuccessListener { result ->
                         recognizedText = result.text.orEmpty()
                         parse()
@@ -499,6 +503,7 @@ private fun ScanTab(onSaveRecipe: suspend (IngestDraft) -> String) {
                         isRecognizing = false
                         error = "Couldn't read that photo (${e.message ?: "unknown error"}). Try again or paste text below."
                     }
+                    .addOnCompleteListener { recognizer.close() }
             },
             onFailure = { e ->
                 isRecognizing = false

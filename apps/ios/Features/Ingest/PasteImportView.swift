@@ -32,8 +32,9 @@ public struct PasteImportView: View {
     var baseURL: URL
 
     private static func defaultBaseURL() -> URL {
-        if let s = Bundle.main.object(forInfoDictionaryKey: "SMIDGEN_API_BASE_URL") as? String,
-           !s.isEmpty, let url = URL(string: s) {
+        // Resolve through SyncConfig so a custom server override (Settings)
+        // applies to paste import, not just prod/Info.plist.
+        if let url = SyncConfig.baseURL {
             return url
         }
         return URL(string: SyncConfig.prodBaseURL)!
@@ -211,8 +212,17 @@ public struct PasteImportView: View {
             }
         }
         .onChange(of: pastedText) { _, _ in
+            if report != nil {
+                // Text edited after a server import — the preview no longer
+                // matches the text. Drop the report but keep the user's
+                // edits; Save stays disabled until Preview/Import refreshes
+                // from the new text.
+                report = nil
+                reportStale = true
+                return
+            }
             // Live local parse preview before any server round-trip.
-            if report == nil && savedMessage == nil {
+            if savedMessage == nil {
                 let parsed = IngredientParser.parseLines(pastedText)
                 if !parsed.isEmpty {
                     ingredientLines = parsed.map { $0.display }.joined(separator: "\n")
@@ -223,11 +233,13 @@ public struct PasteImportView: View {
 
     /// Offline-first local preview: first non-empty line = title,
     /// quantity-led lines = ingredients (via IngredientParser), rest = steps.
-    private func previewLocally() {
+    private func previewLocally(preserveStale: Bool = false) {
         let lines = pastedText.components(separatedBy: .newlines)
         let draft = OCRSplitter.split(lines)
         savedMessage = nil
-        reportStale = false
+        if !preserveStale {
+            reportStale = false
+        }
         error = nil
         // Keep a server title if one already exists and the local split
         // found nothing better — otherwise adopt the local draft.
@@ -269,9 +281,12 @@ public struct PasteImportView: View {
             print("Paste import failed: \(error)")
             // Offline fallback: keep a usable local draft so the user can
             // still review + save. Only mark stale when a prior server
-            // preview exists (a retry must succeed first in that case).
-            reportStale = report != nil
-            previewLocally()
+            // preview exists (a retry must succeed first in that case) —
+            // preserve the flag across the local fallback so Save stays
+            // disabled for a stale preview.
+            let hadReport = report != nil
+            reportStale = hadReport
+            previewLocally(preserveStale: hadReport)
             self.error = clipServerErrorMessage(for: error)
                 ?? "Couldn't reach the recipe service — showing an offline preview instead."
         }
