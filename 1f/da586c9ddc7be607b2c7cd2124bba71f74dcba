@@ -1,0 +1,62 @@
+api/src/import.ts
+  h_6bbd00fe0a456a 1-212
+api/src/index.ts
+  h_6bbd00fe0a456a 10-11,515-518,521,523-546,552-623
+api/src/paprika.ts
+  h_6bbd00fe0a456a 1-1090
+api/test/paprika.test.ts
+  h_6bbd00fe0a456a 1-344
+apps/android/app/src/main/java/com/keepcooking/app/export/RecipeExporter.kt
+  h_6bbd00fe0a456a 40-52,168-188,196-306
+apps/android/app/src/main/java/com/keepcooking/app/import/RecipeImporter.kt
+  h_6bbd00fe0a456a 1-789
+apps/android/app/src/main/java/com/keepcooking/app/navigation/NavGraph.kt
+  h_6bbd00fe0a456a 38,397,460
+apps/android/app/src/main/java/com/keepcooking/app/navigation/Routes.kt
+  h_6bbd00fe0a456a 33
+apps/android/app/src/main/java/com/keepcooking/app/network/ApiService.kt
+  h_6bbd00fe0a456a 80-94
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/ExportScreen.kt
+  h_6bbd00fe0a456a 13,73-76,117-119,139-142,160-173
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/ImportScreen.kt
+  h_6bbd00fe0a456a 1-255
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/MoreScreen.kt
+  h_6bbd00fe0a456a 30,38
+apps/android/app/src/test/java/com/keepcooking/app/RecipeExportImportTest.kt
+  h_6bbd00fe0a456a 1-188
+apps/ios/Export/ExportView.swift
+  h_6bbd00fe0a456a 22,29-38,46-47,76-77,81-88,132-133,139-143
+apps/ios/Export/README.md
+  h_6bbd00fe0a456a 12-103
+apps/ios/Export/RecipeExporter.swift
+  h_6bbd00fe0a456a 71-340
+apps/ios/Features/Ingest/ImportView.swift
+  h_6bbd00fe0a456a 1-476
+apps/ios/Features/Ingest/PaprikaImport.swift
+  h_6bbd00fe0a456a 1-1356
+apps/ios/Features/Library/README.md
+  h_6bbd00fe0a456a 43-50,62,78
+apps/web/src/api.ts
+  h_6bbd00fe0a456a 27-49,261-281,285-298
+apps/web/src/main.ts
+  h_6bbd00fe0a456a 3,490-936,951-980,1049-1131
+packages/contracts/CHANGELOG.md
+  h_6bbd00fe0a456a 2-5
+packages/contracts/README.md
+  h_6bbd00fe0a456a 30-41,50
+packages/contracts/openapi.json
+  h_6bbd00fe0a456a 310-416,770-780,784-787,797-817,824-827,833-836,840-844,862-865,887-895,899-901,911-925,932-934,940-942,947-949,964-969,1268-1331,1398-1444,1470-1510,2727
+packages/contracts/openapi.yaml
+  h_6bbd00fe0a456a 107-142,564-627,938-963,984-995,1005,1014-1025
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1fda586c9ddc7be607b2c7cd2124bba71f74dcba",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
