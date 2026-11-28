@@ -1884,7 +1884,6 @@ struct MenusTabView: View {
 
 struct SettingsView: View {
     @State private var syncing = false
-    @State private var status: String = ""
     // Devices sharing (E2E invite; the syncCode itself
     // lives only in the Keychain and never surfaces here)
     @State private var householdName: String = E2EKeyStore.loadMetadata()?.householdId ?? "hh-demo"
@@ -1925,9 +1924,6 @@ struct SettingsView: View {
                     Task { await syncNow() }
                 }
                 .disabled(syncing)
-                if !status.isEmpty {
-                    Text(status).font(.caption).foregroundStyle(.secondary)
-                }
             } header: {
                 Text("Sync")
             } footer: {
@@ -2058,7 +2054,8 @@ struct SettingsView: View {
         syncing = true
         defer { syncing = false }
         await SyncCoordinator.shared.sync()
-        status = await SyncCoordinator.shared.describe()
+        // The Status row reads the coordinator's lastResult live — nothing
+        // to copy here (a stale copy is what froze "unauthorized" on screen).
     }
 
     /// Persists the Advanced custom-server URL only. Deliberately does NOT

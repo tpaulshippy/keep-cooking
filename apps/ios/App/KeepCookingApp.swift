@@ -270,14 +270,14 @@ struct MorePlaceholder: View {
 // MARK: - Sync status + coordinator (views talk ONLY to this)
 
 struct SyncStatusRow: View {
-    @State private var status = "Offline-ready"
+    // Reads the coordinator's result directly (no local snapshot): the row
+    // refreshes on every sync instead of freezing the first value it saw.
     var body: some View {
         HStack {
             Text("Status")
             Spacer()
-            Text(status).foregroundStyle(.secondary)
+            Text(SyncCoordinator.shared.lastResult).foregroundStyle(.secondary)
         }
-        .task { status = await SyncCoordinator.shared.describe() }
     }
 }
 
