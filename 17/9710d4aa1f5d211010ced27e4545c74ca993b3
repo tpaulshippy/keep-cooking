@@ -1,0 +1,20 @@
+apps/ios/Features/Ingest/CaptionsImportView.swift
+  h_6bbd00fe0a456a 111,161,186
+apps/ios/Features/Ingest/ClipView.swift
+  h_6bbd00fe0a456a 92,154,179
+apps/ios/Features/Ingest/ImportView.swift
+  h_6bbd00fe0a456a 218,278,305
+apps/ios/Features/Ingest/OCRScanView.swift
+  h_6bbd00fe0a456a 226,264,305
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "179710d4aa1f5d211010ced27e4545c74ca993b3",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
