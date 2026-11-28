@@ -29,7 +29,8 @@ check("exactly one Paprika mention", (index.match(/paprika/gi) || []).length ===
 check("MIT mentioned", index.includes("MIT"));
 check("GitHub link", index.includes("https://github.com/tpaulshippy/keep-cooking"));
 check("/app CTA link", index.includes('href="/app"'));
-check("store placeholders marked", index.includes("placeholder"));
+check("native apps marked coming soon", index.includes("coming soon"));
+check("no store links implying availability", !/testflight|play\.google/i.test(index));
 check("privacy stub linked", index.includes("/privacy.html"));
 check("JSON-LD SoftwareApplication", index.includes("SoftwareApplication"));
 check("OG tags", index.includes("og:image") && index.includes("og-image.png")
