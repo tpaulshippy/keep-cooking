@@ -59,7 +59,7 @@ function viewHome(): void {
   shell(`<h1>Keep Cooking</h1>
   <p>Offline-first recipes, planning, shopping and pantry. Your data lives on this device; sync when online.</p>
   <h2>Recent recipes</h2>
-  <ul>${recipes.map((r) => `<li><a href="${href('/recipes/' + r.id)}">${esc((r.payload as { title?: string }).title ?? r.id)}</a></li>`).join('') || '<li>No recipes yet.</li>'}</ul>
+  <ul class="cards">${recipes.map((r) => `<li><a href="${href('/recipes/' + r.id)}">${esc((r.payload as { title?: string }).title ?? r.id)}</a></li>`).join('') || '<li>No recipes yet.</li>'}</ul>
   <p><a href="${href('/ingest')}">Clip a recipe</a> · <a href="${href('/plan')}">Plan the week</a></p>`);
 }
 
@@ -74,7 +74,7 @@ function viewLibrary(q: string): void {
   shell(`<h1>Library</h1>
   <form id="search" role="search"><label for="q">Search recipes</label>
   <input id="q" name="q" type="search" value="${esc(q)}" placeholder="Search title or description" /></form>
-  <ul>${list.map((r) => {
+  <ul class="cards">${list.map((r) => {
     const p = r.payload as { title?: string; servings?: number };
     return `<li><a href="${href('/recipes/' + r.id)}">${esc(p.title ?? r.id)}</a> <span class="muted">serves ${esc(p.servings ?? 4)}</span> <a href="${href('/cook/' + r.id)}">Cook</a></li>`;
   }).join('') || '<li>No matches.</li>'}</ul>`);
