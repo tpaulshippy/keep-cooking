@@ -1,0 +1,43 @@
+name: Deploy Marketing
+
+on:
+  push:
+    branches: [main]
+    paths: ['sites/marketing/**', '.github/workflows/deploy-marketing.yml']
+  workflow_dispatch:
+
+# Independent of the API + web deploys (own Pages project, no shared
+# infra): extra runs wait their turn, same as production-deploy.
+concurrency:
+  group: marketing-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout deploy commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Build + deploy marketing site
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npm ci
+          # Content checks (sections, copy accuracy, OG, path-collision) +
+          # fresh rebuild of sites/marketing/dist/ (gitignored, built here).
+          npm run build --prefix sites/marketing
+          # Direct-upload Pages project (no Git integration): the `keep-cooking`
+          # project serves keepcooking.app + www; production branch is main,
+          # so --branch=main publishes to the custom domains.
+          npx wrangler pages deploy sites/marketing/dist --project-name=keep-cooking --branch=main
