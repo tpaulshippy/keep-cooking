@@ -1,0 +1,16 @@
+apps/ios/Features/Ingest/ClipView.swift
+  h_6bbd00fe0a456a 221-222,226-229
+apps/ios/ShareExtension/ShareViewController.swift
+  h_6bbd00fe0a456a 324-325
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9a18c9439a1048049628344e2fab6656077167b9",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
