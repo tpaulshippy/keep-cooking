@@ -215,6 +215,9 @@ export async function parseInviteBundle(pasted: string): Promise<InviteBundle> {
   } catch {
     throw new Error('That text is not a Keep Cooking invite code.');
   }
+  if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) {
+    throw new Error('That text is not a Keep Cooking invite code.');
+  }
   const v = obj['v'];
   const householdId = obj['householdId'];
   const syncCode = obj['syncCode'];

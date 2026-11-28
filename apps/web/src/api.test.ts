@@ -124,3 +124,28 @@ describe('enrollDevice', () => {
     expect(calls).toHaveLength(2); // initial attempt + exactly one retry
   });
 });
+
+describe('validateCustomServer', () => {
+  it('accepts blank (built-in) and plain https hosts', async () => {
+    const { validateCustomServer } = await import('./api');
+    expect(validateCustomServer('')).toBeNull();
+    expect(validateCustomServer('   ')).toBeNull();
+    expect(validateCustomServer('https://keepcooking.app/api')).toBeNull();
+    expect(validateCustomServer('https://example.com:8443/base/')).toBeNull();
+  });
+
+  it('rejects query strings and fragments (buildUrl concatenates paths)', async () => {
+    const { validateCustomServer } = await import('./api');
+    expect(validateCustomServer('https://host/api?tenant=1')).toMatch(/does not look valid/);
+    expect(validateCustomServer('https://host/api#frag')).toMatch(/does not look valid/);
+  });
+
+  it('allows http only for local dev hosts', async () => {
+    const { validateCustomServer } = await import('./api');
+    expect(validateCustomServer('http://localhost:8787/api')).toBeNull();
+    expect(validateCustomServer('http://127.0.0.1:8787/api')).toBeNull();
+    expect(validateCustomServer('http://mybox.local/api')).toBeNull();
+    expect(validateCustomServer('http://example.com/api')).toMatch(/HTTPS/);
+    expect(validateCustomServer('not a url')).toMatch(/does not look valid/);
+  });
+});

@@ -234,3 +234,106 @@ describe('syncE2E orchestration', () => {
     expect(res.pushed).toBe(501);
   });
 });
+
+describe('invite edge cases', () => {
+  it('rejects JSON null with the controlled error', async () => {
+    await expect(parseInviteBundle('null')).rejects.toThrow('not a Keep Cooking invite code');
+    await expect(parseInviteBundle('[]')).rejects.toThrow('not a Keep Cooking invite code');
+    await expect(parseInviteBundle('{"v":"2"}')).rejects.toThrow('not a Keep Cooking invite code');
+  });
+});
+
+describe('cross-platform vectors (independent node:crypto implementation)', () => {
+  // Sealed with node:crypto (fixed nonce) — never with the code under test.
+  const CODE2 = 'cross-platform-check';
+  const HH2 = 'hh-xplat';
+  const KID2 = 'xEKOTzEQxdGk';
+  const HASH2 = '0e95f88ee969963dc1853f0d6c0cd1a51c6b482bd0c1dd6655de03e636634a36';
+  const identity2 = { householdId: HH2, kid: KID2, hash: HASH2 };
+  const NODE_SEALED: EncryptedEnvelope = {
+    v: 2,
+    alg: 'AES-GCM-256',
+    kid: KID2,
+    householdHash: HASH2,
+    id: 'rec-xplat-1',
+    entity: 'recipe',
+    updatedAt: '2026-03-04T05:06:07.089Z',
+    deviceId: 'dev-node',
+    deleted: false,
+    nonce: 'AAECAwQFBgcICQoL',
+    ciphertext: 'OoROxK4gWVrajnGkwivXvA6if2zCHWki4FabdTG7gSznc3QDROfLYgN9k+sEzRbNYyVxa+Ln+eR9xZzg',
+  };
+
+  it('opens a node-sealed envelope (HKDF + AD + AES-GCM interop)', async () => {
+    const back = await e2eDecrypt(NODE_SEALED, identity2, CODE2);
+    expect(back).toMatchObject({ id: 'rec-xplat-1', deviceId: 'dev-node', entity: 'recipe' });
+    expect(back.payload).toEqual({ title: 'Cross-platform soup', servings: 2 });
+  });
+
+  it('web-sealed envelopes open under node:crypto with a rebuilt AD', async () => {
+    const { createDecipheriv, hkdfSync } = await import('node:crypto');
+    const env = await e2eEncrypt(
+      { id: 'rec-web-1', updatedAt: '2026-05-06T07:08:09.010Z', deviceId: 'dev-web', entity: 'recipe', payload: { title: 'Web soup' } },
+      identity2,
+      CODE2,
+    );
+    const key = Buffer.from(
+      hkdfSync('sha256', Buffer.from(CODE2, 'utf8'), Buffer.from('smidgen-sync-v1', 'utf8'), Buffer.from(`smidgen-sync-v1/hh:${HH2}/kid:${KID2}`, 'utf8'), 32),
+    );
+    const millis = Date.parse(env.updatedAt);
+    const ad = JSON.stringify([
+      'smidgen-e2e-ad-v1', '2', 'AES-GCM-256', env.kid, env.householdHash, env.id,
+      String(millis), env.deviceId, env.deleted ? '1' : '0', env.entity,
+    ]);
+    const combined = Buffer.from(env.ciphertext, 'base64');
+    const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(env.nonce, 'base64'), { authTagLength: 16 });
+    decipher.setAAD(Buffer.from(ad, 'utf8'));
+    decipher.setAuthTag(combined.subarray(combined.length - 16));
+    const plain = Buffer.concat([decipher.update(combined.subarray(0, combined.length - 16)), decipher.final()]);
+    expect(JSON.parse(plain.toString('utf8'))).toEqual({ title: 'Web soup' });
+  });
+});
+
+describe('syncE2E revision handling', () => {
+  const identity = { householdId: HH, kid: KID, hash: HASH };
+
+  it('coalesces duplicate-id revisions to a single push (latest wins)', async () => {
+    const store = new Store();
+    store.clearAll();
+    store.upsert('recipe', 'r1', { title: 'v1' });
+    store.upsert('recipe', 'r1', { title: 'v2' });
+    expect(store.state.outbox).toHaveLength(2);
+    const pushed: EncryptedEnvelope[] = [];
+    const t: E2ETransport = {
+      pull: async () => [],
+      push: async (_hash, envs) => {
+        pushed.push(...envs);
+        return envs.map((e) => e.id);
+      },
+    };
+    const res = await syncE2E(store, identity, CODE, t);
+    expect(pushed).toHaveLength(1);
+    expect(res).toEqual({ pulled: 0, pushed: 1, conflicts: 0 });
+    expect(store.state.outbox).toHaveLength(0);
+    expect(await e2eDecrypt(pushed[0], identity, CODE)).toMatchObject({ id: 'r1' });
+    expect((await e2eDecrypt(pushed[0], identity, CODE)).payload).toEqual({ title: 'v2' });
+  });
+
+  it('drains an identical replay after a lost PUT response', async () => {
+    const store = new Store();
+    store.clearAll();
+    const local = store.upsert('recipe', 'r1', { title: 'Local' });
+    // Server stored it but the response was lost: the retry sees no stored
+    // id, then the forced full pull replays our exact revision.
+    const winner = await e2eEncrypt({ ...local }, identity, CODE);
+    let pulls = 0;
+    const t: E2ETransport = {
+      pull: async () => (++pulls === 1 ? [] : [winner]),
+      push: async () => [],
+    };
+    const res = await syncE2E(store, identity, CODE, t);
+    expect(pulls).toBe(2);
+    expect(res.conflicts).toBe(1);
+    expect(store.state.outbox).toHaveLength(0);
+  });
+});

@@ -10,6 +10,7 @@ import {
   loadMetadata,
   parseInviteBundle,
   resetPullCursor,
+  type E2EMetadata,
   type InviteBundle,
 } from './e2e';
 import { pushOutbox, syncE2E, type PushTransport } from './sync';
@@ -91,6 +92,19 @@ let advancedOpen = false;
 let healthResult = '';
 let hintHealth = '';
 let pendingHint: string | null = null;
+
+type ActiveCredential = { metadata: E2EMetadata; syncCode: string };
+
+// Identity creation is shared: concurrent callers (warm-up, Sync now,
+// Connect) join the same in-flight creation instead of minting competing
+// identities, only one of which would survive.
+let identityInflight: Promise<ActiveCredential | null> | null = null;
+function getIdentity(household: string): Promise<ActiveCredential | null> {
+  identityInflight ??= ensureE2EIdentity(household).finally(() => {
+    identityInflight = null;
+  });
+  return identityInflight;
+}
 
 const NAV: [string, string][] = [
   ['/', 'Home'],
@@ -1607,8 +1621,11 @@ async function doSyncNow(): Promise<void> {
   syncingNow = true;
   render();
   try {
-    const cred = await ensureE2EIdentity(loadMetadata()?.householdId ?? 'hh-demo');
-    if (cred && crypto.subtle) {
+    // No WebCrypto (plain-http contexts) means no E2E: fall back before
+    // touching identity creation, which needs crypto.subtle.
+    const hasWebCrypto = typeof crypto !== 'undefined' && !!crypto.subtle;
+    const cred = hasWebCrypto ? await getIdentity(loadMetadata()?.householdId ?? 'hh-demo') : null;
+    if (cred) {
       // Best-effort device enrollment for signed writes (parity with native:
       // enrollment runs first on every sync and never blocks reads).
       try {
@@ -1669,7 +1686,7 @@ async function doLegacySync(): Promise<string> {
 async function doConnectDevice(): Promise<void> {
   try {
     const household = loadMetadata()?.householdId ?? 'hh-demo';
-    const cred = await ensureE2EIdentity(household);
+    const cred = await getIdentity(household);
     if (!cred) {
       joinResult = 'Could not access secure storage — code unavailable.';
       render();
@@ -1742,7 +1759,7 @@ async function doJoin(): Promise<void> {
       pendingJoin = bundle;
       joinResult = `This device already belongs to household ${active.metadata.householdId}. Joining switches to ${bundle.householdId} and replaces this device's key.`;
     } else {
-      finishJoin(bundle);
+      await finishJoin(bundle);
     }
   } catch (e) {
     joinResult = e instanceof Error ? e.message : 'That text is not a Keep Cooking invite code.';
@@ -1759,33 +1776,51 @@ async function doJoinAnyway(): Promise<void> {
     render();
     return;
   }
-  finishJoin(staged);
-  render();
+  await finishJoin(staged);
 }
 
 /** Persists a verified bundle; the endpoint hint is NEVER auto-applied. */
-function finishJoin(bundle: InviteBundle): void {
-  void acceptInvite(bundle).then((ok) => {
+async function finishJoin(bundle: InviteBundle): Promise<void> {
+  joiningCode = true;
+  try {
+    const prev = await loadActive();
+    const ok = await acceptInvite(bundle);
     if (!ok) {
       joinResult = 'Code does not match — it was mistyped or tampered with.';
-      render();
       return;
     }
     pendingJoin = null;
+    // Never display (or share) a stale credential: the visible code
+    // belonged to the previous household.
+    inviteCode = null;
+    if (!prev || prev.metadata.hash !== bundle.hash) {
+      // New household, new local state: old records and queued edits must
+      // neither show under nor upload into the joined household.
+      store.clearAll();
+      resetPullCursor();
+    }
     pendingHint = null;
     hintHealth = '';
-    resetPullCursor();
     const current = resolveApiBase();
     const hint = bundle.endpointHint?.trim();
     if (hint && hint !== current) {
       pendingHint = hint;
       advancedOpen = true;
       joinResult = `Joined household ${bundle.householdId}. The code suggests a custom server — review it under Advanced before switching.`;
+    } else if ((getApiBaseOverride() ?? '').trim()) {
+      // A built-in invite names no server: staying on a stale custom
+      // override would sync the joined household against the wrong backend
+      // (appearing empty), so fall back to built-in explicitly.
+      setApiBaseOverride(null);
+      resetPullCursor();
+      joinResult = `Joined household ${bundle.householdId}. Switched to the built-in server (the code names no custom server).`;
     } else {
       joinResult = `Joined household ${bundle.householdId}.`;
     }
+  } finally {
+    joiningCode = false;
     render();
-  });
+  }
 }
 
 async function doTestServer(): Promise<void> {
@@ -1853,8 +1888,10 @@ function viewSettings(): void {
   const hasCustomServer = !!override?.trim();
   const household = loadMetadata()?.householdId ?? 'hh-demo';
   // Warm the E2E identity in the background so there is always a key to
-  // share — the user never sees key setup, only Devices sharing.
-  void ensureE2EIdentity(household).catch(() => undefined);
+  // share — the user never sees key setup, only Devices sharing. A join in
+  // progress owns identity creation; the warm-up must not mint (or commit)
+  // a competing identity underneath it.
+  if (!joiningCode && !pendingJoin) void getIdentity(household).catch(() => undefined);
   const inviteBlock = inviteCode
     ? `<p><code style="word-break:break-all">${esc(inviteCode)}</code></p>` +
       `<p><button type="button" id="copycode">Copy code</button> ` +

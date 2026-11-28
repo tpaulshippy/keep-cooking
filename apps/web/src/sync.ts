@@ -305,8 +305,20 @@ export async function syncE2E(
   let pushed = 0;
   let conflicts = 0;
   if (pending.length > 0) {
-    const encrypted: EncryptedEnvelope[] = [];
+    // Coalesce to the latest revision per record (native outbox parity:
+    // keyed by id, last write wins). The blind server LWW-merges each id
+    // independently, so pushing every queued revision would over-drain: a
+    // single stored id would ack older revisions the server never saw,
+    // skipping reconciliation for a revision it actually rejected.
+    const latest = new Map<string, SyncEnvelope>();
     for (const env of pending) {
+      const key = `${env.entity}:${env.id}`;
+      const cur = latest.get(key);
+      if (!cur || env.updatedAt >= cur.updatedAt) latest.set(key, env);
+    }
+    const coalesced = [...latest.values()];
+    const encrypted: EncryptedEnvelope[] = [];
+    for (const env of coalesced) {
       encrypted.push(await e2eEncrypt(env, identity, syncCode));
     }
     const stored = new Set<string>();
@@ -315,12 +327,18 @@ export async function syncE2E(
       for (const id of await transport.push(identity.hash, chunk)) stored.add(id);
     }
     const unstored: SyncEnvelope[] = [];
-    for (const env of pending) {
+    for (const env of coalesced) {
       if (stored.has(env.id)) {
         pushed++;
-        store.drainOutbox([{ id: env.id, updatedAt: env.updatedAt }]);
       } else {
         unstored.push(env);
+      }
+    }
+    // Draining is by revision identity: superseded revisions of a stored id
+    // go too (their content is subsumed by the pushed latest revision).
+    for (const env of pending) {
+      if (stored.has(env.id)) {
+        store.drainOutbox([{ id: env.id, updatedAt: env.updatedAt }]);
       }
     }
     if (unstored.length > 0) {
@@ -335,8 +353,15 @@ export async function syncE2E(
       for (const env of winners) {
         if (countsAsPulled(store, env)) pulled++;
         store.applyRemote(env);
+        // A lost PUT response can leave our exact revision queued while the
+        // server already holds it (the retry's id is absent from `stored`).
+        // The winner matches our pending identity, so drain it instead of
+        // retrying — and re-pushing — forever.
+        if (unstored.some((u) => u.entity === env.entity && u.id === env.id && u.updatedAt === env.updatedAt)) {
+          store.drainOutbox([{ id: env.id, updatedAt: env.updatedAt }]);
+        }
       }
-      conflicts += unstored.length;
+      conflicts += new Set(unstored.map((e) => `${e.entity}:${e.id}`)).size;
     }
   }
   return { pulled, pushed, conflicts };

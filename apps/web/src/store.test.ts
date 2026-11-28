@@ -206,3 +206,22 @@ describe('serverKnown provenance', () => {
     expect(new Store().isServerKnown('recipe', 'srv-9')).toBe(true);
   });
 });
+
+describe('legacy demo migration', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('drops demo-* outbox entries and provenance (E2E rejects non-UUID ids)', () => {
+    localStorage.setItem('kc.recipes', JSON.stringify([]));
+    localStorage.setItem(
+      'kc.outbox',
+      JSON.stringify([
+        { id: 'demo-pasta', updatedAt: '2026-01-01T00:00:00.000Z', deviceId: 'd', entity: 'recipe', payload: { title: 'Edited demo' } },
+        { id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', updatedAt: '2026-01-01T00:00:00.000Z', deviceId: 'd', entity: 'recipe', payload: { title: 'User recipe' } },
+      ]),
+    );
+    localStorage.setItem('kc.serverKnown', JSON.stringify({ 'recipe:demo-pasta': true, 'recipe:other': true }));
+    const store = new Store();
+    expect(store.state.outbox.map((e) => e.id)).toEqual(['a1b2c3d4-e5f6-7890-abcd-ef1234567890']);
+    expect(store.state.serverKnown).toEqual({ 'recipe:other': true });
+  });
+});

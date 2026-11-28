@@ -295,7 +295,7 @@ export function validateCustomServer(raw: string): string | null {
     url = null;
   }
   const host = url?.hostname.toLowerCase() ?? '';
-  if (!url || !host) return 'That server URL does not look valid — keeping current server.';
+  if (!url || !host || url.search || url.hash) return 'That server URL does not look valid — keeping current server.';
   const scheme = url.protocol.toLowerCase().replace(/:$/, '');
   const isLocalDev = host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local');
   if (scheme !== 'https' && !(scheme === 'http' && isLocalDev)) {
