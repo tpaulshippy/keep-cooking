@@ -735,9 +735,13 @@ suspend fun importParsed(
                 prepMinutes = r.prepMinutes ?: existing?.prepMinutes,
                 cookMinutes = r.cookMinutes ?: existing?.cookMinutes,
                 rating = r.rating ?: existing?.rating,
+                isFavorite = existing?.isFavorite ?: false,
                 source = r.source.ifBlank { existing?.source.orEmpty() },
                 sourceUrl = r.sourceUrl.ifBlank { existing?.sourceUrl.orEmpty() },
                 categoriesJson = JsonArray(tags.map { JsonPrimitive(it) }).toString(),
+                photoOriginal = existing?.photoOriginal,
+                photoLarge1024 = existing?.photoLarge1024,
+                photoThumb = existing?.photoThumb,
                 nutritionText = r.nutritionalInfo.ifBlank { existing?.nutritionText.orEmpty() },
                 updatedAt = now,
                 deviceId = deviceId,
@@ -793,8 +797,15 @@ suspend fun importParsed(
                             put("source", JsonPrimitive(saved?.source.orEmpty()))
                             put("sourceUrl", JsonPrimitive(saved?.sourceUrl.orEmpty()))
                             put("categories", cats)
-                            saved?.photoOriginal?.let { put("photoOriginal", JsonPrimitive(it)) }
-                            saved?.photoThumb?.let { put("photoThumb", JsonPrimitive(it)) }
+                            put("isFavorite", JsonPrimitive(saved?.isFavorite ?: false))
+                            put(
+                                "photoKeys",
+                                kotlinx.serialization.json.buildJsonObject {
+                                    put("original", JsonPrimitive(saved?.photoOriginal ?: ""))
+                                    put("large1024", JsonPrimitive(saved?.photoLarge1024 ?: ""))
+                                    put("thumb", JsonPrimitive(saved?.photoThumb ?: ""))
+                                },
+                            )
                             put("nutritionText", JsonPrimitive(saved?.nutritionText.orEmpty()))
                             put(
                                 "ingredients",

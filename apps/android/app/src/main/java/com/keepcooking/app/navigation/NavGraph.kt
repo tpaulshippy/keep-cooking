@@ -277,8 +277,14 @@ private suspend fun applyDuplicateMerge(
                 put("source", updatedSurvivor.source)
                 put("sourceUrl", updatedSurvivor.sourceUrl)
                 put("categories", JsonArray(survivorCats.map { JsonPrimitive(it) }))
-                updatedSurvivor.photoOriginal?.let { put("photoOriginal", it) }
-                updatedSurvivor.photoThumb?.let { put("photoThumb", it) }
+                put(
+                    "photoKeys",
+                    buildJsonObject {
+                        put("original", JsonPrimitive(updatedSurvivor.photoOriginal ?: ""))
+                        put("large1024", JsonPrimitive(updatedSurvivor.photoLarge1024 ?: ""))
+                        put("thumb", JsonPrimitive(updatedSurvivor.photoThumb ?: ""))
+                    },
+                )
                 put("nutritionText", updatedSurvivor.nutritionText)
                 put(
                     "ingredients",
@@ -485,6 +491,7 @@ internal suspend fun saveRecipeEdit(
             source = resolvedSource,
             sourceUrl = draft.sourceUrl,
             categoriesJson = JsonArray(cats.map { JsonPrimitive(it) }).toString(),
+            nutritionText = draft.nutritionText,
             updatedAt = now,
             deviceId = deviceId,
         ),
