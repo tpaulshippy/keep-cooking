@@ -99,6 +99,7 @@
 		68A9075E61B2A5DBC2A7CF7A /* MenuPlanning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 643087D104C3146F314BB6F9 /* MenuPlanning.swift */; };
 		728629008164321F8E2C9345 /* MenuPlanning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 643087D104C3146F314BB6F9 /* MenuPlanning.swift */; };
 		C86BCF8C20B8DBFE6D2BF00F /* MenuPlanningTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1DF1293845B621A65A655DE /* MenuPlanningTests.swift */; };
+		B8E4DA2E3C5F59A1B2D6E8F33 /* MenusPaprikaViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F3C91D2B4E48F0A1C5D7E22 /* MenusPaprikaViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -147,6 +148,7 @@
 		0BC2356A8A6B5CCF643B2EE4 /* recipe-09.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "recipe-09.json"; sourceTree = "<group>"; };
 		0D99477653F956F97223685A /* KeepCookingUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = KeepCookingUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		131B72E0EC3EB6EC5CC0F146 /* DemoFlows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoFlows.swift; sourceTree = "<group>"; };
+		A7F3C91D2B4E48F0A1C5D7E22 /* MenusPaprikaViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenusPaprikaViews.swift; sourceTree = "<group>"; };
 		1848936A3CC5C47FA2D3B258 /* KeepCookingIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeepCookingIntents.swift; sourceTree = "<group>"; };
 		1962776F2E60FB4A81CFB17A /* KeepCookingShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = KeepCookingShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		1B49F0C98D1D42A92BAAC37D /* ShopViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShopViews.swift; sourceTree = "<group>"; };
@@ -348,6 +350,7 @@
 				AB13E4BF125192FE69877AD1 /* Assets.xcassets */,
 				B0E2E515CA1E4B1FA2E20001 /* BYOE2E.swift */,
 				131B72E0EC3EB6EC5CC0F146 /* DemoFlows.swift */,
+				A7F3C91D2B4E48F0A1C5D7E22 /* MenusPaprikaViews.swift */,
 				78CF752BEB5799714C262738 /* KeepCookingApp.swift */,
 			);
 			path = App;
@@ -739,6 +742,7 @@
 				D69B64F308EF648A7093EFA9 /* OCRScanView.swift in Sources */,
 				8F6BC75DE7F90D499F8E5978 /* PlanAggregation.swift in Sources */,
 				68A9075E61B2A5DBC2A7CF7A /* MenuPlanning.swift in Sources */,
+				B8E4DA2E3C5F59A1B2D6E8F33 /* MenusPaprikaViews.swift in Sources */,
 				1D7D8265EA70F7516559552F /* PlanViews.swift in Sources */,
 				B69C24A0C530C685D90F1F92 /* RecipeExporter.swift in Sources */,
 				B96072184B3458205049DCF6 /* RecipeScaler.swift in Sources */,
