@@ -154,4 +154,27 @@ final class DemoFlowsUITests: XCTestCase {
         if next.waitForExistence(timeout: 5) { next.tap() }
         sleep(2)
     }
+
+    // MARK: 4 — nutrition-panel: Ingredients tab ends in an expanded Nutrition section.
+
+    func testNutritionPanel() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        wait(id(app, "recipe-list"), "seeded recipe list missing")
+        let firstRecipe = id(app, "recipe-list").descendants(matching: .button).firstMatch
+        wait(firstRecipe, "no recipe row")
+        firstRecipe.tap()
+        // Detail opens on the Ingredients pane; Nutrition sits at its bottom.
+        let panel = id(app, "nutrition-panel")
+        wait(panel, "nutrition panel missing in Ingredients tab")
+        app.swipeUp()
+        sleep(1)
+        app.swipeUp()
+        sleep(1)
+        let shot = app.screenshot()
+        let url = URL(fileURLWithPath: "/tmp/kc-nutrition-ios.png")
+        try? shot.pngRepresentation.write(to: url)
+        add(XCTAttachment(screenshot: shot))
+    }
 }
