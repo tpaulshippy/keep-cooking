@@ -1,0 +1,14 @@
+.github/workflows/android-check.yml
+  h_6bbd00fe0a456a 36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2fcd312d3724cb29050aaa6d4803742d06f6263b",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
