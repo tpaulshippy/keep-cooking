@@ -133,10 +133,17 @@ the same flow on iOS + Android against Room/SwiftData offline-first:
 ## Backend origin (issue 28)
 
 - Canonical API origin is now `https://keepcooking.app/api` (custom domain
-  in front of the same single Worker + D1 + R2 — no new infra).
+  in front of the same single Worker + D1 + R2 — no new infra). One-time
+  prerequisite: a Cloudflare Worker Route `keepcooking.app/api/*` → the
+  `keep-cooking-api` Worker (plus DNS for `keepcooking.app`) must exist
+  before this base URL works — until then keep using the workers.dev URL.
 - The Worker dual-serves every route at both `/…` and `/api/…`, so the old
   `https://keep-cooking-api.<account>.workers.dev` origin still works
   (backward-compat window for existing clients/demos).
 - Any demo command that used the workers.dev origin can swap the base URL
   to `https://keepcooking.app/api` with no other change (auth is
-  header-signature over the full path, not cookies).
+  header-signature over the full path, not cookies) — EXCEPT manually
+  signed curl commands: the signature canonical string covers the full
+  path as sent, so re-derive it from the serialized request URL
+  (`METHOD + "\n" + /api/...path+query + "\n" + ts + "\n" + hex(SHA256(body))`).
+  Swapping only the host while signing the old root path yields 401.

@@ -120,15 +120,19 @@ describe('dual-serve: /api/* and root paths', () => {
 
   it('open enrollment works on both mounts; e2e sync write works via /api', async () => {
     const { app, dev } = await prodApp();
-    const fresh = makeDevice();
-    const enrollBody = JSON.stringify({ deviceId: fresh.id, publicKey: fresh.publicKeyB64 });
+    // Distinct device per mount, both expecting 201: a shared device would
+    // let the second call pass as a 200 idempotent re-enroll and mask a
+    // broken /api mount. First-time enrollment must work on both.
     for (const p of ['/v2/devices', '/api/v2/devices']) {
+      const fresh = makeDevice();
+      const enrollBody = JSON.stringify({ deviceId: fresh.id, publicKey: fresh.publicKeyB64 });
       const res = await app.request(p, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: enrollBody,
       });
-      expect([200, 201]).toContain(res.status);
+      expect(res.status).toBe(201);
+      expect(await res.json()).toEqual({ deviceId: fresh.id, enrolledAt: expect.any(String) });
     }
     const envBody = JSON.stringify([
       {
