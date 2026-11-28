@@ -517,7 +517,11 @@ export function createApp(
   api.get('/export', async (c) => {
     const a = getAgent(c);
     const scopeHousehold = a?.householdId;
-    const qHousehold = c.req.query('householdId');
+    // Normalize a present-but-blank householdId to undefined: `?` only
+    // skips null/undefined, and listStores treat '' as "no filter", which
+    // would leak every household's recipes to an unscoped request.
+    const qRaw = (c.req.query('householdId') ?? '').trim();
+    const qHousehold = qRaw ? qRaw : undefined;
     if (scopeHousehold && qHousehold && qHousehold !== scopeHousehold) return c.json({ error: 'not found' }, 404);
     const format = (c.req.query('format') ?? 'json').toLowerCase();
     if (!['json', 'md', 'html', 'paprikarecipes', 'yaml'].includes(format)) {
@@ -531,7 +535,9 @@ export function createApp(
       return c.json({ error: 'export needs all=true, ids=, id= or cookbook=' }, 400);
     }
     const visible = await getStore().listRecipes(qHousehold ?? scopeHousehold);
-    let recipes = all ? visible : visible.filter((r) => ids.includes(r.id));
+    // ids= is ignored when all=true (contract); cookbook= alone selects the
+    // household before its category filter applies.
+    let recipes = (all || ids.length === 0) ? visible : visible.filter((r) => ids.includes(r.id));
     if (cookbook) {
       const want = cookbook.toLowerCase();
       recipes = recipes.filter((r) => (r.categories ?? []).some((cat) => cat.toLowerCase() === want));
@@ -545,7 +551,10 @@ export function createApp(
       });
     }
     if (format === 'html') {
-      return new Response(recipesToHtml(recipes), {
+      // One recipe keeps the canonical single-recipe document; multi
+      // selections use the combined articles document.
+      const body = recipes.length === 1 ? recipeToHtml(recipes[0]!) : recipesToHtml(recipes);
+      return new Response(body, {
         headers: { 'content-type': 'text/html; charset=utf-8', ...dl('export.html') },
       });
     }
@@ -576,7 +585,8 @@ export function createApp(
     const ext = m[2]!;
     if (m[1] === 'all') {
       if (ext !== 'paprikarecipes' && ext !== 'yaml' && ext !== 'yml') return c.json({ error: 'not found' }, 404);
-      const qHousehold = c.req.query('householdId');
+      const qRaw = (c.req.query('householdId') ?? '').trim();
+      const qHousehold = qRaw ? qRaw : undefined;
       if (scopeHousehold && qHousehold && qHousehold !== scopeHousehold) return c.json({ error: 'not found' }, 404);
       const all = await getStore().listRecipes(qHousehold ?? scopeHousehold);
       if (ext === 'paprikarecipes') {

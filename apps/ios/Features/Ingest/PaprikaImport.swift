@@ -1128,10 +1128,11 @@ public enum PaprikaImportParser {
         guard let html = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else {
             return ParsedFile(warnings: ["Couldn't decode that HTML file as text."])
         }
-        // 1) JSON-LD Recipe blocks (Paprika 4+ / schema.org).
-        for block in extractJsonLd(html) {
-            if let recipe = paprikaFromJsonLd(block) { return ParsedFile(recipes: [recipe]) }
-        }
+        // 1) JSON-LD Recipe blocks (Paprika 4+ / schema.org). Accumulate
+        // EVERY block so a multi-recipe HTML export round-trips all of its
+        // recipes instead of just the first.
+        let ldRecipes = extractJsonLd(html).flatMap { paprikaRecipesFromJsonLd($0) }
+        if !ldRecipes.isEmpty { return ParsedFile(recipes: ldRecipes) }
         // 2) hRecipe microformat (Paprika ≤3).
         if let recipe = paprikaFromHRecipe(html) { return ParsedFile(recipes: [recipe]) }
         // 3) Visible headings fallback.
@@ -1163,27 +1164,32 @@ public enum PaprikaImportParser {
         return isRecipe ? [obj] : []
     }
 
+    /// All recipes in one JSON-LD block (unwraps @graph; usually one).
+    static func paprikaRecipesFromJsonLd(_ obj: [String: Any]) -> [ParsedRecipe] {
+        jsonLdRecipes(obj).compactMap { r -> ParsedRecipe? in
+            var dict: [String: Any] = [:]
+            dict["name"] = r["name"]
+            dict["description"] = r["description"]
+            if let ings = r["recipeIngredient"] as? [String] { dict["ingredients"] = ings.joined(separator: "\n") }
+            else if let s = r["recipeIngredient"] as? String { dict["ingredients"] = s }
+            if let instr = r["recipeInstructions"] {
+                dict["directions"] = howToStepsToText(instr)
+            }
+            dict["servings"] = [r["recipeYield"]].compactMap { $0 }.map { "\($0)" }.first
+            dict["prep_time"] = r["prepTime"] as? String
+            dict["cook_time"] = r["cookTime"] as? String
+            dict["total_time"] = r["totalTime"] as? String
+            if let cats = r["recipeCategory"] {
+                dict["categories"] = (cats as? [String]) ?? ((cats as? String).map { [$0] } ?? [])
+            }
+            if let author = r["author"] as? [String: Any] { dict["source"] = author["name"] }
+            else if let author = r["author"] as? String { dict["source"] = author }
+            return parsePaprikaObject(dict)
+        }
+    }
+
     static func paprikaFromJsonLd(_ obj: [String: Any]) -> ParsedRecipe? {
-        let candidates = jsonLdRecipes(obj)
-        guard let r = candidates.first else { return nil }
-        var dict: [String: Any] = [:]
-        dict["name"] = r["name"]
-        dict["description"] = r["description"]
-        if let ings = r["recipeIngredient"] as? [String] { dict["ingredients"] = ings.joined(separator: "\n") }
-        else if let s = r["recipeIngredient"] as? String { dict["ingredients"] = s }
-        if let instr = r["recipeInstructions"] {
-            dict["directions"] = howToStepsToText(instr)
-        }
-        dict["servings"] = [r["recipeYield"]].compactMap { $0 }.map { "\($0)" }.first
-        dict["prep_time"] = r["prepTime"] as? String
-        dict["cook_time"] = r["cookTime"] as? String
-        dict["total_time"] = r["totalTime"] as? String
-        if let cats = r["recipeCategory"] {
-            dict["categories"] = (cats as? [String]) ?? ((cats as? String).map { [$0] } ?? [])
-        }
-        if let author = r["author"] as? [String: Any] { dict["source"] = author["name"] }
-        else if let author = r["author"] as? String { dict["source"] = author }
-        return parsePaprikaObject(dict)
+        paprikaRecipesFromJsonLd(obj).first
     }
 
     static func howToStepsToText(_ instr: Any) -> String {

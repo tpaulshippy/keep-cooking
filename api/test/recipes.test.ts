@@ -61,10 +61,17 @@ describe('recipes CRUD + scale + export + misc', () => {
     });
     const r1 = (await (await mk('Bulk One')).json()) as { id: string };
     const r2 = (await (await mk('Bulk Two')).json()) as { id: string };
+    const r3body = {
+      title: 'Bulk Three', servings: 2, householdId: 'hh-demo',
+      categories: ['Unselected'],
+      ingredients: [{ name: 'flour', display: 'flour' }],
+      steps: [{ text: 'Mix.' }],
+    };
+    const r3 = (await (await req(app, 'POST', '/api/recipes', { body: r3body })).json()) as { id: string };
 
     const allJson = await req(app, 'GET', '/api/export?format=json&all=true');
     expect(allJson.status).toBe(200);
-    expect(((await allJson.json()) as unknown[])).toHaveLength(2);
+    expect(((await allJson.json()) as unknown[])).toHaveLength(3);
 
     const one = await req(app, 'GET', `/api/export?format=json&ids=${r1.id}`);
     expect(one.status).toBe(200);
@@ -75,19 +82,38 @@ describe('recipes CRUD + scale + export + misc', () => {
     const md = await req(app, 'GET', `/api/export?format=md&ids=${r1.id},${r2.id}`);
     expect(md.status).toBe(200);
     expect(md.headers.get('content-type')).toContain('text/markdown');
-    expect(await md.text()).toContain('---');
+    const mdText = await md.text();
+    expect(mdText).toContain('---');
+    expect(mdText).toContain('Bulk One');
+    expect(mdText).toContain('Bulk Two');
+    expect(mdText).not.toContain('Bulk Three');
 
     const html = await req(app, 'GET', `/api/export?format=html&ids=${r1.id},${r2.id}`);
     expect(html.status).toBe(200);
     const htmlText = await html.text();
     expect(htmlText).toContain('<hr/>');
     expect(htmlText.match(/<html/g)).toHaveLength(1);
+    expect(htmlText).toContain('Bulk One');
+    expect(htmlText).toContain('Bulk Two');
+    expect(htmlText).not.toContain('Bulk Three');
+
+    // A single-recipe selection keeps the canonical single document.
+    const singleHtml = await req(app, 'GET', `/api/export?format=html&ids=${r1.id}`);
+    const singleText = await singleHtml.text();
+    expect(singleText).toContain('<title>Bulk One</title>');
+    expect(singleText).not.toContain('<hr/>');
 
     const zip = await req(app, 'GET', `/api/export?format=paprikarecipes&ids=${r1.id},${r2.id}`);
     expect(zip.status).toBe(200);
     expect(zip.headers.get('content-type')).toContain('application/zip');
     const magic = new Uint8Array(await zip.arrayBuffer()).slice(0, 2);
     expect(Array.from(magic)).toEqual([0x50, 0x4b]);
+
+    // Cookbook-only selection (no ids) scopes by category instead of 404ing.
+    const cb = await req(app, 'GET', '/api/export?format=json&cookbook=unselected');
+    expect(cb.status).toBe(200);
+    const cbBody = (await cb.json()) as { id: string }[];
+    expect(cbBody.map((r) => r.id)).toEqual([r3.id]);
 
     const yaml = await req(app, 'GET', `/api/export?format=yaml&ids=${r1.id}`);
     expect(yaml.status).toBe(200);

@@ -65,9 +65,9 @@ public struct RecipeExportView: View {
 
     private var selected: [Recipe] {
         // Preserve the library order (stable file/ZIP member order no matter
-        // the toggle sequence) and drop IDs the live query no longer has.
-        let valid = Set(recipes.map(\.id))
-        return recipes.filter { selectedIds.contains($0.id) && valid.contains($0.id) }
+        // the toggle sequence). Stale IDs are pruned by onChange, so the set
+        // always matches the visible query.
+        recipes.filter { selectedIds.contains($0.id) }
     }
 
     private var allSelected: Bool {
