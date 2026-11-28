@@ -17,6 +17,8 @@ enum class ClipSource(val raw: String) {
     @SerialName("youtube") YOUTUBE("youtube"),
     @SerialName("ocr") OCR("ocr"),
     @SerialName("clipboard") CLIPBOARD("clipboard"),
+    @SerialName("text") TEXT("text"),
+    @SerialName("photo") PHOTO("photo"),
 }
 
 @Serializable

@@ -8,6 +8,7 @@ import { aggregateWeekToList, collectPlanIngredients, scaleIngredientsForServing
 import { sortedRows, toggleItemChecked, shopRowHtml } from './lists';
 import { safeHttpUrl, ingredientLabel } from './display';
 import { pushOutbox, type PushTransport } from './sync';
+import { firstNonEmptyLine, parsePastedText, previewToRecipeInput, recipeToPreviewFields } from './ingest';
 
 const store = new Store();
 const root = document.getElementById('app')!;
@@ -875,12 +876,66 @@ function viewMenus(): void {
 // ---- Ingest ----
 function viewIngest(): void {
   shell(`<h1>Clip a recipe</h1>
+  <div role="tablist" aria-label="Ingest methods">
+    <button type="button" role="tab" id="tab-link" aria-controls="panel-link" aria-selected="true">Link</button>
+    <button type="button" role="tab" id="tab-text" aria-controls="panel-text" aria-selected="false">Text</button>
+    <button type="button" role="tab" id="tab-photo" aria-controls="panel-photo" aria-selected="false">Photo</button>
+  </div>
+  <section id="panel-link" role="tabpanel" aria-labelledby="tab-link">
   <form id="clip"><label>Source URL <input name="url" type="url" placeholder="https://…" /></label>
   <label>Caption or pasted text <textarea name="caption" rows="4"></textarea></label>
   <label>From clipboard <input name="fromclip" type="checkbox" /></label>
   <button type="submit">Clip</button></form>
   <p id="status" role="status" aria-live="polite"></p>
-  <p class="muted">Offline: saves as a local draft recipe. Online: also sends to the API clip endpoint.</p>`);
+  <p class="muted">Offline: saves as a local draft recipe. Online: also sends to the API clip endpoint.</p>
+  </section>
+  <section id="panel-text" role="tabpanel" aria-labelledby="tab-text" hidden>
+  <form id="clip-text">
+  <label for="pastetext">Paste recipe text</label>
+  <textarea id="pastetext" name="pastetext" rows="8" placeholder="Paste the recipe here — title on the first line"></textarea>
+  <p class="muted">Title defaults to the first line.</p>
+  <button type="submit">Paste &amp; preview</button></form>
+  <p id="textstatus" role="status" aria-live="polite"></p>
+  <form id="text-preview" hidden>
+  <h2>Preview</h2>
+  <label for="text-title">Title</label>
+  <input id="text-title" name="title" />
+  <label for="text-ings">Ingredients (one per line)</label>
+  <textarea id="text-ings" name="ingredients" rows="5"></textarea>
+  <label for="text-steps">Steps (one per line)</label>
+  <textarea id="text-steps" name="steps" rows="5"></textarea>
+  <button type="submit">Save</button></form>
+  </section>
+  <section id="panel-photo" role="tabpanel" aria-labelledby="tab-photo" hidden>
+  <form id="clip-photo">
+  <label for="photo-file">Recipe photo</label>
+  <input id="photo-file" name="photo" type="file" accept="image/*" />
+  <p><img id="photo-img" alt="Attached recipe photo preview" hidden style="max-width:100%" /></p>
+  <label for="photo-ocr">Transcribed / OCR text (paste or type from photo)</label>
+  <textarea id="photo-ocr" name="ocr" rows="8" placeholder="Type or paste the visible text from the photo"></textarea>
+  <p class="muted">Web has no on-device OCR yet — attach photo for reference, paste visible text.</p>
+  <button type="submit">Parse &amp; preview</button></form>
+  <p id="photostatus" role="status" aria-live="polite"></p>
+  <form id="photo-preview" hidden>
+  <h2>Preview</h2>
+  <label for="photo-title">Title</label>
+  <input id="photo-title" name="title" />
+  <label for="photo-ings">Ingredients (one per line)</label>
+  <textarea id="photo-ings" name="ingredients" rows="5"></textarea>
+  <label for="photo-steps">Steps (one per line)</label>
+  <textarea id="photo-steps" name="steps" rows="5"></textarea>
+  <button type="submit">Save</button></form>
+  </section>`);
+  const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+  const selectTab = (id: string) => {
+    for (const t of tabs) {
+      const selected = t.id === id;
+      t.setAttribute('aria-selected', String(selected));
+      document.getElementById(t.getAttribute('aria-controls')!)?.toggleAttribute('hidden', !selected);
+    }
+  };
+  tabs.forEach((t) => t.addEventListener('click', () => selectTab(t.id)));
+  // --- Link (existing flow, unchanged) ---
   (document.getElementById('clip') as HTMLFormElement).addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target as HTMLFormElement);
@@ -918,6 +973,92 @@ function viewIngest(): void {
       status.textContent = 'Saved offline as a draft.';
       navigate('/recipes/' + env.id);
     }
+  });
+  // --- Shared paste/OCR preview + save wiring for Text/Photo tabs ---
+  const wirePasteTab = (opts: {
+    formId: string; inputId: string; statusId: string; previewId: string;
+    titleId: string; ingsId: string; stepsId: string; source: 'text' | 'photo';
+    emptyMessage: string;
+  }) => {
+    const form = document.getElementById(opts.formId) as HTMLFormElement;
+    const preview = document.getElementById(opts.previewId) as HTMLFormElement;
+    let pendingDescription = '';
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const key = opts.source === 'text' ? 'pastetext' : 'ocr';
+      const caption = String(fd.get(key) || '').trim();
+      const status = document.getElementById(opts.statusId)!;
+      if (!caption) {
+        status.textContent = opts.emptyMessage;
+        return;
+      }
+      // Title hint = first line (shown before the server responds).
+      const hint = firstNonEmptyLine(caption);
+      status.textContent = hint ? `Parsing “${hint.slice(0, 60)}”…` : 'Parsing…';
+      try {
+        const report = await api.clip({ caption, source: opts.source });
+        const fields = recipeToPreviewFields(report.recipe);
+        (document.getElementById(opts.titleId) as HTMLInputElement).value = fields.title;
+        (document.getElementById(opts.ingsId) as HTMLTextAreaElement).value = fields.ingredientsText;
+        (document.getElementById(opts.stepsId) as HTMLTextAreaElement).value = fields.stepsText;
+        pendingDescription =
+          typeof report.recipe.description === 'string' ? report.recipe.description : caption;
+        preview.hidden = false;
+        status.textContent = `Preview ready via ${report.strategy}. Review and Save.`;
+      } catch {
+        // Offline fallback: local parse, same RecipeInput shape as Link drafts.
+        const draft = parsePastedText(caption);
+        const fields = recipeToPreviewFields(draft);
+        (document.getElementById(opts.titleId) as HTMLInputElement).value = fields.title;
+        (document.getElementById(opts.ingsId) as HTMLTextAreaElement).value = fields.ingredientsText;
+        (document.getElementById(opts.stepsId) as HTMLTextAreaElement).value = fields.stepsText;
+        pendingDescription = caption;
+        preview.hidden = false;
+        status.textContent = 'Offline — parsed locally. Review and Save.';
+      }
+    });
+    preview.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const input = previewToRecipeInput(
+        {
+          title: (document.getElementById(opts.titleId) as HTMLInputElement).value,
+          ingredientsText: (document.getElementById(opts.ingsId) as HTMLTextAreaElement).value,
+          stepsText: (document.getElementById(opts.stepsId) as HTMLTextAreaElement).value,
+        },
+        { description: pendingDescription },
+      );
+      const env = store.upsert('recipe', '', input);
+      navigate('/recipes/' + env.id);
+    });
+  };
+  wirePasteTab({
+    formId: 'clip-text', inputId: 'pastetext', statusId: 'textstatus',
+    previewId: 'text-preview', titleId: 'text-title', ingsId: 'text-ings',
+    stepsId: 'text-steps', source: 'text', emptyMessage: 'Paste recipe text first.',
+  });
+  wirePasteTab({
+    formId: 'clip-photo', inputId: 'photo-ocr', statusId: 'photostatus',
+    previewId: 'photo-preview', titleId: 'photo-title', ingsId: 'photo-ings',
+    stepsId: 'photo-steps', source: 'photo', emptyMessage: 'Paste the visible text from the photo first.',
+  });
+  // Photo attachment is reference-only: bytes are never uploaded.
+  let photoObjectUrl: string | undefined;
+  (document.getElementById('photo-file') as HTMLInputElement).addEventListener('change', (e) => {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    const img = document.getElementById('photo-img') as HTMLImageElement;
+    if (photoObjectUrl) {
+      URL.revokeObjectURL(photoObjectUrl);
+      photoObjectUrl = undefined;
+    }
+    if (!file) {
+      img.hidden = true;
+      img.removeAttribute('src');
+      return;
+    }
+    photoObjectUrl = URL.createObjectURL(file);
+    img.src = photoObjectUrl;
+    img.hidden = false;
   });
 }
 

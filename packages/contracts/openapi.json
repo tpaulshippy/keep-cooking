@@ -131,6 +131,7 @@
             ]
           }
         ],
+        "description": "Clip source hint. `text` = generic pasted text, `photo` = photo/OCR transcript; both use the caption parse path (caption required, no fetch unless `url` is also present).",
         "properties": {
           "caption": {
             "type": "string"
@@ -142,7 +143,9 @@
               "instagram",
               "youtube",
               "ocr",
-              "clipboard"
+              "clipboard",
+              "text",
+              "photo"
             ],
             "type": "string"
           },

@@ -19,7 +19,7 @@ export const clipRequestSchema = z
   .object({
     url: z.string().url().optional(),
     caption: z.string().max(20000).optional(),
-    source: z.enum(['url', 'tiktok', 'instagram', 'youtube', 'ocr', 'clipboard']).optional(),
+    source: z.enum(['url', 'tiktok', 'instagram', 'youtube', 'ocr', 'clipboard', 'text', 'photo']).optional(),
   })
   .refine((v) => v.url || v.caption, { message: 'url or caption is required' });
 

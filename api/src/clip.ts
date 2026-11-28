@@ -231,6 +231,9 @@ function hostOf(url: string): string {
 /**
  * Clip pipeline: JSON-LD → reader → caption. Logs only strategy + host +
  * confidence (no PII). `fetchFn` is injectable for tests.
+ * Generic sources `text` (pasted text) and `photo` (photo transcript) use the
+ * same caption path: no fetch unless `url` is present; caption parse
+ * confidence unchanged. `recipe.source` stays 'clip' for all sources.
  */
 export async function clipRecipe(input: ClipInput): Promise<ClipResult & { log: { strategy: string; host?: string; confidence: number } }> {
   const fetchFn = input.fetchFn ?? fetch;

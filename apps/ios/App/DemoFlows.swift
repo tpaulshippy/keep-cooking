@@ -11,7 +11,7 @@
 // Accessibility identifiers (used by KeepCookingUITests):
 //   recipe-list, recipe-detail-title, cook-button, add-to-list-button,
 //   added-confirm, plan-view, week-to-list-confirm, lists-view,
-//   more-clip, more-caption, more-ocr (+ ocr-* ids in OCRScanView).
+//   more-clip, more-caption, more-paste, more-ocr (+ ocr-* ids in OCRScanView).
 
 import SwiftUI
 import SwiftData
@@ -115,7 +115,7 @@ enum LibrarySort: String, CaseIterable, Hashable {
 
 /// Add-menu navigation targets (Menu buttons can't host NavigationLinks).
 enum LibraryAddDestination: Hashable {
-    case clip, ocr, caption, duplicates
+    case clip, ocr, caption, paste, duplicates
 }
 
 struct RecipeLibraryView: View {
@@ -333,6 +333,7 @@ struct RecipeLibraryView: View {
                 case .clip: ClipView()
                 case .ocr: OCRScanView()
                 case .caption: CaptionsImportView()
+                case .paste: PasteImportView()
                 case .duplicates: DuplicateReviewView(recipes: Array(recipes))
                 }
             }
@@ -908,6 +909,8 @@ private struct ActionsCTA: View {
         VStack(spacing: 8) {
             NavigationLink("Clip a recipe URL") { ClipView() }
                 .buttonStyle(.borderedProminent)
+            NavigationLink("Paste recipe text") { PasteImportView() }
+                .buttonStyle(.bordered)
             NavigationLink("Scan a cookbook") { OCRScanView() }
                 .buttonStyle(.bordered)
         }
@@ -1650,6 +1653,8 @@ struct MoreTabView: View {
                         .accessibilityIdentifier("more-clip")
                     NavigationLink("Import caption") { CaptionsImportView() }
                         .accessibilityIdentifier("more-caption")
+                    NavigationLink("Paste text") { PasteImportView() }
+                        .accessibilityIdentifier("more-paste")
                     NavigationLink("Scan cookbook (OCR)") { OCRScanView() }
                         .accessibilityIdentifier("more-ocr")
                     NavigationLink("Import file") { ImportView() }

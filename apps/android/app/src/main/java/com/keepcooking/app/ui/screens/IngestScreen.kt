@@ -1,5 +1,7 @@
 package com.keepcooking.app.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,6 +17,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
@@ -29,7 +32,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.keepcooking.app.ingest.ClipClient
 import com.keepcooking.app.ingest.ClipClientError
 import com.keepcooking.app.ingest.ClipReport
@@ -50,9 +57,9 @@ import kotlinx.coroutines.launch
  * OCRScanView.swift, ClipboardBanner.swift.
  *
  * Tabs: Clip (URL → preview → save), Captions (tiktok/instagram/youtube),
- * OCR (paste/scan text → splitter → save). A clipboard banner sits above
- * the tabs when pasted text looks like a recipe link. Saving is delegated
- * to [onSaveRecipe] so Room wiring stays in one place.
+ * Paste (free text → on-device split → optional /clip preview → save),
+ * Scan (photo → ML Kit → split → save, plus manual paste fallback).
+ * Saving is delegated to [onSaveRecipe] so Room wiring stays in one place.
  */
 data class IngestDraft(
     val title: String,
@@ -100,14 +107,15 @@ fun IngestScreen(
                 }
             }
             TabRow(selectedTabIndex = tab) {
-                listOf("Clip link", "Captions", "OCR scan").forEachIndexed { i, t ->
+                listOf("Clip link", "Captions", "Paste text", "Scan").forEachIndexed { i, t ->
                     Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t) })
                 }
             }
             when (tab) {
                 0 -> ClipTab(baseUrl = baseUrl, prefill = clipPrefill, onSaveRecipe = onSaveRecipe, deviceState = deviceState, ensureDeviceState = ensureDeviceState)
                 1 -> CaptionsTab(baseUrl = baseUrl, onSaveRecipe = onSaveRecipe, deviceState = deviceState, ensureDeviceState = ensureDeviceState)
-                2 -> OcrTab(onSaveRecipe = onSaveRecipe)
+                2 -> PasteTab(baseUrl = baseUrl, onSaveRecipe = onSaveRecipe, deviceState = deviceState, ensureDeviceState = ensureDeviceState)
+                3 -> ScanTab(onSaveRecipe = onSaveRecipe)
             }
         }
     }
@@ -313,17 +321,26 @@ private fun CaptionsTab(
 }
 
 @Composable
-private fun OcrTab(onSaveRecipe: suspend (IngestDraft) -> String) {
+private fun PasteTab(
+    baseUrl: String,
+    onSaveRecipe: suspend (IngestDraft) -> String,
+    deviceState: () -> DeviceAuthInterceptor.State? = { null },
+    ensureDeviceState: (suspend () -> DeviceAuthInterceptor.State?)? = null,
+) {
     val scope = rememberCoroutineScope()
-    var recognizedText by remember { mutableStateOf("") }
+    var inputText by remember { mutableStateOf("") }
     var title by remember { mutableStateOf("") }
     var ingredientLines by remember { mutableStateOf("") }
     var stepLines by remember { mutableStateOf("") }
     var notice by remember { mutableStateOf<String?>(null) }
     var savedMessage by remember { mutableStateOf<String?>(null) }
+    var report by remember { mutableStateOf<ClipReport?>(null) }
+    var isLoading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var reportStale by remember { mutableStateOf(false) }
 
-    fun parse() {
-        val draft = OcrSplitter.split(recognizedText.split("\n"))
+    fun parseLocal() {
+        val draft = OcrSplitter.split(inputText.split("\n"))
         savedMessage = null
         title = draft.title
         ingredientLines = draft.ingredientLines.joinToString("\n")
@@ -331,7 +348,19 @@ private fun OcrTab(onSaveRecipe: suspend (IngestDraft) -> String) {
         notice = "Checked on this device."
     }
 
-    val stepIndex = if (savedMessage != null) 2 else if (title.isNotEmpty() || ingredientLines.isNotEmpty()) 1 else 0
+    // Live local preview before server round-trip.
+    val livePreview = remember(inputText, report) {
+        if (report == null && inputText.isNotBlank()) {
+            val draft = OcrSplitter.split(inputText.split("\n"))
+            buildString {
+                if (draft.title.isNotBlank()) appendLine(draft.title)
+                draft.ingredientLines.take(3).forEach { appendLine(it) }
+                if (draft.ingredientLines.size > 3) appendLine("…")
+            }.trim()
+        } else null
+    }
+
+    val stepIndex = if (savedMessage != null) 2 else if (report != null || title.isNotEmpty() || ingredientLines.isNotEmpty()) 1 else 0
     val canSave = isSavableTitle(title)
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -339,9 +368,54 @@ private fun OcrTab(onSaveRecipe: suspend (IngestDraft) -> String) {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("1 · Add text", style = MaterialTheme.typography.titleSmall)
-                Text("Paste photo text below — on-device ML Kit / OCR wiring fills this in automatically when available.", style = MaterialTheme.typography.bodySmall)
-                OutlinedTextField(value = recognizedText, onValueChange = { recognizedText = it }, label = { Text("Recognized text") }, modifier = Modifier.fillMaxWidth(), minLines = 4)
-                Button(onClick = { parse() }) { Text("Parse text") }
+                Text("Paste recipe text below, then parse on-device or preview with the server.", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(value = inputText, onValueChange = { inputText = it }, label = { Text("Recipe text") }, modifier = Modifier.fillMaxWidth(), minLines = 6, enabled = !isLoading)
+                livePreview?.let { Text("Preview:\n$it", style = MaterialTheme.typography.bodySmall) }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { parseLocal() }, enabled = inputText.isNotBlank()) { Text("Parse text") }
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                isLoading = true; error = null; savedMessage = null; reportStale = false
+                                try {
+                                    // Local parse first so offline still fills fields.
+                                    parseLocal()
+                                    // Server preview: free text travels as caption
+                                    // with source TEXT (API + iOS parity).
+                                    val auth = ensureDeviceState?.invoke() ?: deviceState()
+                                    val rep = ClipClient(baseUrl = baseUrl, deviceState = auth).clip(
+                                        ClipRequest(caption = inputText, source = ClipSource.TEXT),
+                                    )
+                                    report = rep
+                                    title = rep.recipe.title
+                                    val ings = rep.recipe.ingredients ?: emptyList()
+                                    ingredientLines = if (ings.isEmpty()) {
+                                        IngredientParser.parseLines(inputText).joinToString("\n") { it.display }
+                                    } else {
+                                        ings.joinToString("\n") { it.display ?: it.name }
+                                    }
+                                    stepLines = (rep.recipe.steps ?: emptyList()).joinToString("\n") { it.text }
+                                } catch (e: Exception) {
+                                    reportStale = report != null
+                                    val code = (e as? ClipClientError.HttpStatus)?.status
+                                    error = clipServerErrorMessage(code) ?: "Couldn't preview that text. Check the text and try again."
+                                } finally {
+                                    isLoading = false
+                                }
+                            }
+                        },
+                        enabled = !isLoading && inputText.isNotBlank(),
+                    ) { Text(if (isLoading) "Previewing…" else "Server preview") }
+                }
+            }
+        }
+        error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        report?.let {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Server preview", style = MaterialTheme.typography.titleSmall)
+                    it.warnings?.forEach { w -> Text(clipWarningText(w), style = MaterialTheme.typography.bodySmall) }
+                }
             }
         }
         Card(Modifier.fillMaxWidth()) {
@@ -368,6 +442,112 @@ private fun OcrTab(onSaveRecipe: suspend (IngestDraft) -> String) {
                                     title = cleanTitle(title),
                                     ingredientLines = ingredientLines.split("\n").map { it.trim() }.filter { it.isNotEmpty() },
                                     stepLines = stepLines.split("\n").map { it.trim() }.filter { it.isNotEmpty() },
+                                    source = "text",
+                                    sourceUrl = "",
+                                ),
+                            )
+                            notice = null
+                        }
+                    },
+                    enabled = canSave && savedMessage == null && !isLoading && !reportStale,
+                ) { Text("Save recipe") }
+                if (!canSave) Text("Add a title to save.", style = MaterialTheme.typography.bodySmall)
+                savedMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun ScanTab(onSaveRecipe: suspend (IngestDraft) -> String) {
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var recognizedText by remember { mutableStateOf("") }
+    var title by remember { mutableStateOf("") }
+    var ingredientLines by remember { mutableStateOf("") }
+    var stepLines by remember { mutableStateOf("") }
+    var notice by remember { mutableStateOf<String?>(null) }
+    var savedMessage by remember { mutableStateOf<String?>(null) }
+    var isRecognizing by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    fun parse() {
+        val draft = OcrSplitter.split(recognizedText.split("\n"))
+        savedMessage = null
+        title = draft.title
+        ingredientLines = draft.ingredientLines.joinToString("\n")
+        stepLines = draft.stepLines.joinToString("\n")
+        notice = "Checked on this device."
+    }
+
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        isRecognizing = true; error = null; savedMessage = null
+        runCatching { InputImage.fromFilePath(context, uri) }.fold(
+            onSuccess = { image ->
+                TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS).process(image)
+                    .addOnSuccessListener { result ->
+                        recognizedText = result.text.orEmpty()
+                        parse()
+                        isRecognizing = false
+                        if (recognizedText.isBlank()) {
+                            error = "No text found in that photo. Try again or paste text below."
+                        }
+                    }
+                    .addOnFailureListener { e ->
+                        isRecognizing = false
+                        error = "Couldn't read that photo (${e.message ?: "unknown error"}). Try again or paste text below."
+                    }
+            },
+            onFailure = { e ->
+                isRecognizing = false
+                error = "Couldn't open that photo (${e.message ?: "unknown error"}). Try again or paste text below."
+            },
+        )
+    }
+
+    val stepIndex = if (savedMessage != null) 2 else if (title.isNotEmpty() || ingredientLines.isNotEmpty()) 1 else 0
+    val canSave = isSavableTitle(title)
+
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        StepHeader(current = stepIndex)
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("1 · Scan a photo", style = MaterialTheme.typography.titleSmall)
+                Text("Pick a cookbook photo — text recognition runs on-device. Or paste text below instead.", style = MaterialTheme.typography.bodySmall)
+                Button(onClick = { picker.launch("image/*") }, enabled = !isRecognizing) {
+                    Text(if (isRecognizing) "Reading…" else "Choose photo")
+                }
+                OutlinedTextField(value = recognizedText, onValueChange = { recognizedText = it }, label = { Text("Recognized text (editable)") }, modifier = Modifier.fillMaxWidth(), minLines = 4, enabled = !isRecognizing)
+                Button(onClick = { parse() }, enabled = recognizedText.isNotBlank() && !isRecognizing) { Text("Parse text") }
+            }
+        }
+        error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("2 · Review and save", style = MaterialTheme.typography.titleSmall)
+                Text("Check the details below — the first line becomes the title.", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Title") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = ingredientLines, onValueChange = { ingredientLines = it }, label = { Text("Ingredients") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
+                OutlinedTextField(value = stepLines, onValueChange = { stepLines = it }, label = { Text("Steps") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
+            }
+        }
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("3 · Save", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    notice ?: if (title.isEmpty() && ingredientLines.isEmpty()) "Scan a photo or paste text to begin." else "Checked on this device.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Button(
+                    onClick = {
+                        scope.launch {
+                            savedMessage = onSaveRecipe(
+                                IngestDraft(
+                                    title = cleanTitle(title),
+                                    ingredientLines = ingredientLines.split("\n").map { it.trim() }.filter { it.isNotEmpty() },
+                                    stepLines = stepLines.split("\n").map { it.trim() }.filter { it.isNotEmpty() },
                                     source = "ocr",
                                     sourceUrl = "",
                                 ),
@@ -375,7 +555,7 @@ private fun OcrTab(onSaveRecipe: suspend (IngestDraft) -> String) {
                             notice = null
                         }
                     },
-                    enabled = canSave && savedMessage == null,
+                    enabled = canSave && savedMessage == null && !isRecognizing,
                 ) { Text("Save recipe") }
                 if (!canSave) Text("Add a title to save.", style = MaterialTheme.typography.bodySmall)
                 savedMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
