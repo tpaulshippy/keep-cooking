@@ -1,0 +1,28 @@
+apps/android/app/src/main/java/com/keepcooking/app/data/AppDatabase.kt
+  h_6bbd00fe0a456a 5-7,9-12
+apps/android/app/src/main/java/com/keepcooking/app/import/RecipeImporter.kt
+  h_6bbd00fe0a456a 24,770-777,786-823
+apps/android/app/src/main/java/com/keepcooking/app/navigation/NavGraph.kt
+  h_6bbd00fe0a456a 129,282
+apps/android/app/src/main/java/com/keepcooking/app/shortcuts/AppShortcuts.kt
+  h_6bbd00fe0a456a 252
+apps/android/app/src/main/java/com/keepcooking/app/sync/SyncEngine.kt
+  h_6bbd00fe0a456a 251
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/LibraryScreen.kt
+  h_6bbd00fe0a456a 60,558
+apps/ios/App/KeepCookingApp.swift
+  h_6bbd00fe0a456a 487
+apps/web/src/main.ts
+  h_6bbd00fe0a456a 43-46,686-688
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "73465ae4d7c9fafa14489b1bc6ceef8f8b38561c",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}

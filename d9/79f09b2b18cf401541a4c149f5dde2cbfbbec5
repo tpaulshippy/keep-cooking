@@ -1,0 +1,24 @@
+apps/android/app/src/main/java/com/keepcooking/app/data/AppDatabase.kt
+  h_6bbd00fe0a456a 19
+apps/android/app/src/main/java/com/keepcooking/app/data/Models.kt
+  h_6bbd00fe0a456a 80
+apps/android/app/src/main/java/com/keepcooking/app/import/RecipeImporter.kt
+  h_6bbd00fe0a456a 740
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/LibraryScreen.kt
+  h_6bbd00fe0a456a 6-7,556-557,570,631,837-853
+apps/ios/App/DemoFlows.swift
+  h_6bbd00fe0a456a 931,1238-1248
+apps/ios/Features/Ingest/ImportView.swift
+  h_6bbd00fe0a456a 436,447-448
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d979f09b2b18cf401541a4c149f5dde2cbfbbec5",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
