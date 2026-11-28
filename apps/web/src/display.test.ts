@@ -25,4 +25,16 @@ describe('ingredientLabel', () => {
       .toBe('12 oz Spaghetti');
     expect(ingredientLabel({ name: 'Salt' })).toBe('Salt');
   });
+
+  it('falls back to derived line for whitespace-only display', () => {
+    expect(ingredientLabel({ name: 'Spaghetti', quantity: 12, unit: 'oz', display: '   ' }))
+      .toBe('12 oz Spaghetti');
+  });
+
+  it('does not duplicate the name when display already ends with it', () => {
+    expect(ingredientLabel({ name: 'Spaghetti', display: '12 oz Spaghetti' }))
+      .toBe('12 oz Spaghetti');
+    expect(ingredientLabel({ name: 'salt', display: 'To Taste Salt' }))
+      .toBe('To Taste Salt');
+  });
 });

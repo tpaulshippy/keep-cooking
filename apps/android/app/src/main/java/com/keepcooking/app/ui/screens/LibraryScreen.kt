@@ -498,10 +498,13 @@ fun RecipeDetailScreen(
             servings = r.servings
             ingredients = container.db.ingredients().forRecipe(recipeId).map {
                 // Display strings are quantity-only ("12 oz"): the name
-                // always survives (web ingredientLabel parity).
-                val d = it.display.ifBlank { null }
+                // always survives (web ingredientLabel parity), but don't
+                // duplicate it when display already ends with the name.
+                val d = it.display.trim().ifBlank { null }
+                val n = it.name.trim()
                 if (d == null) scaledDisplay(it.name, it.quantity, it.unit, 1.0)
-                else "$d ${it.name}"
+                else if (n.isNotEmpty() && d.endsWith(n, ignoreCase = true)) d
+                else "$d $n".trim()
             }
             steps = container.db.steps().forRecipe(recipeId).map { it.text }
         }

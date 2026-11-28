@@ -27,7 +27,12 @@ export function safeHttpUrl(url: unknown): string | null {
  *  prefixes the name; a blank display falls back to the derived
  *  "quantity unit name" (never `??`, which would render a blank row). */
 export function ingredientLabel(ing: IngredientLike): string {
-  if (ing.display) return `${ing.display} ${ing.name}`.trim();
+  const display = ing.display?.trim();
+  if (display) {
+    const name = ing.name.trim();
+    if (name !== '' && display.toLowerCase().endsWith(name.toLowerCase())) return display;
+    return `${display} ${name}`.trim();
+  }
   return [ing.quantity, ing.unit, ing.name]
     .filter((x) => x !== undefined && x !== null && x !== '')
     .join(' ');
