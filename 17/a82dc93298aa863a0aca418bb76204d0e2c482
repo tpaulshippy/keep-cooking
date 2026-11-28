@@ -1,0 +1,20 @@
+apps/web/src/scale.ts
+  h_6bbd00fe0a456a 13-17
+apps/web/src/sync.test.ts
+  h_6bbd00fe0a456a 53-80
+apps/web/src/sync.ts
+  h_6bbd00fe0a456a 42-49,56,60,62-70,78,82-90
+package-lock.json
+  h_6bbd00fe0a456a 42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "17a82dc93298aa863a0aca418bb76204d0e2c482",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
