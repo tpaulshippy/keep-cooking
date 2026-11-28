@@ -100,50 +100,61 @@ export function visible<T>(collection: SyncEnvelope<T>[]): SyncEnvelope<T>[] {
   return collection.filter((e) => !e.deleted);
 }
 
-function seedRecipes(now: string, dev: string): SyncEnvelope[] {
-  const mk = (id: string, title: string, description: string, servings: number,
-    ingredients: { name: string; quantity?: number; unit?: string; display?: string }[],
-    steps: string[]): SyncEnvelope => ({
-    id,
-    updatedAt: now,
-    deviceId: dev,
-    entity: 'recipe',
-    payload: { id, title, description, servings, ingredients, steps: steps.map((text, i) => ({ text, position: i })) },
-  });
-  return [
-    mk('demo-pasta', 'Weeknight Pasta', 'Pantry pasta with garlic and olive oil.', 4,
-      [
-        { name: 'Spaghetti', quantity: 12, unit: 'oz', display: '12 oz' },
-        { name: 'Garlic', quantity: 4, unit: 'cloves', display: '4 cloves' },
-        { name: 'Olive oil', quantity: 0.25, unit: 'cup', display: '1/4 cup' },
-      ],
-      ['Boil salted water; cook pasta until al dente.', 'Sizzle garlic in olive oil 2 minutes.', 'Toss pasta with oil and a splash of pasta water.']),
-    mk('demo-tacos', 'Sheet-Pan Tacos', 'Crispy oven tacos for busy nights.', 4,
-      [
-        { name: 'Corn tortillas', quantity: 12, unit: '', display: '12' },
-        { name: 'Black beans', quantity: 2, unit: 'cans', display: '2 cans' },
-        { name: 'Cheddar', quantity: 2, unit: 'cups', display: '2 cups' },
-      ],
-      ['Heat oven to 425F.', 'Fill tortillas, bake 10 minutes until crisp.', 'Top with salsa and lime.']),
-    mk('demo-soup', 'Lentil Soup', 'One-pot red lentil soup.', 6,
-      [
-        { name: 'Red lentils', quantity: 2, unit: 'cups', display: '2 cups' },
-        { name: 'Onion', quantity: 1, unit: '', display: '1' },
-        { name: 'Carrots', quantity: 2, unit: '', display: '2' },
-      ],
-      ['Soften onion and carrots 8 minutes.', 'Add lentils and 6 cups water; simmer 25 minutes.', 'Season with salt and lemon.']),
-  ];
+/** Flat contract seed file: envelope fields up front, recipe fields flat. */
+interface ContractSeedFile {
+  default: {
+    id: string;
+    updatedAt: string;
+    deviceId: string;
+    entity: string;
+    deleted?: boolean;
+    [k: string]: unknown;
+  };
+}
+
+function seedRecipes(): SyncEnvelope[] {
+  // Single source of truth with iOS (SeedLoader) and Android (assets/seed):
+  // frozen contract envelopes in packages/contracts/seed/recipe-*.json.
+  // Flat SyncEnvelope-flavoured recipe objects — split into the store's
+  // {envelope, payload} shape here. Frozen ids/updatedAts are kept so all
+  // three clients demo identical data (and converge if ever synced).
+  const mods = import.meta.glob<ContractSeedFile>(
+    '../../../packages/contracts/seed/recipe-*.json', { eager: true },
+  );
+  return Object.values(mods)
+    .map((m) => m.default)
+    .filter((s) => s.entity === 'recipe' && !s.deleted)
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map((s) => {
+      const { id, updatedAt, deviceId, entity, ...payload } = s;
+      void entity;
+      return { id, updatedAt, deviceId, entity: 'recipe', payload } as SyncEnvelope;
+    });
 }
 
 export class Store {
   state: StoreState;
 
   constructor() {
-    const now = new Date().toISOString();
-    const dev = deviceId();
-    const recipes = load<SyncEnvelope[]>('recipes', []);
+    const stored = load<SyncEnvelope[]>('recipes', []);
+    // One-time migration from the 3 hardcoded web demos (demo-pasta,
+    // demo-tacos, demo-soup) to the 15 frozen contract seeds: installs that
+    // persisted the legacy demos would otherwise keep them forever via the
+    // non-empty check below. Match any `demo-` id for safety, drop those
+    // envelopes, keep user records, and union in missing contract seeds.
+    let recipes: SyncEnvelope[];
+    let migrated = false;
+    if (stored.some((e) => e.id.startsWith('demo-'))) {
+      const seeds = seedRecipes();
+      const kept = stored.filter((e) => !e.id.startsWith('demo-'));
+      const ids = new Set(kept.map((e) => e.id));
+      recipes = [...kept, ...seeds.filter((s) => !ids.has(s.id))];
+      migrated = true;
+    } else {
+      recipes = stored.length ? stored : seedRecipes();
+    }
     this.state = {
-      recipes: recipes.length ? recipes : seedRecipes(now, dev),
+      recipes,
       plans: load<SyncEnvelope[]>('plans', []),
       menus: load<SyncEnvelope[]>('menus', []),
       lists: load<SyncEnvelope[]>('lists', []),
@@ -151,7 +162,7 @@ export class Store {
       outbox: load<SyncEnvelope[]>('outbox', []),
       serverKnown: load<Record<string, true>>('serverKnown', {}),
     };
-    if (!recipes.length) save('recipes', this.state.recipes);
+    if (!stored.length || migrated) save('recipes', this.state.recipes);
   }
 
   private persist(): void {
