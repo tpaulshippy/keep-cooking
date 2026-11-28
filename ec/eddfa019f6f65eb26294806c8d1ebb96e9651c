@@ -1,0 +1,28 @@
+api/src/import.ts
+  h_6bbd00fe0a456a 55-56,63-115,120-122,153,206-209,216,221-223,234-242,244-246,248,259
+api/src/index.ts
+  h_6bbd00fe0a456a 584-586,594,606,612,627
+api/test/paprika.test.ts
+  h_6bbd00fe0a456a 312-382
+apps/android/app/src/main/java/com/keepcooking/app/ui/screens/ImportScreen.kt
+  h_6bbd00fe0a456a 81-84,105,107-143,159-163,165-166,259-280,295-300,311-313,317,327-335,341-343
+apps/android/app/src/test/java/com/keepcooking/app/ImportServerFormatTest.kt
+  h_6bbd00fe0a456a 1-39
+apps/ios/Features/Ingest/ImportView.swift
+  h_6bbd00fe0a456a 353-354
+apps/ios/Features/Ingest/PaprikaImport.swift
+  h_6bbd00fe0a456a 83-85,1283,1285-1320,1322,1324-1330,1334-1337,1341,1343-1412,1454
+packages/contracts/README.md
+  h_6bbd00fe0a456a 39-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "eceddfa019f6f65eb26294806c8d1ebb96e9651c",
+  "prompts": {},
+  "humans": {
+    "h_6bbd00fe0a456a": {
+      "author": "Paul Shippy <pshippy@gmail.com>"
+    }
+  }
+}
