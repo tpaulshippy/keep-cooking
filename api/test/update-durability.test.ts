@@ -31,6 +31,46 @@ describe('update durability (recipes/pantry/lists)', () => {
     expect(got.categories).toEqual(['c']);
   });
 
+  it('editor metadata (difficulty/cookbooks/total/notes/nutrition) survives create + update + null clear', async () => {
+    const { app } = await makeApp({ seed: false });
+    const created = await req(app, 'POST', '/api/recipes', {
+      body: {
+        title: 'Cookies', householdId: 'hh-demo', servings: 24,
+        difficulty: 'Easy', cookbooks: ['My Cookbook'], totalMinutes: 85,
+        notes: 'Chill the dough.', nutritionText: 'Calories: 130 calories',
+      },
+    });
+    expect(created.status).toBe(201);
+    const r0 = (await created.json()) as { id: string };
+    const got = (await (await req(app, 'GET', `/api/recipes/${r0.id}`)).json()) as {
+      difficulty: string; cookbooks: string[]; totalMinutes: number | null;
+      notes: string; nutritionText: string;
+    };
+    expect(got.difficulty).toBe('Easy');
+    expect(got.cookbooks).toEqual(['My Cookbook']);
+    expect(got.totalMinutes).toBe(85);
+    expect(got.notes).toBe('Chill the dough.');
+    expect(got.nutritionText).toBe('Calories: 130 calories');
+    // Update keeps the keys, and totalMinutes null-clears like prep/cook.
+    const upd = await req(app, 'PUT', `/api/recipes/${r0.id}`, {
+      body: {
+        title: 'Cookies', householdId: 'hh-demo', servings: 24,
+        difficulty: 'Medium', cookbooks: ['My Cookbook', 'Holiday'], totalMinutes: null,
+        notes: '', nutritionText: '',
+      },
+    });
+    expect(upd.status).toBe(200);
+    const got2 = (await (await req(app, 'GET', `/api/recipes/${r0.id}`)).json()) as {
+      difficulty: string; cookbooks: string[]; totalMinutes: number | null;
+      notes: string; nutritionText: string;
+    };
+    expect(got2.difficulty).toBe('Medium');
+    expect(got2.cookbooks).toEqual(['My Cookbook', 'Holiday']);
+    expect(got2.totalMinutes).toBeNull();
+    expect(got2.notes).toBe('');
+    expect(got2.nutritionText).toBe('');
+  });
+
   it('removed ingredients/steps stay removed after update; stable ids kept', async () => {
     const { app } = await makeApp({ seed: false });
     const created = await req(app, 'POST', '/api/recipes', {

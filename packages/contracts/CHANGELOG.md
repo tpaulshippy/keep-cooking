@@ -1,4 +1,6 @@
 # Changelog
+## Unreleased — editor metadata columns in D1 schema
+- schema.sql + drizzle 0001/0006: recipes gains difficulty, cookbooks, total_minutes, notes, nutrition_text (matches the Recipe/RecipeInput contract fields; 0006 backfills pre-existing DBs)
 ## Unreleased — generic paste-text + photo-transcript clip sources
 - openapi.yaml/json: ClipRequest `source` enum gains `text` (generic pasted text) + `photo` (photo/OCR transcript); request requires `url` or `caption` (caption `maxLength: 20000` in Zod + OpenAPI); when `url` is supplied the JSON-LD → reader pipeline runs first with `caption` as fallback; `recipe.source` stays `clip`
 - api/src/zod.ts: clipRequestSchema source enum gains `text` + `photo` (validation otherwise unchanged: url or caption required, caption max 20000)

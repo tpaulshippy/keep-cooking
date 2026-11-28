@@ -28,6 +28,7 @@ import com.keepcooking.app.AppContainer
 import com.keepcooking.app.data.IngredientEntity
 import com.keepcooking.app.data.RecipeEntity
 import com.keepcooking.app.data.StepEntity
+import com.keepcooking.app.ingest.IngredientParser
 import com.keepcooking.app.library.DuplicateMergePlan
 import com.keepcooking.app.network.SyncEnvelopeDto
 import com.keepcooking.app.share.ShareHandler
@@ -43,17 +44,25 @@ import com.keepcooking.app.ui.screens.LibraryScreen
 import com.keepcooking.app.ui.screens.MoreScreen
 import com.keepcooking.app.ui.screens.PlanScreen
 import com.keepcooking.app.ui.screens.RecipeDetailScreen
+import com.keepcooking.app.ui.screens.RecipeEditDraft
+import com.keepcooking.app.ui.screens.RecipeEditorScreen
 import com.keepcooking.app.ui.screens.RecipesScreen
 import com.keepcooking.app.ui.screens.SettingsScreen
+import com.keepcooking.app.ui.screens.isIngredientHeaderLine
 import com.keepcooking.app.ui.screens.loadLibraryRows
+import com.keepcooking.app.ui.screens.hostOfUrl
+import com.keepcooking.app.ui.screens.saveEditorExtras
+import com.keepcooking.app.ui.screens.EditorExtras
 import com.keepcooking.app.ui.screens.ShareScreen
 import com.keepcooking.app.ui.screens.ShopScreen
 import com.keepcooking.app.wear.NowCookingScreen
 import java.time.Instant
+import java.util.ArrayDeque
 import java.util.UUID
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
@@ -299,6 +308,265 @@ private suspend fun applyDuplicateMerge(
     )
 }
 
+/** Tombstones a recipe (Room + sync outbox) — detail's Delete path. */
+internal suspend fun deleteRecipe(container: AppContainer, recipeId: String) {
+    val db = container.db
+    val now = System.currentTimeMillis()
+    val deviceId = container.syncEngine.deviceId()
+    db.recipes().byId(recipeId)?.let { loser ->
+        db.recipes().upsert(loser.copy(deleted = true, updatedAt = now, deviceId = deviceId))
+        container.syncEngine.enqueue(
+            SyncEnvelopeDto(
+                id = recipeId,
+                updatedAt = Instant.ofEpochMilli(now).toString(),
+                deviceId = deviceId,
+                deleted = true,
+                entity = "recipe",
+                payload = buildJsonObject {
+                    put("id", JsonPrimitive(recipeId))
+                    put("deleted", JsonPrimitive(true))
+                },
+            ),
+        )
+    }
+    // Drop orphaned envelope-only extras for the deleted recipe.
+    saveEditorExtras(container, recipeId, EditorExtras())
+}
+
+/**
+ * Effective total for a save: an explicit synced override survives unless the
+ * user changed a time, in which case prep+cook re-derive. No override and no
+ * times means no total key (the server then keeps its stored value). Pure for
+ * unit tests.
+ */
+internal fun effectiveTotalMinutes(
+    draftTotal: Int?,
+    draftPrep: Int?,
+    draftCook: Int?,
+    existingPrep: Int?,
+    existingCook: Int?,
+): Int? {
+    val timesChanged = draftPrep != existingPrep || draftCook != existingCook
+    val derived = if (draftPrep == null && draftCook == null) {
+        null
+    } else {
+        (draftPrep ?: 0) + (draftCook ?: 0)
+    }
+    return if (timesChanged) derived else draftTotal ?: derived
+}
+
+/**
+ * Canonical full-snapshot recipe envelope payload (protocol: a non-shell
+ * recipe envelope is the sender's full snapshot — sparse keys would wipe
+ * server scalars). Keys match the favorite-toggle/AppShortcuts writers and
+ * the sync read path: `description` (never recipeDescription), `photoKeys`
+ * object, ingredient quantity/unit, step timers array, plus the editor
+ * extension keys (difficulty/notes/nutritionText/totalMinutes). Pure for
+ * JVM unit tests.
+ */
+internal fun buildRecipeEditPayload(
+    recipe: RecipeEntity,
+    categories: List<String>,
+    difficulty: String?,
+    notes: String,
+    nutritionText: String,
+    totalMinutes: Int?,
+    ingredients: List<IngredientEntity>,
+    steps: List<StepEntity>,
+): JsonObject = buildJsonObject {
+    put("id", recipe.id)
+    put("householdId", recipe.householdId)
+    put("title", recipe.title)
+    put("description", recipe.recipeDescription)
+    put("servings", recipe.servings)
+    recipe.prepMinutes?.let { put("prepMinutes", it) }
+    recipe.cookMinutes?.let { put("cookMinutes", it) }
+    totalMinutes?.let { put("totalMinutes", it) }
+    recipe.rating?.let { put("rating", it) }
+    put("isFavorite", recipe.isFavorite)
+    put("source", recipe.source)
+    put("sourceUrl", recipe.sourceUrl)
+    put("categories", JsonArray(categories.map { JsonPrimitive(it) }))
+    // Always emitted: the server keeps the stored value on a missing/null key
+    // (?? falls through) and only clears on an explicit empty string — the
+    // same convention as the web editor. Omitting blanks would silently keep
+    // stale server values after a clear.
+    put("difficulty", difficulty ?: "")
+    put("notes", notes)
+    put("nutritionText", nutritionText)
+    put(
+        "photoKeys",
+        buildJsonObject {
+            put("original", recipe.photoOriginal ?: "")
+            put("large1024", recipe.photoLarge1024 ?: "")
+            put("thumb", recipe.photoThumb ?: "")
+        },
+    )
+    put(
+        "ingredients",
+        JsonArray(
+            ingredients.map { ing ->
+                buildJsonObject {
+                    put("id", ing.id)
+                    put("name", ing.name)
+                    ing.quantity?.let { put("quantity", it) }
+                    put("unit", ing.unit)
+                    put("display", ing.display)
+                    put("position", ing.position)
+                }
+            },
+        ),
+    )
+    put(
+        "steps",
+        JsonArray(
+            steps.map { step ->
+                buildJsonObject {
+                    put("id", step.id)
+                    put("position", step.position)
+                    put("text", step.text)
+                    put(
+                        "timers",
+                        runCatching { Json.parseToJsonElement(step.timersJson).jsonArray }
+                            .getOrDefault(JsonArray(emptyList())),
+                    )
+                }
+            },
+        ),
+    )
+}
+
+/**
+ * Persists an editor draft: recipe columns via [RecipeDao.upsert], ingredient
+ * lines + direction paragraphs rewritten as child rows (ingredient ids reused
+ * by position; step ids + timer metadata reused by matching paragraph text —
+ * web parity), envelope-only extras persisted per recipe in DataStore, then a
+ * full canonical snapshot envelope ([buildRecipeEditPayload]) so payload
+ * copies match the Room rows exactly.
+ */
+internal suspend fun saveRecipeEdit(
+    container: AppContainer,
+    recipeId: String,
+    draft: RecipeEditDraft,
+) {
+    val db = container.db
+    val now = System.currentTimeMillis()
+    val deviceId = container.syncEngine.deviceId()
+    val existing = db.recipes().byId(recipeId) ?: return
+    val cats = draft.categories.map { it.lowercase() }.toSortedSet().toList()
+    // Accept a URL-derived source only when it has a real host; otherwise
+    // retain the existing source (the editor has no source-name field, and a
+    // hostless/non-URL string must never become the source name).
+    val resolvedSource = if (draft.sourceUrl.isNotBlank()) {
+        hostOfUrl(draft.sourceUrl) ?: draft.source
+    } else {
+        draft.source
+    }
+    // Total: an explicit synced override survives unless the user changed a
+    // time, in which case prep+cook re-derive. No override and no times means
+    // no total key (the server then keeps its stored value).
+    val effectiveTotal = effectiveTotalMinutes(
+        draft.totalMinutes,
+        draft.prepMinutes,
+        draft.cookMinutes,
+        existing.prepMinutes,
+        existing.cookMinutes,
+    )
+    db.recipes().upsert(
+        existing.copy(
+            title = draft.title.ifBlank { existing.title },
+            recipeDescription = draft.description,
+            servings = draft.servings,
+            prepMinutes = draft.prepMinutes,
+            cookMinutes = draft.cookMinutes,
+            rating = draft.rating,
+            source = resolvedSource,
+            sourceUrl = draft.sourceUrl,
+            categoriesJson = JsonArray(cats.map { JsonPrimitive(it) }).toString(),
+            updatedAt = now,
+            deviceId = deviceId,
+        ),
+    )
+    // Ingredients: one non-blank line = one row. Header lines (ending ":")
+    // keep quantity/unit empty so readers can style them as group headers;
+    // display always holds the exact original line (lossless round-trip).
+    val prevIngredients = db.ingredients().forRecipe(recipeId)
+    val lines = draft.ingredientsText.lines().map { it.trim() }.filter { it.isNotEmpty() }
+    db.ingredients().deleteForRecipe(recipeId)
+    db.ingredients().upsertAll(
+        lines.mapIndexed { i, line ->
+            val parsed = if (isIngredientHeaderLine(line)) null else IngredientParser.parse(line)
+            IngredientEntity(
+                id = prevIngredients.getOrNull(i)?.id ?: UUID.randomUUID().toString(),
+                recipeId = recipeId,
+                name = parsed?.name?.ifBlank { line } ?: line,
+                quantity = parsed?.quantity,
+                unit = parsed?.unit ?: "",
+                display = line,
+                position = i,
+                updatedAt = now,
+                deviceId = deviceId,
+            )
+        },
+    )
+    // Directions: text-matched pool so unchanged paragraphs keep their stable
+    // ids AND timer metadata (timersJson); new/edited paragraphs mint rows.
+    val prevSteps = db.steps().forRecipe(recipeId)
+    val paragraphs = draft.directionsText.split(Regex("\\n\\s*\\n"))
+        .map { it.trim() }.filter { it.isNotEmpty() }
+    val stepPool = prevSteps.groupBy { it.text }.mapValues { ArrayDeque(it.value) }
+    db.steps().deleteForRecipe(recipeId)
+    db.steps().upsertAll(
+        paragraphs.mapIndexed { i, text ->
+            val match = stepPool[text]?.pollFirst()
+            StepEntity(
+                id = match?.id ?: UUID.randomUUID().toString(),
+                recipeId = recipeId,
+                position = i,
+                text = text,
+                timersJson = match?.timersJson ?: "[]",
+                updatedAt = now,
+                deviceId = deviceId,
+            )
+        },
+    )
+    // Persist envelope-only extras per recipe (what this save syncs) so
+    // reopening the editor hydrates difficulty/notes/nutrition/total instead
+    // of clearing them.
+    saveEditorExtras(
+        container,
+        recipeId,
+        EditorExtras(
+            difficulty = draft.difficulty,
+            notes = draft.notes,
+            nutritionText = draft.nutritionText,
+            totalMinutes = effectiveTotal,
+        ),
+    )
+    // Re-read children so payload copies match the rows exactly.
+    val updated = db.recipes().byId(recipeId) ?: return
+    val finalIngredients = db.ingredients().forRecipe(recipeId)
+    val finalSteps = db.steps().forRecipe(recipeId)
+    container.syncEngine.enqueue(
+        SyncEnvelopeDto(
+            id = recipeId,
+            updatedAt = Instant.ofEpochMilli(now).toString(),
+            deviceId = deviceId,
+            entity = "recipe",
+            payload = buildRecipeEditPayload(
+                recipe = updated,
+                categories = cats,
+                difficulty = draft.difficulty,
+                notes = draft.notes,
+                nutritionText = draft.nutritionText,
+                totalMinutes = effectiveTotal,
+                ingredients = finalIngredients,
+                steps = finalSteps,
+            ),
+        ),
+    )
+}
+
 /** App nav graph. Views never touch the network directly — they call SyncEngine via ViewModels. */
 @Composable
 fun KeepCookingNav() {
@@ -451,11 +719,38 @@ fun KeepCookingNav() {
                 route = Routes.RecipeDetail,
                 arguments = listOf(navArgument("recipeId") { type = NavType.StringType }),
             ) { entry ->
+                val detailId = entry.arguments?.getString("recipeId").orEmpty()
                 RecipeDetailScreen(
                     container = container,
-                    recipeId = entry.arguments?.getString("recipeId").orEmpty(),
+                    recipeId = detailId,
                     onBack = { navController.popBackStack() },
                     onCook = { id -> navController.navigate(Routes.cook(id)) },
+                    onEdit = { id -> navController.navigate(Routes.recipeEdit(id)) },
+                    onDelete = { id ->
+                        deleteRecipe(container, id)
+                    },
+                    onDeleted = {
+                        navController.popBackStack()
+                    },
+                )
+            }
+            composable(
+                route = Routes.RecipeEdit,
+                arguments = listOf(navArgument("recipeId") { type = NavType.StringType }),
+            ) { entry ->
+                val editId = entry.arguments?.getString("recipeId").orEmpty()
+                RecipeEditorScreen(
+                    container = container,
+                    recipeId = editId,
+                    onCancel = { navController.popBackStack() },
+                    onSave = { draft -> saveRecipeEdit(container, editId, draft) },
+                    onSaved = {
+                        // Fresh detail instance so it reloads the saved rows.
+                        navController.navigate(Routes.recipeDetail(editId)) {
+                            popUpTo(Routes.recipeDetail(editId)) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    },
                 )
             }
             composable(Routes.Export) { ExportScreen(container) }

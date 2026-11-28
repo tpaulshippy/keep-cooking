@@ -120,11 +120,16 @@ export class D1Store extends MemoryStore implements Store {
           servings: Number(r['servings'] ?? 4),
           prepMinutes: r['prep_minutes'] == null ? null : Number(r['prep_minutes']),
           cookMinutes: r['cook_minutes'] == null ? null : Number(r['cook_minutes']),
+          totalMinutes: r['total_minutes'] == null ? null : Number(r['total_minutes']),
           rating: r['rating'] == null ? null : Number(r['rating']),
           isFavorite: Number(r['is_favorite'] ?? 0) === 1,
+          difficulty: String(r['difficulty'] ?? ''),
           source: String(r['source'] ?? ''),
           sourceUrl: String(r['source_url'] ?? ''),
           categories: jparse<string[]>(r['categories'], []),
+          cookbooks: jparse<string[]>(r['cookbooks'], []),
+          notes: String(r['notes'] ?? ''),
+          nutritionText: String(r['nutrition_text'] ?? ''),
           photoKeys: {
             original: String(r['photo_original'] ?? ''),
             large1024: String(r['photo_large1024'] ?? ''),
@@ -556,10 +561,10 @@ export class D1Store extends MemoryStore implements Store {
   override async createRecipe(input: any, meta: { deviceId: string; id?: string; updatedAt?: string }): Promise<Recipe> {
     const r = await super.createRecipe(input, meta);
     await this.persist(
-      'INSERT INTO recipes (id, household_id, title, description, servings, prep_minutes, cook_minutes, rating, is_favorite, source, source_url, categories, photo_original, photo_large1024, photo_thumb, updated_at, device_id, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0) ON CONFLICT(id) DO UPDATE SET title=excluded.title, description=excluded.description, servings=excluded.servings, prep_minutes=excluded.prep_minutes, cook_minutes=excluded.cook_minutes, rating=excluded.rating, is_favorite=excluded.is_favorite, source=excluded.source, source_url=excluded.source_url, categories=excluded.categories, photo_original=excluded.photo_original, photo_large1024=excluded.photo_large1024, photo_thumb=excluded.photo_thumb, updated_at=excluded.updated_at, device_id=excluded.device_id',
-      r.id, r.householdId, r.title, r.description, r.servings, r.prepMinutes, r.cookMinutes, r.rating,
+      'INSERT INTO recipes (id, household_id, title, description, servings, prep_minutes, cook_minutes, total_minutes, rating, is_favorite, difficulty, source, source_url, categories, cookbooks, notes, nutrition_text, photo_original, photo_large1024, photo_thumb, updated_at, device_id, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0) ON CONFLICT(id) DO UPDATE SET title=excluded.title, description=excluded.description, servings=excluded.servings, prep_minutes=excluded.prep_minutes, cook_minutes=excluded.cook_minutes, total_minutes=excluded.total_minutes, rating=excluded.rating, is_favorite=excluded.is_favorite, difficulty=excluded.difficulty, source=excluded.source, source_url=excluded.source_url, categories=excluded.categories, cookbooks=excluded.cookbooks, notes=excluded.notes, nutrition_text=excluded.nutrition_text, photo_original=excluded.photo_original, photo_large1024=excluded.photo_large1024, photo_thumb=excluded.photo_thumb, updated_at=excluded.updated_at, device_id=excluded.device_id',
+      r.id, r.householdId, r.title, r.description, r.servings, r.prepMinutes, r.cookMinutes, r.totalMinutes, r.rating,
       r.isFavorite ? 1 : 0,
-      r.source, r.sourceUrl, JSON.stringify(r.categories),
+      r.difficulty, r.source, r.sourceUrl, JSON.stringify(r.categories), JSON.stringify(r.cookbooks), r.notes, r.nutritionText,
       r.photoKeys.original, r.photoKeys.large1024, r.photoKeys.thumb, r.updatedAt, r.deviceId,
     );
     for (const g of r.ingredients) {
@@ -592,10 +597,10 @@ export class D1Store extends MemoryStore implements Store {
     const row = this.recipes.get(env.id);
     if (!row) return;
     await this.persist(
-      'INSERT INTO recipes (id, household_id, title, description, servings, prep_minutes, cook_minutes, rating, is_favorite, source, source_url, categories, photo_original, photo_large1024, photo_thumb, updated_at, device_id, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET title=excluded.title, description=excluded.description, servings=excluded.servings, prep_minutes=excluded.prep_minutes, cook_minutes=excluded.cook_minutes, rating=excluded.rating, is_favorite=excluded.is_favorite, source=excluded.source, source_url=excluded.source_url, categories=excluded.categories, photo_original=excluded.photo_original, photo_large1024=excluded.photo_large1024, photo_thumb=excluded.photo_thumb, updated_at=excluded.updated_at, device_id=excluded.device_id, deleted=excluded.deleted',
-      row.id, row.householdId, row.title, row.description, row.servings, row.prepMinutes, row.cookMinutes, row.rating,
+      'INSERT INTO recipes (id, household_id, title, description, servings, prep_minutes, cook_minutes, total_minutes, rating, is_favorite, difficulty, source, source_url, categories, cookbooks, notes, nutrition_text, photo_original, photo_large1024, photo_thumb, updated_at, device_id, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET title=excluded.title, description=excluded.description, servings=excluded.servings, prep_minutes=excluded.prep_minutes, cook_minutes=excluded.cook_minutes, total_minutes=excluded.total_minutes, rating=excluded.rating, is_favorite=excluded.is_favorite, difficulty=excluded.difficulty, source=excluded.source, source_url=excluded.source_url, categories=excluded.categories, cookbooks=excluded.cookbooks, notes=excluded.notes, nutrition_text=excluded.nutrition_text, photo_original=excluded.photo_original, photo_large1024=excluded.photo_large1024, photo_thumb=excluded.photo_thumb, updated_at=excluded.updated_at, device_id=excluded.device_id, deleted=excluded.deleted',
+      row.id, row.householdId, row.title, row.description, row.servings, row.prepMinutes, row.cookMinutes, row.totalMinutes, row.rating,
       (row as { isFavorite?: boolean }).isFavorite ? 1 : 0,
-      row.source, row.sourceUrl, JSON.stringify(row.categories),
+      row.difficulty, row.source, row.sourceUrl, JSON.stringify(row.categories), JSON.stringify(row.cookbooks), row.notes, row.nutritionText,
       row.photoKeys.original, row.photoKeys.large1024, row.photoKeys.thumb, row.updatedAt, row.deviceId,
       row.deleted ? 1 : 0,
     );

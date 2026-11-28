@@ -104,7 +104,27 @@ interface ApiService {
         @Header("Authorization") auth: String?,
         @Body body: ShareCookbookRequest,
     ): ShareLinkDto
+
+    // --- Photos (GET /photos/sign — mints a short-lived R2 download URL) ---
+
+    /**
+     * Mint a signed download URL for an R2 photo key (e.g. `photos/<id>/thumb.jpg`).
+     * Unsigned read (no device signature or token required — the signature in
+     * the returned URL is the capability, expiring in <15min).
+     */
+    @GET("photos/sign")
+    suspend fun signPhoto(
+        @Query("key") key: String,
+    ): PhotoSignResponse
 }
+
+/** GET /photos/sign response: `{ url, expiresAt, key }` (see api/src/photos.ts signKey). */
+@kotlinx.serialization.Serializable
+data class PhotoSignResponse(
+    val url: String = "",
+    val expiresAt: String = "",
+    val key: String = "",
+)
 
 @kotlinx.serialization.Serializable
 data class SyncEnvelopeDto(

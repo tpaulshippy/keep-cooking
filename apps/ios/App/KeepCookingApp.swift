@@ -480,7 +480,11 @@ extension SyncCoordinator {
         ]
         if let v = r.prepMinutes { payload["prepMinutes"] = .int(v) }
         if let v = r.cookMinutes { payload["cookMinutes"] = .int(v) }
+        if let v = r.totalMinutes { payload["totalMinutes"] = .int(v) }
         if let v = r.rating { payload["rating"] = .double(v) }
+        if let v = r.difficulty, !v.isEmpty { payload["difficulty"] = .string(v) }
+        if let v = r.notes, !v.isEmpty { payload["notes"] = .string(v) }
+        if let v = r.nutritionText, !v.isEmpty { payload["nutritionText"] = .string(v) }
         payload["isFavorite"] = .bool(r.isFavorite)
         payload["ingredients"] = .array(r.ingredients.map { ing in
             .object([
@@ -594,7 +598,15 @@ extension SyncCoordinator {
             if let v = p["servings"]?.doubleValue { r.servings = v }
             if let v = p["prepMinutes"]?.intValue { r.prepMinutes = v }
             if let v = p["cookMinutes"]?.intValue { r.cookMinutes = v }
+            if let v = p["totalMinutes"]?.intValue { r.totalMinutes = v }
             if let v = p["rating"]?.doubleValue { r.rating = v }
+            // Editor metadata: key-present (not just non-nil) distinguishes
+            // "leave alone" from "cleared"; empty difficulty means unspecified.
+            if p.keys.contains("difficulty") {
+                r.difficulty = str("difficulty").flatMap { $0.isEmpty ? nil : $0 }
+            }
+            if p.keys.contains("notes") { r.notes = str("notes") }
+            if p.keys.contains("nutritionText") { r.nutritionText = str("nutritionText") }
             if let v = p["isFavorite"]?.boolValue { r.isFavorite = v }
             if let v = str("source") { r.source = v }
             if let v = str("sourceUrl") { r.sourceUrl = v }
@@ -653,6 +665,10 @@ extension SyncCoordinator {
                 photoOriginal: p["photoKeys"]?.objectValue?["original"]?.stringValue,
                 photoLarge1024: p["photoKeys"]?.objectValue?["large1024"]?.stringValue,
                 photoThumb: p["photoKeys"]?.objectValue?["thumb"]?.stringValue,
+                difficulty: str("difficulty"),
+                notes: str("notes"),
+                nutritionText: str("nutritionText"),
+                totalMinutes: p["totalMinutes"]?.intValue,
                 updatedAt: env.updatedAt, deviceId: env.deviceId, tombstoned: env.deleted)
             ctx.insert(r)
             for (i, j) in (p["ingredients"]?.arrayValue ?? []).enumerated() {
